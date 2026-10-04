@@ -1,11 +1,20 @@
 import Link from "next/link";
 
+import { CONTACT_EMAIL } from "../lib/site";
+
 const LINKS = [
   { href: "/", label: "Order" },
+  { href: "/how-it-works/", label: "How it works" },
   { href: "/send-home/", label: "Send a meal home" },
   { href: "/restaurants/", label: "For restaurants" },
   { href: "/riders/", label: "Ride with us" },
-  { href: "/kinshasa/", label: "Kinshasa" },
+];
+
+const FOOTER: [string, [string, string][]][] = [
+  ["Order", [["Kinshasa", "/kinshasa/"], ["How it works", "/how-it-works/"], ["Send a meal home", "/send-home/"], ["How pricing works", "/legal/pricing/"]]],
+  ["Partners", [["Restaurants & shops", "/restaurants/"], ["Riders & fleets", "/riders/"], ["Merchant terms", "/legal/merchant-terms/"], ["Rider terms", "/legal/rider-terms/"]]],
+  ["Trust", [["Reviews & moderation", "/legal/reviews/"], ["Ranking & fairness", "/legal/ranking/"], ["Allergens & food safety", "/legal/food-safety/"], ["Accessibility", "/legal/accessibility/"]]],
+  ["Company", [["About", "/about/"], ["Terms of use", "/legal/terms/"], ["Privacy", "/legal/privacy/"], ["All policies", "/legal/"]]],
 ];
 
 export function Wordmark() {
@@ -54,45 +63,19 @@ export function SiteFooter() {
               Tunakula — <i>on mange ensemble.</i> A Groupe Nseya company. Payments are collected and settled by licensed partners; Tunakula never holds your money.
             </p>
           </div>
-          <div>
-            <h5>Order</h5>
-            <ul>
-              <li>Kinshasa</li>
-              <li>Send a meal home</li>
-              <li>Order on WhatsApp</li>
-              <li>Order for a group</li>
-            </ul>
-          </div>
-          <div>
-            <h5>Partners</h5>
-            <ul>
-              <li>Restaurants & shops</li>
-              <li>Riders</li>
-              <li>Fleet partners</li>
-              <li>Employers</li>
-            </ul>
-          </div>
-          <div>
-            <h5>Help</h5>
-            <ul>
-              <li>Support, 24/7</li>
-              <li>How pricing works</li>
-              <li>Ranking & fairness</li>
-              <li>Accessibility</li>
-            </ul>
-          </div>
-          <div>
-            <h5>Company</h5>
-            <ul>
-              <li>About</li>
-              <li>Careers</li>
-              <li>Press</li>
-              <li>Privacy & terms</li>
-            </ul>
-          </div>
+          {FOOTER.map(([title, links]) => (
+            <div key={title}>
+              <h5>{title}</h5>
+              <ul>
+                {links.map(([label, href]) => (
+                  <li key={href}><Link href={href}>{label}</Link></li>
+                ))}
+              </ul>
+            </div>
+          ))}
         </div>
         <div className="legal">
-          <span>© 2026 Groupe Nseya.</span>
+          <span>© 2026 Groupe Nseya · <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a> · <Link href="/legal/legal-notice/">Legal notice</Link></span>
           <span>Français · Lingála · Kiswahili · English</span>
         </div>
       </div>

@@ -1,66 +1,41 @@
 import Link from "next/link";
 import { Phone, SiteFooter, SiteNav } from "../components/site";
 import { PayScreen, TrackingScreen } from "../components/screens";
+import { DISHES, DishCard } from "../components/dish";
 
-const KITCHENS = [
-  {
-    name: "Chez Mama Pauline",
-    where: "Gombe · open until 23:00 · 25–35 min",
-    dishes: [
-      ["Poulet à la moambe", "16 000 FC", "with rice or chikwangue"],
-      ["Pondu na makayabu", "9 000 FC", "cassava leaves, salted fish"],
-      ["Liboke ya mbisi", "18 000 FC", "river fish steamed in leaves"],
-    ],
-  },
-  {
-    name: "Malewa ya Limete",
-    where: "Limete · 7e rue · 20–30 min",
-    dishes: [
-      ["Fumbwa ya ngolo", "8 000 FC", "wild spinach, peanut, catfish"],
-      ["Makemba na ndunda", "6 000 FC", "plantain and beans"],
-      ["Sombe na loso", "7 000 FC", "", "vegan"],
-    ],
-  },
-  {
-    name: "Brochettes Kintambo",
-    where: "Kintambo Magasin · 30–40 min",
-    dishes: [
-      ["Brochettes de chèvre ×4", "12 000 FC", "pili-pili on the side"],
-      ["Mbika ya ngulu", "10 000 FC", "pumpkin-seed cake"],
-      ["Jus de gingembre", "2 000 FC", "made this morning", "halal"],
-    ],
-  },
-];
 
 export default function Home() {
   return (
     <>
       <SiteNav current="/" />
 
-      <section className="hero">
-        <div className="wrap split">
-          <div className="copy">
-            <p className="eyebrow">
-              <b>Kinshasa</b> &nbsp;·&nbsp; 24 communes &nbsp;·&nbsp; FC or USD
-            </p>
-            <h1 className="display">
-              The food of Kinshasa, at your door — <em>or your mother&rsquo;s.</em>
-            </h1>
-            <p className="lede">
-              Order from the kitchens you already know, pay with M-Pesa, Orange Money or Airtel Money, and describe
-              your address the way Kinshasa does: <i>the blue gate after the Total station.</i>
-            </p>
-            <div className="cta-row" style={{ marginTop: 34 }}>
-              <Link className="btn accent" href="/">Order now</Link>
-              <Link className="btn light" href="/send-home/">Send a meal home</Link>
+      <section className="food-hero">
+        <div className="wrap">
+          <div className="intro">
+            <div>
+              <p className="eyebrow"><b>Kinshasa</b> &nbsp;·&nbsp; 24 communes &nbsp;·&nbsp; francs or dollars</p>
+              <h1 className="display" style={{ marginTop: 22 }}>Moambe for two? <em>Pondu like your aunt&rsquo;s?</em></h1>
             </div>
-            <p className="small" style={{ marginTop: 22 }}>Also on WhatsApp — write in Lingála, French, Swahili or English.</p>
+            <div className="stack">
+              <p className="lede">The kitchens Kinshasa already loves, cooking now — delivered to your gate, your office or your mother&rsquo;s door.</p>
+              <div className="cta-row">
+                <Link className="btn accent" href="/">Find food near me</Link>
+                <Link className="btn light" href="/send-home/">Send a meal home</Link>
+              </div>
+            </div>
           </div>
-          <div className="stage">
-            <Phone className="p1"><TrackingScreen /></Phone>
-            <Phone className="p2"><PayScreen /></Phone>
-            <p className="note">Every price before you pay — in the currency you hold.</p>
+          <div className="mosaic">
+            <DishCard dish={DISHES.moambe!} size="l" />
+            <DishCard dish={DISHES.pondu!} size="s" />
+            <DishCard dish={DISHES.makemba!} size="s" />
+            <DishCard dish={DISHES.brochettes!} size="s" />
+            <DishCard dish={DISHES.liboke!} size="s" />
           </div>
+          <nav className="cravings" aria-label="What are you craving?">
+            {["Everything", "Moambe & sauces", "Pondu & greens", "Fish from the river", "Grills & brochettes", "Plantain & beans", "Vegetarian", "Breakfast", "Pastries & bread", "Fresh juices"].map((c) => (
+              <Link key={c} href="/">{c}</Link>
+            ))}
+          </nav>
         </div>
       </section>
 
@@ -146,28 +121,13 @@ export default function Home() {
         <div className="wrap">
           <div className="head-row">
             <div className="stack">
-              <div className="kicker"><span className="n">03</span><span className="eyebrow">On the menu this week</span></div>
-              <h2 className="display">Cooked this evening, in your commune.</h2>
+              <div className="kicker"><span className="n">03</span><span className="eyebrow">Tonight in Kinshasa</span></div>
+              <h2 className="display">Cooked this evening, <em>in your commune.</em></h2>
             </div>
-            <p className="lede">Prices are the kitchen&rsquo;s own, in francs, the same as at their counter. Dietary tags are set by the kitchen and checked before your food is packed.</p>
+            <p className="lede">The kitchen&rsquo;s own prices, in francs — the same as at their counter. Dietary tags are set by the kitchen and checked before your food is packed.</p>
           </div>
-          <div className="menu-board">
-            {KITCHENS.map((k) => (
-              <div className="col" key={k.name}>
-                <div className="kitchen">{k.name}</div>
-                <div className="where">{k.where}</div>
-                {k.dishes.map(([name, price, note, tag]) => (
-                  <div key={name}>
-                    <div className="dish">
-                      <span className="name">{name}{tag ? <span className="tag">{tag}</span> : null}</span>
-                      <span className="fill" />
-                      <span className="price">{price}</span>
-                    </div>
-                    {note ? <small className="small" style={{ display: "block", marginTop: -6, paddingBottom: 6 }}>{note}</small> : null}
-                  </div>
-                ))}
-              </div>
-            ))}
+          <div className="dish-grid">
+            {["fumbwa", "liboke", "mbika", "jus"].map((k) => (<DishCard key={k} dish={DISHES[k]!} />))}
           </div>
         </div>
       </section>
@@ -175,7 +135,22 @@ export default function Home() {
       <section>
         <div className="wrap split">
           <div className="stack">
-            <div className="kicker"><span className="n">04</span><span className="eyebrow">From London, Paris or Brussels</span></div>
+            <div className="kicker"><span className="n">04</span><span className="eyebrow">Ordering</span></div>
+            <h2 className="display">Pay the way Kinshasa pays.</h2>
+            <p className="lede">M-Pesa, Orange Money or Airtel Money, in francs or dollars, with every line of the bill in front of you before you approve. Then follow your rider to the gate.</p>
+            <p><Link className="link" href="/how-it-works/">How it works</Link></p>
+          </div>
+          <div className="stage" style={{ position: "relative", height: 640, overflow: "hidden" }}>
+            <Phone className="p1" ><TrackingScreen /></Phone>
+            <Phone className="p2"><PayScreen /></Phone>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <div className="wrap split">
+          <div className="stack">
+            <div className="kicker"><span className="n">05</span><span className="eyebrow">From London, Paris or Brussels</span></div>
             <p className="quote">
               &ldquo;I paid in pounds from Croydon. Maman got her <em>poulet moambe</em> in Bandal forty minutes later — and I got the photo.&rdquo;
             </p>
