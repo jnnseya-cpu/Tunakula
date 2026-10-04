@@ -3,6 +3,7 @@ import { SiteFooter, SiteNav } from "../../components/site";
 import { JoinCard, MerchantCard } from "../../components/merchant";
 import { StoreFilter } from "../../components/filter";
 import { StoreSorter } from "../../components/location";
+import { LiveStoreGrid } from "../../components/live-store";
 import { MERCHANTS } from "../../lib/catalogue";
 
 export const metadata: Metadata = { title: "Order food in Kinshasa", description: "Restaurants, grills, malewa, bakeries and groceries delivering across Kinshasa." };
@@ -26,6 +27,7 @@ export default function Order() {
             {MERCHANTS.map((m) => <MerchantCard key={m.slug} m={m} />)}
             <JoinCard />
           </div>
+          <LiveStoreGrid exclude={MERCHANTS.map((m) => m.name)} />
           <p id="no-stores" className="lede" hidden>Nothing matches yet. Try a dish, like &ldquo;pondu&rdquo;, or a commune.</p>
         </div>
       </section>

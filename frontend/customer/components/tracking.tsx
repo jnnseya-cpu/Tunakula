@@ -1,0 +1,157 @@
+"use client";
+/** Order tracking (/track/?id=) with live progress and the door code, and the order history (/orders/). */
+import Link from "next/link";
+import { useEffect, useState } from "react";
+import { api, ApiError, live, money, recallCode, setSession, STATE_LABEL, type MoneyWire } from "../lib/api";
+import { useSession } from "./account";
+import { ClockIcon, PinIcon, useLocationCtx } from "./location";
+
+interface OrderView {
+  order_id: string; state: string; type: string; total: MoneyWire; payment_mode: string; rider_id: string | null;
+  lines: { name: string; quantity: number }[];
+  branch: { id: string; name: string; commune: string | null } | null;
+  timeline: { state: string; at: string }[];
+}
+interface Row { order_id: string; state: string; type: string; total: MoneyWire; created_at: string; branch: { id: string; name: string; commune: string | null } }
+
+const RIDER_STEPS = ["PLACED", "ACCEPTED", "PREPARING", "READY", "PICKED_UP", "DELIVERED"];
+const COUNTER_STEPS = ["PLACED", "ACCEPTED", "PREPARING", "READY", "DELIVERED"];
+const STEP_LABEL: Record<string, string> = { PLACED: "Order sent", ACCEPTED: "Accepted", PREPARING: "Cooking", READY: "Ready", PICKED_UP: "On the way", DELIVERED: "Delivered" };
+const TERMINAL = new Set(["DELIVERED", "CANCELLED", "REJECTED", "REFUNDED", "EXPIRED", "DELIVERY_FAILED", "PAYMENT_FAILED"]);
+const time = (iso: string) => new Date(iso).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: "Africa/Kinshasa" });
+const day = (iso: string) => new Date(iso).toLocaleDateString("fr-FR", { day: "numeric", month: "short", timeZone: "Africa/Kinshasa" });
+
+function NeedSignIn({ next }: { next: string }) {
+  return (
+    <div className="app-card">
+      <h1 className="app-title">Sign in to see your orders</h1>
+      <Link className="btn accent" href={`/signin/?next=${encodeURIComponent(next)}`}>Sign in with my phone</Link>
+    </div>
+  );
+}
+
+export function Tracking() {
+  const session = useSession();
+  const { place } = useLocationCtx();
+  const [id, setId] = useState<string | null>(null);
+  const [o, setO] = useState<OrderView | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [eta, setEta] = useState<{ eta: { low: number; high: number }; distance_km: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => { setId(new URLSearchParams(window.location.search).get("id")); }, []);
+  useEffect(() => {
+    if (!id || !session) return;
+    let timer: ReturnType<typeof setTimeout>;
+    const load = () => api<OrderView>(`/v1/orders/${id}`).then((v) => {
+      setO(v); setError(null);
+      if (!TERMINAL.has(v.state)) timer = setTimeout(load, 8000);
+    }).catch((e: ApiError) => { setError(e.message); timer = setTimeout(load, 15000); });
+    load();
+    return () => clearTimeout(timer);
+  }, [id, session]);
+  useEffect(() => {
+    if (!o?.branch || !place || TERMINAL.has(o.state)) return;
+    api<{ eta: { low: number; high: number }; distance_km: string }>(`/v1/branches/${o.branch.id}/eta?lat=${place.lat}&lng=${place.lng}`, { auth: false }).then(setEta).catch(() => undefined);
+  }, [o?.branch?.id, o?.state, place]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (!live()) return <div className="app-card"><p className="muted">Ordering opens at launch.</p></div>;
+  if (session === undefined || !id) return <div className="skeleton-line" />;
+  if (!session) return <NeedSignIn next={`/track/?id=${id}`} />;
+  if (error && !o) return <div className="app-card"><h1 className="app-title">We could not load this order</h1><p className="muted">{error}</p><Link className="btn light" href="/orders/">My orders</Link></div>;
+  if (!o) return <div className="skeleton-cover" />;
+
+  const steps = o.type === "DELIVERY" || o.type === "SCHEDULED" || o.type === "XBO" ? RIDER_STEPS : COUNTER_STEPS;
+  const reached = new Map(o.timeline.map((t) => [t.state, t.at]));
+  const current = steps.reduce((last, s, i) => (reached.has(s) ? i : last), -1);
+  const code = recallCode(o.order_id);
+  const failed = ["CANCELLED", "REJECTED", "DELIVERY_FAILED", "PAYMENT_FAILED", "EXPIRED"].includes(o.state);
+  const cancel = async () => {
+    if (!window.confirm("Cancel this order? If you paid, the money comes back to you.")) return;
+    setBusy(true);
+    try { setO(await api<OrderView>(`/v1/orders/${o.order_id}/transitions`, { method: "POST", body: { command: { type: "CANCEL", reasonCode: "CHANGED_MIND" } } }).then(() => api<OrderView>(`/v1/orders/${o.order_id}`))); }
+    catch (e) { setError((e as ApiError).message); } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="track">
+      <div className={`track-hero ${failed ? "bad" : o.state === "DELIVERED" ? "done" : ""}`}>
+        <p className="eyebrow light">{o.branch?.name}{o.branch?.commune ? ` · ${o.branch.commune}` : ""}</p>
+        <h1>{STATE_LABEL[o.state] ?? o.state}</h1>
+        {!TERMINAL.has(o.state) && eta && o.type === "DELIVERY" ? (
+          <p className="track-eta"><ClockIcon /> Arriving in about <b>{eta.eta.low}–{eta.eta.high} min</b> · <PinIcon /> {eta.distance_km} km away</p>
+        ) : null}
+        {o.state === "PENDING_PAYMENT" ? <p className="track-eta">Approve the mobile money request on your phone. This page updates by itself.</p> : null}
+      </div>
+
+      {!failed ? (
+        <ol className="stepper" aria-label="Progress">
+          {steps.map((s, i) => (
+            <li key={s} className={i < current ? "done" : i === current ? "now" : ""}>
+              <span className="dot" aria-hidden />
+              <span className="lbl">{s === "DELIVERED" && steps === COUNTER_STEPS ? "Collected" : STEP_LABEL[s]}</span>
+              <span className="at num">{reached.has(s) ? time(reached.get(s)!) : ""}</span>
+            </li>
+          ))}
+        </ol>
+      ) : null}
+
+      {code && !TERMINAL.has(o.state) ? (
+        <div className="door-code">
+          <div><b>Your door code</b><p className="muted">Give it to {o.type === "DELIVERY" ? "the rider when your food is in your hands" : "the counter when you collect"}. Never share it before.</p></div>
+          <span className="code num" aria-label={`Code ${code.split("").join(" ")}`}>{code}</span>
+        </div>
+      ) : null}
+
+      <div className="app-card">
+        <h2>Your order</h2>
+        <ul className="cart-lines">{o.lines.map((l, i) => <li key={i}><span className="q">{l.quantity}×</span><span className="cl-name">{l.name}</span></li>)}</ul>
+        <div className="cart-sub"><span>Total{o.payment_mode === "CASH_ON_DELIVERY" ? " · cash to the rider" : ""}</span><b className="num">{money(o.total)}</b></div>
+        <div className="row-actions">
+          {["PENDING_PAYMENT", "PLACED"].includes(o.state) ? <button type="button" className="btn light" onClick={cancel} disabled={busy}>Cancel order</button> : null}
+          {o.branch ? <Link className="btn light" href={`/store/?id=${o.branch.id}`}>Order again</Link> : null}
+          <a className="btn light" href="mailto:info@tunakula.com?subject=Order%20help">Get help</a>
+        </div>
+      </div>
+      {error ? <p className="form-error" role="alert">{error}</p> : null}
+    </div>
+  );
+}
+
+export function OrderHistory() {
+  const session = useSession();
+  const [rows, setRows] = useState<Row[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    if (!session) return;
+    api<{ data: Row[] }>("/v1/me/orders?limit=50").then((r) => setRows(r.data)).catch((e: ApiError) => setError(e.message));
+  }, [session]);
+  if (!live()) return <div className="app-card"><h1 className="app-title">My orders</h1><p className="muted">Ordering opens at launch.</p></div>;
+  if (session === undefined) return <div className="skeleton-line" />;
+  if (!session) return <NeedSignIn next="/orders/" />;
+  return (
+    <div>
+      <div className="page-head">
+        <h1 className="app-title">My orders</h1>
+        <button type="button" className="link-btn" onClick={() => { setSession(null); window.location.href = "/"; }}>Sign out</button>
+      </div>
+      {error ? <p className="form-error">{error}</p> : null}
+      {!rows ? <div className="skeleton-line" /> : rows.length === 0 ? (
+        <div className="app-card"><p className="muted">No orders yet.</p><Link className="btn accent" href="/order/">Find food near me</Link></div>
+      ) : (
+        <ul className="order-list">
+          {rows.map((r) => (
+            <li key={r.order_id} data-reveal>
+              <Link href={`/track/?id=${r.order_id}`} className="order-row">
+                <span className="or-main"><b>{r.branch.name}</b><small>{day(r.created_at)} · {time(r.created_at)} · {r.type === "DELIVERY" ? "Delivery" : r.type === "TAKEAWAY" ? "Collected" : r.type}</small></span>
+                <span className={`state-chip s-${r.state.toLowerCase()}`}>{STATE_LABEL[r.state] ?? r.state}</span>
+                <b className="num">{money(r.total)}</b>
+              </Link>
+              <Link className="link-btn again" href={`/store/?id=${r.branch.id}`}>Order again</Link>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}

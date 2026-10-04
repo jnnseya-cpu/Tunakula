@@ -5,11 +5,13 @@
  * GET /v1/branches/nearby), refreshed every two minutes; otherwise from the shared model
  * (@tunakula/ts-contracts/eta-model), the same one the API falls back to.
  */
+import Link from "next/link";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { estimateDelivery, etaRange, kmText } from "@tunakula/ts-contracts/eta-model";
 import { API_URL, COMMUNES, DEFAULT_PLACE, type Place } from "../lib/geo";
 
 export interface StoreGeo { readonly slug: string; readonly name: string; readonly lat: number; readonly lng: number; readonly prep: number; readonly hours: string; readonly rating: number }
+export interface LiveStoreRow { readonly id: string; readonly name: string; readonly commune: string | null; readonly open: boolean; readonly km: string; readonly low: number; readonly high: number; readonly meters: number; readonly minutes: number; readonly fee: { amount_minor: string; currency: string } }
 export interface StoreEta { readonly km: string; readonly meters: number; readonly low: number; readonly high: number; readonly minutes: number; readonly live: boolean; readonly open: boolean }
 
 interface Ctx {
@@ -17,6 +19,9 @@ interface Ctx {
   setPlace: (p: Place) => void;
   eta: Record<string, StoreEta>;
   stores: readonly StoreGeo[];
+  /** Live storefront ids by sample slug, and every live storefront nearby (when the API is connected). */
+  liveIds: Record<string, string>;
+  liveStores: LiveStoreRow[];
   pickerOpen: boolean;
   setPickerOpen: (o: boolean) => void;
 }
@@ -46,6 +51,8 @@ export function LocationProvider({ stores, children }: { stores: readonly StoreG
   const [eta, setEta] = useState<Record<string, StoreEta>>({});
   const [tick, setTick] = useState(0);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [liveIds, setLiveIds] = useState<Record<string, string>>({});
+  const [liveStores, setLiveStores] = useState<LiveStoreRow[]>([]);
 
   useEffect(() => {
     let saved: Place | null = null;
@@ -72,22 +79,26 @@ export function LocationProvider({ stores, children }: { stores: readonly StoreG
     if (!API_URL) return;
     // Live: road distance, traffic and each kitchen's learned time from the API, matched by name.
     const ctl = new AbortController();
-    fetch(`${API_URL}/v1/branches/nearby?lat=${place.lat}&lng=${place.lng}&limit=100`, { headers: { "x-country": "CD" }, signal: ctl.signal })
+    fetch(`${API_URL}/v1/branches/nearby?lat=${place.lat}&lng=${place.lng}&limit=100&radius_km=50`, { headers: { "x-country": "CD" }, signal: ctl.signal })
       .then((r) => (r.ok ? r.json() : null))
-      .then((body: { data: { name: string; open: boolean; distance_meters: number; eta: { minutes: number } }[] } | null) => {
+      .then((body: { data: { id: string; name: string; commune: string | null; open: boolean; distance_meters: number; eta: { minutes: number }; delivery_fee: { amount_minor: string; currency: string } }[] } | null) => {
         if (!body) return;
         const next = { ...local };
+        const ids: Record<string, string> = {};
+        setLiveStores(body.data.map((b) => ({ id: b.id, name: b.name, commune: b.commune, open: b.open, km: kmText(b.distance_meters), meters: b.distance_meters, minutes: b.eta.minutes, ...etaRange(b.eta.minutes), fee: b.delivery_fee })));
         for (const s of stores) {
           const b = body.data.find((x) => x.name === s.name);
+          if (b) ids[s.slug] = b.id;
           if (b) next[s.slug] = { km: kmText(b.distance_meters), meters: b.distance_meters, minutes: b.eta.minutes, ...etaRange(b.eta.minutes), live: true, open: b.open && local[s.slug]!.open };
         }
         setEta(next);
+        setLiveIds(ids);
       })
       .catch(() => { /* offline: keep the model's estimate */ });
     return () => ctl.abort();
   }, [place, stores, tick]);
 
-  const value = useMemo(() => ({ place, setPlace, eta, stores, pickerOpen, setPickerOpen }), [place, setPlace, eta, stores, pickerOpen]);
+  const value = useMemo(() => ({ place, setPlace, eta, stores, pickerOpen, setPickerOpen, liveIds, liveStores }), [place, setPlace, eta, stores, pickerOpen, liveIds, liveStores]);
   return (
     <LocationCtx.Provider value={value}>
       {children}
@@ -96,12 +107,19 @@ export function LocationProvider({ stores, children }: { stores: readonly StoreG
   );
 }
 
-const PinIcon = () => (
+export const PinIcon = () => (
   <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden><path fill="currentColor" d="M12 2a7 7 0 0 0-7 7c0 5.2 7 13 7 13s7-7.8 7-13a7 7 0 0 0-7-7Zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5Z" /></svg>
 );
-const ClockIcon = () => (
+export const ClockIcon = () => (
   <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden><path fill="currentColor" d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm1 10.4 3.2 1.9-.8 1.3L11 13V6.5h2v5.9Z" /></svg>
 );
+
+/** A storefront link: the live store when the API knows this kitchen, else the sample page. */
+export function StoreLink({ slug, className, children, ...rest }: { slug: string; className?: string; children: React.ReactNode } & Record<string, unknown>) {
+  const { liveIds } = useLocationCtx();
+  const id = liveIds[slug];
+  return <Link className={className} href={id ? `/store/?id=${id}` : `/r/${slug}/`} {...rest}>{children}</Link>;
+}
 
 /** "2.5 km · 25–35 min" for one storefront, from the customer's location. */
 export function EtaChip({ slug, size = "sm" }: { slug: string; size?: "sm" | "lg" }) {

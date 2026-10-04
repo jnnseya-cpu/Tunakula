@@ -197,7 +197,27 @@ export class CommerceService {
     return this.db.tx({ country }, async (sql) => {
       const { order, resource } = await this.#load(sql, orderId);
       const role = require(principal, "order:read", resource, { activeCountry: country, profile: this.profile(country) });
-      return { order, role };
+      // Tracking: when each state was reached, and where the order comes from.
+      const timeline = (await loadOrderEvents(sql, orderId))
+        .flatMap((e) => (e.type === "STATE_CHANGED" ? [{ state: e.to, at: e.at }] : e.type === "ORDER_DRAFTED" ? [{ state: "DRAFT", at: e.at }] : []));
+      const branch = await getBranch(sql, order.snapshot.branchId);
+      return { order, role, timeline, branch: branch ? { id: branch.id, name: branch.name, commune: branch.commune, lat: Number(branch.lat), lng: Number(branch.lng) } : null };
+    });
+  }
+
+  /** GET /v1/me/orders: the signed-in customer's own orders in this market, newest first. */
+  async myOrders(country: string, principal: Principal, limit = 30) {
+    return this.db.tx({ country }, async (sql) => {
+      const rows = await sql.query<{ order_id: string; state: string; type: string; total_minor: string; currency: string; created_at: Date; branch_id: string; branch_name: string; commune: string | null }>(
+        `SELECT o.order_id, o.state, o.type, o.total_minor::text, o.currency, o.created_at, b.id AS branch_id, b.name AS branch_name, b.commune
+           FROM ordering.order_view o JOIN catalogue.branch b ON b.id = o.branch_id
+          WHERE o.customer_id = $1 ORDER BY o.created_at DESC LIMIT $2`,
+        [principal.userId, Math.min(Math.max(limit, 1), 100)],
+      );
+      return rows.map((r) => ({
+        order_id: r.order_id, state: r.state, type: r.type, total: { amount_minor: r.total_minor, currency: r.currency },
+        created_at: new Date(r.created_at).toISOString(), branch: { id: r.branch_id, name: r.branch_name, commune: r.commune },
+      }));
     });
   }
 

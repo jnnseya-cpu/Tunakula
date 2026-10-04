@@ -772,3 +772,32 @@ describe("distance in km and delivery time on every storefront", () => {
     assert.equal(r.body.data.length, 0);
   });
 });
+
+describe("customer order history and tracking", () => {
+  test("a customer sees their own orders, newest first, and nobody else's", async () => {
+    const mine = await call("GET", "/v1/me/orders", { token: customer.token, country: "CD" });
+    assert.equal(mine.status, 200);
+    assert.ok(mine.body.data.length > 0);
+    const first = mine.body.data[0];
+    assert.equal(first.branch.id, branchId);
+    assert.match(first.total.amount_minor, /^\d+$/);
+    const sorted = [...mine.body.data].sort((a: { created_at: string }, b: { created_at: string }) => b.created_at.localeCompare(a.created_at));
+    assert.deepEqual(mine.body.data.map((o: { order_id: string }) => o.order_id), sorted.map((o: { order_id: string }) => o.order_id));
+    const other = await call("GET", "/v1/me/orders", { token: kitchen.token, country: "CD" });
+    assert.equal(other.body.data.length, 0);
+    const anon = await call("GET", "/v1/me/orders", { country: "CD" });
+    assert.equal(anon.status, 401);
+  });
+
+  test("an order carries its tracking timeline and where it comes from", async () => {
+    const mine = await call("GET", "/v1/me/orders", { token: customer.token, country: "CD" });
+    const delivered = mine.body.data.find((o: { state: string }) => o.state === "DELIVERED") ?? mine.body.data[0];
+    const r = await call("GET", `/v1/orders/${delivered.order_id}`, { token: customer.token, country: "CD" });
+    assert.equal(r.status, 200);
+    assert.equal(r.body.timeline[0].state, "DRAFT");
+    assert.equal(r.body.timeline.at(-1).state, r.body.state);
+    assert.ok(r.body.timeline.every((t: { at: string }) => !Number.isNaN(Date.parse(t.at))));
+    assert.equal(r.body.branch.id, branchId);
+    assert.equal(typeof r.body.branch.lat, "number");
+  });
+});

@@ -12,15 +12,15 @@ Legend: **Built** works end to end · **Partial** the engine or a screen exists,
 | --- | --- |
 | Home: banners, categories, nearby restaurants, popular dishes | Partial: website only, sample data, not from the API |
 | Distance (km) and delivery time per restaurant | Built (API and website) |
-| Sign up / sign in by phone code | Partial: API only, no screen |
+| Sign up / sign in by phone code | Built (SMS or WhatsApp code; delivery needs the messaging adapter) |
 | Search with filters (veg, rating, price, cuisine, distance) | Partial: text search and sort only |
-| Restaurant page with menu | Partial: sample data only |
+| Restaurant page with menu | Built: live menu, availability, allergens, distance, time, fee |
 | Food details: variations, add-ons, notes | Missing |
-| Cart and checkout: delivery, takeaway, dine-in, scheduled | Partial: API built, basket screen without checkout |
-| Pay: mobile money, card, cash, wallet, partial payment | Partial: API built (mobile money, cash); no screen; no wallet |
+| Cart and checkout: delivery, takeaway, dine-in, scheduled | Built for delivery and takeaway (live quote, directions, tip); dine-in and scheduled missing |
+| Pay: mobile money, card, cash, wallet, partial payment | Built: mobile money, card, cash on delivery; wallet and partial payment missing |
 | Coupons, cashback, campaigns | Missing |
-| Live order tracking with map and rider | Partial: API states only, no screen |
-| Order history, reorder, cancel with reason, refund request | Partial: API only |
+| Live order tracking with map and rider | Partial: live progress, door code, ETA; map and rider position missing |
+| Order history, reorder, cancel with reason, refund request | Built: history, order again, cancel; refund request missing |
 | Reviews and ratings | Missing |
 | Chat with restaurant and rider; push and SMS notifications | Missing |
 | Wallet, loyalty points, referral | Missing |

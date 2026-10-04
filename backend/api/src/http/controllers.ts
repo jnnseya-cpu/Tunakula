@@ -165,8 +165,14 @@ export class OrdersController {
   @Get("orders/:id")
   async get(@Req() req: FastifyRequest, @Param("id") id: string) {
     const principal = await this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
-    const { order } = await this.commerce.get(country(req), principal, id);
-    return orderView(order);
+    const { order, timeline, branch } = await this.commerce.get(country(req), principal, id);
+    return { ...orderView(order), branch, timeline: timeline.map((t) => ({ state: t.state, at: new Date(t.at).toISOString() })) };
+  }
+
+  @Get("me/orders")
+  async mine(@Req() req: FastifyRequest, @Query("limit") limit?: string) {
+    const principal = await this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+    return { data: await this.commerce.myOrders(country(req), principal, limit ? Number(limit) : undefined) };
   }
 
   @Get("orders/:id/evidence")

@@ -26,7 +26,13 @@ export function Reveal() {
       }
     }, { rootMargin: "0px 0px -8% 0px", threshold: 0.08 });
     els.forEach((el) => io.observe(el));
-    return () => io.disconnect();
+    // Screens that load their content later (menus, order lists) add elements after this ran.
+    const mo = new MutationObserver(() => {
+      document.querySelectorAll<HTMLElement>("[data-reveal]:not(.in):not([data-watched])").forEach((el) => { el.dataset.watched = "1"; io.observe(el); });
+    });
+    mo.observe(document.body, { childList: true, subtree: true });
+    els.forEach((el) => { el.dataset.watched = "1"; });
+    return () => { io.disconnect(); mo.disconnect(); };
   }, [path]);
   return null;
 }

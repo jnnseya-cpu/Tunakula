@@ -1,11 +1,11 @@
 import Link from "next/link";
 
 import { CONTACT_EMAIL } from "../lib/site";
+import { AccountLink } from "./account";
 import { LocationButton } from "./location";
 
 const LINKS = [
   { href: "/order/", label: "Restaurants" },
-  { href: "/how-it-works/", label: "How it works" },
   { href: "/send-home/", label: "Send a meal home" },
   { href: "/restaurants/", label: "For restaurants" },
   { href: "/riders/", label: "Ride with us" },
@@ -47,6 +47,7 @@ export function SiteNav({ current }: { current: string }) {
             ))}
           </nav>
           <div className="right">
+            <AccountLink />
             <span className="langs" aria-label="Languages">
               <b>EN</b> FR LN SW
             </span>
@@ -72,7 +73,7 @@ const TABS: [string, string, string][] = [
   ["/", "Home", "M12 3 2 11h3v9h5v-6h4v6h5v-9h3L12 3Z"],
   ["/order/", "Explore", "M10 3a7 7 0 1 0 4.2 12.6l5.1 5.1 1.4-1.4-5.1-5.1A7 7 0 0 0 10 3Zm0 2a5 5 0 1 1 0 10 5 5 0 0 1 0-10Z"],
   ["/send-home/", "Send home", "M20 6h-2.2A3 3 0 0 0 12 4.2 3 3 0 0 0 6.2 6H4a1 1 0 0 0-1 1v4h1v9h16v-9h1V7a1 1 0 0 0-1-1Zm-5-1a1 1 0 1 1 0 2h-2a1 1 0 0 1 1-2h1Zm-6 0h1a1 1 0 0 1 1 1v1H9a1 1 0 1 1 0-2Zm2 13H6v-7h5v7Zm0-9H5V8h6v1Zm7 9h-5v-7h5v7Zm1-9h-6V8h6v1Z"],
-  ["/restaurants/", "Partners", "M4 4h16l1 5a3 3 0 0 1-2 2.8V20H5v-8.2A3 3 0 0 1 3 9l1-5Zm3 9v5h4v-5H7Zm6 0v5h4v-5h-4Z"],
+  ["/orders/", "Orders", "M7 3h10a2 2 0 0 1 2 2v16l-3-2-2 2-2-2-2 2-2-2-3 2V5a2 2 0 0 1 2-2Zm1 5v2h8V8H8Zm0 4v2h8v-2H8Z"],
 ];
 
 export function SiteFooter() {
