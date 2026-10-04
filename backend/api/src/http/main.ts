@@ -8,6 +8,7 @@
  *   TUNAKULA_DEV_OTP=1      log sign-in codes instead of sending them (development only; there is
  *                           no SMS/WhatsApp MessagingChannel adapter yet, so without it the API refuses to start)
  *   BITRIPAY_SECRET_KEY / BITRIPAY_WEBHOOK_SECRET, KODA_SECRET_KEY / KODA_WEBHOOK_SECRET
+ *   TUNAKULA_CONSOLE_ORIGINS  comma-separated browser origins allowed to call the API (the admin console)
  *   PORT (default 8080)
  */
 import { BitriPayConnector } from "@tunakula/payment-connector-bitripay";
@@ -68,6 +69,7 @@ const app = await createApi({
   connectors,
   tokenSecret: required("TUNAKULA_TOKEN_SECRET"),
   otp,
+  corsOrigins: (env("TUNAKULA_CONSOLE_ORIGINS") ?? "").split(",").map((o) => o.trim()).filter(Boolean),
   onError: (e) => log.error("unhandled", { error: e }),
 });
 // Other instances publish too: pick up their changes (CFG-002 rollback must reach every instance within a minute).

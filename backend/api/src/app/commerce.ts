@@ -276,7 +276,7 @@ export class CommerceService {
       { account: "rider_payable", country: c, amount: neg(m.riderReceives) },
       { account: "delivery_fee_revenue", country: c, amount: neg(m.platformDeliveryShare) },
     ].filter((e) => !e.amount.isZero()) as LedgerEntry[];
-    await postJournal(sql, createJournal({ id: `settle:${s.orderId}`, idempotencyKey: `order:${s.orderId}:settlement`, description: `Order ${s.orderId} settlement`, entries }));
+    await postJournal(sql, createJournal({ id: `settle:${s.orderId}`, idempotencyKey: `order:${s.orderId}:settlement`, description: `Order ${s.orderId} settlement`, entries, postedAt: this.now() }));
   }
 
   /** §20.4 / Appendix A: COD only under a time-boxed CEO exception, within the cash cap, account age and market share. */

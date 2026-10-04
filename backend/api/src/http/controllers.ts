@@ -1,8 +1,9 @@
 /** /v1 endpoints (§25.2). Controllers are thin: parse, authenticate, delegate, shape the response. */
-import { Body, Controller, Get, HttpCode, Inject, Param, Post, Query, Req } from "@nestjs/common";
+import { Body, Controller, Delete, Get, HttpCode, Inject, Param, Post, Query, Req } from "@nestjs/common";
 import type { FastifyRequest } from "fastify";
 import { currencies, currencyFlag, Money } from "@tunakula/ts-money";
 import type { PaymentMethodType } from "@tunakula/ts-contracts";
+import type { AdminService } from "../app/admin.ts";
 import type { AuthService } from "../app/auth.ts";
 import type { CatalogueService } from "../app/catalogue.ts";
 import type { ConfigService } from "../app/config.ts";
@@ -209,6 +210,93 @@ export class WebhooksController {
     const raw = typeof req.rawBody === "string" ? req.rawBody : (req.rawBody?.toString("utf8") ?? "");
     const headers = Object.fromEntries(Object.entries(req.headers).filter(([, v]) => typeof v === "string")) as Record<string, string>;
     return this.payments.webhook(connector, headers, raw);
+  }
+}
+
+/** The signed-in person: roles and the console sections they can use in the active market (X-Country optional). */
+@Controller("v1/me")
+export class MeController {
+  constructor(
+    @Inject(TOKENS.db) private readonly db: Db,
+    @Inject(TOKENS.tokens) private readonly tokens: TokenService,
+    @Inject(TOKENS.admin) private readonly admin: AdminService,
+  ) {}
+
+  @Get()
+  async me(@Req() req: FastifyRequest) {
+    const principal = await this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+    const c = req.headers["x-country"];
+    return this.admin.me(principal, typeof c === "string" && /^[A-Z]{2}$/.test(c) ? c : undefined);
+  }
+}
+
+/** Admin console: analytics, orders, branches, team and roles, payments, ledger, audit. All scoped by X-Country. */
+@Controller("v1/admin")
+export class AdminController {
+  constructor(
+    @Inject(TOKENS.db) private readonly db: Db,
+    @Inject(TOKENS.tokens) private readonly tokens: TokenService,
+    @Inject(TOKENS.admin) private readonly admin: AdminService,
+  ) {}
+
+  #principal(req: FastifyRequest) {
+    return this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+  }
+
+  @Get("analytics")
+  async analytics(@Req() req: FastifyRequest, @Query("days") days?: string) {
+    return this.admin.analytics(await this.#principal(req), country(req), Number(days ?? 30));
+  }
+
+  @Get("orders")
+  async orders(@Req() req: FastifyRequest, @Query("group") group?: string, @Query("limit") limit?: string, @Query("before") before?: string) {
+    return this.admin.orders(await this.#principal(req), country(req), {
+      ...(group ? { group } : {}),
+      ...(limit ? { limit: Number(limit) } : {}),
+      ...(before ? { before } : {}),
+    });
+  }
+
+  @Get("branches")
+  async branches(@Req() req: FastifyRequest) {
+    return this.admin.branches(await this.#principal(req), country(req));
+  }
+
+  @Get("payments")
+  async payments(@Req() req: FastifyRequest, @Query("status") status?: string) {
+    return this.admin.payments(await this.#principal(req), country(req), status);
+  }
+
+  @Get("ledger")
+  async ledger(@Req() req: FastifyRequest) {
+    return this.admin.ledger(await this.#principal(req), country(req));
+  }
+
+  @Get("audit")
+  async audit(@Req() req: FastifyRequest, @Query("limit") limit?: string) {
+    return this.admin.audit(await this.#principal(req), country(req), Number(limit ?? 100));
+  }
+
+  @Get("team")
+  async team(@Req() req: FastifyRequest) {
+    return this.admin.team(await this.#principal(req), country(req));
+  }
+
+  @Get("users")
+  async user(@Req() req: FastifyRequest, @Query("phone") phone?: string) {
+    if (!phone) throw badRequest("PHONE_REQUIRED", "Search by phone number, e.g. +243810000000");
+    return this.admin.findUser(await this.#principal(req), country(req), phone);
+  }
+
+  @Post("role-bindings")
+  async grant(@Req() req: FastifyRequest, @Body() body: Parameters<AdminService["grant"]>[2]) {
+    return this.admin.grant(await this.#principal(req), country(req), body);
+  }
+
+  @Delete("role-bindings/:id")
+  @HttpCode(200)
+  async revoke(@Req() req: FastifyRequest, @Param("id") id: string) {
+    return this.admin.revoke(await this.#principal(req), country(req), id);
   }
 }
 

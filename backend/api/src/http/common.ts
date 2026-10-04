@@ -16,6 +16,7 @@ export const TOKENS = {
   registry: "REGISTRY",
   catalogue: "CATALOGUE_SERVICE",
   config: "CONFIG_SERVICE",
+  admin: "ADMIN_SERVICE",
   logger: "LOGGER",
 } as const;
 

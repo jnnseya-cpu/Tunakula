@@ -78,7 +78,7 @@ export async function audit(sql: Sql, entry: { actor: string; action: string; ta
 /** Recomputes the chain; any edited, inserted or removed record breaks it. */
 export async function verifyAuditChain(sql: Sql): Promise<{ ok: boolean; brokenAt?: number }> {
   const rows = await sql.query<{ id: string; at: Date; actor: string; action: string; target: string; country_iso2: string | null; detail: unknown; prev_hash: string; hash: string }>(
-    "SELECT id::text, at, actor, action, target, country_iso2, detail, prev_hash, hash FROM identity.audit_log ORDER BY id",
+    "SELECT id::text, at, actor, action, target, country_iso2, detail, prev_hash, hash FROM identity.audit_log ORDER BY audit_log.id",
   );
   let prev = "genesis";
   for (const r of rows) {

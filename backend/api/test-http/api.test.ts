@@ -119,7 +119,7 @@ before(async () => {
     apiHosts: { "europe-west2": "https://eu.api.tunakula.com", "africa-south1": "https://af.api.tunakula.com" },
   });
   restored.restore(await db.tx({}, loadVersions));
-  api = await createApi({ db, registry: restored, connectors: [primary, fallback], tokenSecret: "test-secret-test-secret-test-secret!!", otp, onError: (e) => console.error(e) });
+  api = await createApi({ db, registry: restored, connectors: [primary, fallback], tokenSecret: "test-secret-test-secret-test-secret!!", otp, onError: (e) => console.error(e), corsOrigins: ["https://console.tunakula.com"] });
 
   customer = await signIn("+243810000001");
   admin = await signIn("+243810000002");
@@ -541,6 +541,132 @@ describe("§17 Country Profile administration (CFG-001/002, dual control)", () =
     const rows = await db.tx({}, (sql) => sql.query<{ version: number; status: string }>("SELECT version, status FROM config.country_profile WHERE iso2 = 'SN' ORDER BY version"));
     assert.deepEqual(rows.map((x) => `${x.version}:${x.status}`), statuses);
     assert.equal((await call("GET", "/v1/admin/countries/SN/versions", { token: customer.token })).status, 403);
+  });
+});
+
+describe("admin console API", () => {
+  let sa: { token: string; userId: string };
+  let financeUser: { token: string; userId: string };
+  const get = (who: { token: string }, url: string, c = "CD") => call("GET", url, { token: who.token, country: c });
+  const grantVia = (who: { token: string }, body: unknown) => call("POST", "/v1/admin/role-bindings", { token: who.token, country: "CD", body });
+
+  before(async () => {
+    sa = await signIn("+243810000020");
+    await grant({ userId: sa.userId, role: "SUPER_ADMIN", scope: { type: "GROUP" } });
+  });
+
+  test("/v1/me shows each person only the sections their roles allow", async () => {
+    const a = await get(admin, "/v1/me");
+    assert.equal(a.status, 200, JSON.stringify(a.body));
+    assert.equal(a.body.capabilities.markets, true);
+    assert.equal(a.body.capabilities.orders, true);
+    assert.equal(a.body.capabilities.finance, false);
+    assert.ok(a.body.bindings.some((b: { role: string }) => b.role === "COUNTRY_ADMIN"));
+    const owner = await get(restaurantOwner, "/v1/me");
+    assert.equal(owner.body.capabilities.orders, true);
+    assert.equal(owner.body.capabilities.markets, false);
+    assert.equal(owner.body.capabilities.payments, false);
+    const c = await get(customer, "/v1/me");
+    assert.ok(Object.values(c.body.capabilities).every((v) => v === false));
+  });
+
+  test("analytics: the whole market for a country admin, with every chart's data", async () => {
+    const r = await get(admin, "/v1/admin/analytics?days=30");
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.equal(r.body.scope.kind, "market");
+    assert.equal(r.body.period.currency, "USD");
+    assert.equal(r.body.daily.length, 31);
+    assert.ok(r.body.kpis.current.orders >= 4);
+    assert.ok(r.body.kpis.current.delivered >= 1);
+    assert.ok(BigInt(r.body.kpis.current.gmv_minor) > 0n);
+    const stage = (s: string) => r.body.funnel.find((f: { stage: string }) => f.stage === s).orders;
+    assert.ok(stage("PLACED") >= stage("DELIVERED") && stage("DELIVERED") >= 1);
+    assert.ok(r.body.heatmap.length >= 1);
+    assert.ok(r.body.top_dishes.some((d: { name: string }) => d.name === "Chicken moambe"));
+    assert.ok(r.body.riders.some((x: { rider_id: string }) => x.rider_id === rider.userId));
+    assert.equal(r.body.delivery_minutes.buckets.length, 6);
+    assert.equal(r.body.finance, null, "a country admin does not hold ledger:read");
+    assert.equal(r.body.daily.reduce((s: number, d: { orders: number }) => s + d.orders, 0), r.body.kpis.current.orders);
+  });
+
+  test("analytics and orders: a restaurant owner sees only their own branches; a customer sees nothing", async () => {
+    const r = await get(restaurantOwner, "/v1/admin/analytics?days=7");
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.equal(r.body.scope.kind, "branches");
+    assert.deepEqual(r.body.scope.branches.map((b: { id: string }) => b.id), [branchId]);
+    const orders = await get(restaurantOwner, "/v1/admin/orders?group=delivered");
+    assert.ok(orders.body.data.length >= 1);
+    assert.ok(orders.body.data.every((o: { branch_id: string; state: string }) => o.branch_id === branchId && ["DELIVERED", "REFUND_REQUESTED"].includes(o.state)));
+    assert.equal((await get(customer, "/v1/admin/analytics")).status, 403);
+    assert.equal((await get(customer, "/v1/admin/orders")).status, 403);
+    assert.equal((await get(restaurantOwner, "/v1/admin/payments")).status, 403);
+    assert.equal((await get(admin, "/v1/admin/analytics", "GB")).status, 403, "no roles in GB");
+  });
+
+  test("role grants: nobody can give out more than they hold", async () => {
+    // A country admin manages riders, but cannot create finance or super admins.
+    const riderGrant = await grantVia(admin, { phone: "+243810000031", display_name: "Patrick M.", role: "RIDER", scope: { type: "ZONE", id: "gombe" } });
+    assert.equal(riderGrant.status, 201, JSON.stringify(riderGrant.body));
+    assert.equal((await grantVia(admin, { phone: "+243810000032", role: "COUNTRY_FINANCE", scope: { type: "COUNTRY", id: "CD" } })).status, 403);
+    assert.equal((await grantVia(admin, { user_id: admin.userId, role: "SUPER_ADMIN", scope: { type: "GROUP" } })).status, 403);
+    assert.equal((await grantVia(admin, { phone: "+243810000033", role: "COUNTRY_ADMIN", scope: { type: "COUNTRY", id: "GB" } })).body.code, "SCOPE_OTHER_MARKET");
+    // A restaurant owner hires kitchen staff for their own branch only.
+    const k = await grantVia(restaurantOwner, { phone: "+243810000034", role: "KITCHEN_STAFF", scope: { type: "BRANCH", id: branchId } });
+    assert.equal(k.status, 201, JSON.stringify(k.body));
+    assert.equal((await grantVia(restaurantOwner, { phone: "+243810000035", role: "RIDER", scope: { type: "ZONE", id: "gombe" } })).status, 403);
+    assert.equal((await grantVia(restaurantOwner, { phone: "+243810000034", role: "KITCHEN_STAFF", scope: { type: "BRANCH", id: branchId } })).body.code, "ALREADY_GRANTED");
+    assert.equal((await grantVia(admin, { phone: "+243810000036", role: "KITCHEN_STAFF", scope: { type: "COUNTRY", id: "CD" } })).body.code, "BINDING_INVALID");
+    // Their team view lists what they manage, not the people above them.
+    const team = await get(restaurantOwner, "/v1/admin/team");
+    // Owners manage branch staff and may add co-owners (they hold every right a co-owner gets); nobody above them is listed.
+    assert.ok(team.body.data.every((b: { role: string }) => ["KITCHEN_STAFF", "BRANCH_MANAGER", "RESTAURANT_OWNER"].includes(b.role)));
+    assert.ok(!team.body.data.some((b: { role: string }) => ["COUNTRY_ADMIN", "CITY_OPS", "SUPER_ADMIN", "RIDER"].includes(b.role)));
+    assert.ok(team.body.data.some((b: { id: string }) => b.id === k.body.id));
+    // The super admin creates a finance person, who then sees money.
+    const f = await grantVia(sa, { phone: "+243810000037", display_name: "Grace (finance)", role: "COUNTRY_FINANCE", scope: { type: "COUNTRY", id: "CD" } });
+    assert.equal(f.status, 201, JSON.stringify(f.body));
+    financeUser = await signIn("+243810000037");
+    assert.equal(financeUser.userId, f.body.user_id, "the invited phone signs into the account created for it");
+  });
+
+  test("finance sees balanced ledgers and money charts", async () => {
+    const me = await get(financeUser, "/v1/me");
+    assert.equal(me.body.capabilities.finance, true);
+    const l = await get(financeUser, "/v1/admin/ledger");
+    assert.equal(l.status, 200, JSON.stringify(l.body));
+    const usd = l.body.balances.filter((b: { currency: string }) => b.currency === "USD").reduce((s: bigint, b: { balance_minor: string }) => s + BigInt(b.balance_minor), 0n);
+    assert.equal(usd, 0n, "the market's books balance");
+    assert.ok(l.body.journals.length >= 1);
+    const a = await get(financeUser, "/v1/admin/analytics?days=7");
+    assert.ok(a.body.finance.balances.some((b: { account: string }) => b.account === "service_charge_revenue"));
+    assert.ok(a.body.finance.daily_credits.some((d: { account: string; amount_minor: string }) => d.account === "service_charge_revenue" && BigInt(d.amount_minor) > 0n));
+    assert.equal((await get(admin, "/v1/admin/ledger")).status, 403);
+  });
+
+  test("revoking: only what you could grant, and never the last Super Admin; all audited", async () => {
+    const team = await get(sa, "/v1/admin/team");
+    const supers = team.body.data.filter((b: { role: string }) => b.role === "SUPER_ADMIN");
+    assert.ok(supers.length >= 2);
+    const mine = supers.find((b: { user: { id: string } }) => b.user.id === sa.userId);
+    const others = supers.filter((b: { id: string }) => b.id !== mine.id);
+    assert.equal((await call("DELETE", `/v1/admin/role-bindings/${mine.id}`, { token: admin.token, country: "CD" })).status, 403);
+    for (const o of others) assert.equal((await call("DELETE", `/v1/admin/role-bindings/${o.id}`, { token: sa.token, country: "CD" })).status, 200);
+    const last = await call("DELETE", `/v1/admin/role-bindings/${mine.id}`, { token: sa.token, country: "CD" });
+    assert.equal(last.body.code, "LAST_SUPER_ADMIN");
+    const log = await get(sa, "/v1/admin/audit?limit=50");
+    assert.equal(log.status, 200);
+    assert.deepEqual(log.body.chain, { ok: true });
+    assert.ok(log.body.data.some((e: { action: string }) => e.action === "role.granted"));
+    assert.ok(log.body.data.some((e: { action: string }) => e.action === "role.revoked"));
+    assert.equal((await get(admin, "/v1/admin/audit")).status, 403);
+  });
+
+  test("CORS: only the configured console origin may call the API from a browser", async () => {
+    const pre = (origin: string) => api.inject({ method: "OPTIONS", url: "/v1/me", headers: { origin, "access-control-request-method": "GET", "access-control-request-headers": "authorization,x-country" } });
+    const ok = await pre("https://console.tunakula.com");
+    assert.equal(ok.headers["access-control-allow-origin"], "https://console.tunakula.com");
+    const evil = await pre("https://evil.example");
+    assert.equal(evil.headers["access-control-allow-origin"], undefined);
   });
 });
 
