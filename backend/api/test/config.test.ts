@@ -1,6 +1,6 @@
+import { syntheticProfileDocument } from "@tunakula/ts-contracts/testing";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import {
   AccountDirectory,
   ConfigPublishError,
@@ -18,7 +18,7 @@ import {
 } from "../src/index.ts";
 
 const raw = (iso: "cd" | "gb" | "sn") =>
-  JSON.parse(readFileSync(new URL(`../../../packages/ts-contracts/fixtures/country-profiles/${iso}.synthetic.json`, import.meta.url), "utf8"));
+  syntheticProfileDocument(iso);
 /** A production-ready profile: the synthetic flag removed and residency decided. */
 const realProfile = (iso: "cd" | "gb" | "sn", status = "DRAFT") => {
   const p = raw(iso);

@@ -4,8 +4,8 @@ coverage/
 *.log
 .env
 .env.*
-web/*/screenshots/
-web/*/.next/
-web/*/out/
+frontend/*/screenshots/
+frontend/*/.next/
+frontend/*/out/
 *.tsbuildinfo
 next-env.d.ts

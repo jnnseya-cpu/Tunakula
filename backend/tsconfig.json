@@ -1,0 +1,12 @@
+{
+  "extends": "../tsconfig.base.json",
+  "include": [
+    "api/src/**/*.ts",
+    "api/test/**/*.ts",
+    "adapters/*/*/src/**/*.ts",
+    "adapters/*/*/test/**/*.ts"
+  ],
+  "exclude": [
+    "api/src/http/**"
+  ]
+}

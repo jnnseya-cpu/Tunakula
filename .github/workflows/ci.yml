@@ -1,4 +1,5 @@
-# PRD §28.1 "Test (per PR)" and §28.7: every change is typechecked, guarded and tested.
+# PRD §28.1 "Test (per PR)" and §28.7: every change is guarded, typechecked, tested and built.
+# One job per area (ADR 0011): shared, backend, frontend.
 name: CI
 
 on:
@@ -14,7 +15,38 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  check:
+  guards:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Boundaries (frontend and backend depend only on shared) and core rules
+        run: npm run guard
+      - name: Tooling typecheck
+        run: npx tsc --noEmit -p tsconfig.json
+      - name: Dependency audit (high and critical)
+        run: npm audit --audit-level=high
+
+  shared:
+    needs: guards
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run check:shared
+
+  backend:
+    needs: guards
     runs-on: ubuntu-latest
     timeout-minutes: 15
     services:
@@ -38,19 +70,25 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: Typecheck
-        run: npm run typecheck
-      - name: Core guard (no market branches in core, no floats in money paths)
-        run: npm run guard
-      - name: Tests
-        run: npm test
       - name: Database roles
         env:
           PGPASSWORD: postgres
         run: |
           psql -h localhost -U postgres -v ON_ERROR_STOP=1 -c "CREATE ROLE tunakula LOGIN PASSWORD 'tunakula' CREATEDB NOSUPERUSER NOBYPASSRLS"
           psql -h localhost -U postgres -v ON_ERROR_STOP=1 -c "CREATE ROLE tunakula_app LOGIN PASSWORD 'tunakula_app' NOSUPERUSER NOBYPASSRLS"
-      - name: API end-to-end (HTTP → PostgreSQL 16)
-        run: npm run test:api
-      - name: Dependency audit (high and critical)
-        run: npm audit --audit-level=high
+      - name: Typecheck, unit tests, API end-to-end (HTTP → PostgreSQL 16)
+        run: npm run check:backend
+
+  frontend:
+    needs: guards
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Typecheck and static build of www.tunakula.com
+        run: npm run check:frontend

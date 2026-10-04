@@ -1,6 +1,6 @@
 # ADR 0001 — TypeScript monorepo foundation with framework-free domain modules
 
-- Status: Accepted
+- Status: Accepted (layout superseded by ADR 0011: `packages/` → `shared/`, `services/` and `adapters/` → `backend/`, `web/` → `frontend/`)
 - Date: 2026-10-04
 
 ## Context

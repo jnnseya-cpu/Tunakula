@@ -9,8 +9,8 @@ import { join, relative } from "node:path";
 
 const root = new URL("..", import.meta.url).pathname;
 
-const CORE_DIRS = ["packages/ts-money/src", "packages/ts-contracts/src", "services/api/src"];
-const MONEY_DIRS = ["packages/ts-money/src", "services/api/src/modules/money", "services/api/src/modules/payments"];
+const CORE_DIRS = ["shared/ts-money/src", "shared/ts-contracts/src", "backend/api/src"];
+const MONEY_DIRS = ["shared/ts-money/src", "backend/api/src/modules/money", "backend/api/src/modules/payments"];
 
 // e.g. country === "CD", iso2 == 'GB', marketCountry !== "SN", case "CD":
 const MARKET_BRANCH = /\b(?:country|iso2|marketCountry|payerCountry|countryCode)\b[\w.?]*\s*[!=]==?\s*["'][A-Z]{2}["']|case\s+["'][A-Z]{2}["']\s*:/;

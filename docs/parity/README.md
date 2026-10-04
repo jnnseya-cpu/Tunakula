@@ -11,7 +11,7 @@ Generated from PRD Appendix B; statuses are maintained in `register.json` (CMP-0
 | B.1 | Firebase/mobile OTP and two-factor options | M | NOT_STARTED |  |
 | B.1 | Guest checkout | M | NOT_STARTED |  |
 | B.1 | Location setup and address management with labels | M | NOT_STARTED |  |
-| B.1 | Delivery instructions at checkout | M | PARTIAL | Structured allergen flags vs advisory notes in the order aggregate (services/api ordering) |
+| B.1 | Delivery instructions at checkout | M | PARTIAL | Structured allergen flags vs advisory notes in the order aggregate (backend/api ordering) |
 | B.1 | Home page with promotional banners | M | NOT_STARTED |  |
 | B.1 | Search bar, deep search, tags, voice search | M | NOT_STARTED |  |
 | B.1 | Favourites and wishlist | M | NOT_STARTED |  |
@@ -39,7 +39,7 @@ Generated from PRD Appendix B; statuses are maintained in `register.json` (CMP-0
 | B.1 | Order cancellation | M | NOT_STARTED |  |
 | B.1 | WhatsApp ordering | NEW | NOT_STARTED |  |
 | B.1 | Cross-border "send a meal home" | NEW | NOT_STARTED |  |
-| B.1 | Multi-currency display and payment | NEW | DOMAIN | Currency Registry, Money, FX quotes, flags (packages/ts-money) |
+| B.1 | Multi-currency display and payment | NEW | DOMAIN | Currency Registry, Money, FX quotes, flags (shared/ts-money) |
 | B.1 | Group ordering and gifting | NEW | NOT_STARTED |  |
 | B.1 | Table booking and scheduled collection | NEW | NOT_STARTED |  |
 | B.2 | Company and business rules setup | M | DOMAIN | Country Profile schema, validation, versioned publish (ts-contracts, config) |

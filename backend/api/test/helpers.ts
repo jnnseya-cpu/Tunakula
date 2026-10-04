@@ -1,10 +1,9 @@
-import { readFileSync } from "node:fs";
+import { syntheticProfileDocument } from "@tunakula/ts-contracts/testing";
 import { randomUUID } from "node:crypto";
 import { validateCountryProfile, type ConnectorCapability, type CountryProfile, type PaymentIntent } from "@tunakula/ts-contracts";
 
 export function syntheticProfile(iso2: "cd" | "gb" | "sn"): CountryProfile {
-  const url = new URL(`../../../packages/ts-contracts/fixtures/country-profiles/${iso2}.synthetic.json`, import.meta.url);
-  const result = validateCountryProfile(JSON.parse(readFileSync(url, "utf8")));
+  const result = validateCountryProfile(syntheticProfileDocument(iso2));
   if (!result.ok) throw new Error(JSON.stringify(result.issues));
   return result.profile;
 }

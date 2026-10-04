@@ -14,7 +14,7 @@ idempotent mutations and money as exact minor units, and §20 provider webhooks 
   decorator code: thin NestJS 12 controllers on Fastify. The domain runs under Node type stripping; the
   HTTP layer runs under `tsx` with `experimentalDecorators` and explicit `@Inject` tokens (no
   `emitDecoratorMetadata`), so the root `tsconfig` keeps `erasableSyntaxOnly` for everything else.
-- **Migrations** are plain, ordered SQL files (`services/api/migrations`), applied under an advisory lock
+- **Migrations** are plain, ordered SQL files (`backend/api/migrations`), applied under an advisory lock
   by `npm run migrate -w @tunakula/api` or at boot when `DATABASE_OWNER_URL` is set. The migrator grants the
   application role only what it needs.
 - **Two roles.** The owner migrates; the API connects as `tunakula_app` (no superuser, no BYPASSRLS).

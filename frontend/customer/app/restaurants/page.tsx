@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Phone, SiteFooter, SiteNav } from "../../components/site";
 import { PosScreen, Receipt } from "../../components/screens";
+import fees from "@tunakula/ts-contracts/published/fee-comparison.json";
 
 export const metadata: Metadata = { title: "For restaurants and shops" };
 
@@ -45,19 +46,20 @@ export default function Restaurants() {
               <div className="kicker"><span className="n">01</span><span className="eyebrow">The arithmetic</span></div>
               <h2 className="display">Same dish. More of it is yours.</h2>
             </div>
-            <p className="lede">On a 20.00 order, a 25–30% commission takes 3.00 to 6.00 from you — or from your customer through a higher menu. On Tunakula you keep the full 20.00, and your customer still pays less.</p>
+            <p className="lede">On a 20.00 order, a 25–30% commission takes 5.00 to 6.00 from you, so menus go up to win some of it back — and your customer pays for that. On Tunakula you keep the full 20.00, and your customer still pays less.</p>
           </div>
           <div className="table-scroll">
             <table className="ledger">
-              <thead><tr><th>Per 20.00 order</th><th>Your menu price</th><th>Commission</th><th>You receive</th><th>Customer pays</th></tr></thead>
+              <thead><tr><th>Per {fees.goods} order</th><th>Your menu price</th><th>Commission</th><th>You receive</th><th>Customer pays</th></tr></thead>
               <tbody>
-                <tr className="us total"><td>Tunakula</td><td>20.00</td><td>0.00</td><td>20.00</td><td>25.00</td></tr>
-                <tr className="them"><td>Typical app, 25%, menu raised 15%</td><td>23.00</td><td>5.75</td><td>17.25</td><td>28.29</td></tr>
-                <tr className="them"><td>Typical app, 30%, menu raised 20%</td><td>24.00</td><td>7.20</td><td>16.80</td><td>29.39</td></tr>
+                <tr className="us total"><td>Tunakula</td><td>{fees.tunakula.menu}</td><td>{fees.tunakula.commission}</td><td>{fees.tunakula.restaurant_keeps}</td><td>{fees.tunakula.customer_pays}</td></tr>
+                {fees.competitors.map((c) => (
+                  <tr className="them" key={c.label}><td>{c.short_label}</td><td>{c.menu}</td><td>{c.commission}</td><td>{c.restaurant_keeps}</td><td>{c.customer_pays}</td></tr>
+                ))}
               </tbody>
             </table>
           </div>
-          <p className="footnote">Competitor rows illustrate common market practice, not any company&rsquo;s quoted terms. In return, we ask that your Tunakula prices match your counter prices.</p>
+          <p className="footnote">Competitor rows illustrate common market practice, not any company&rsquo;s quoted terms, and assume the same delivery fee and service charge on the raised menu. In return, we ask that your Tunakula prices match your counter prices.</p>
         </div>
       </section>
 

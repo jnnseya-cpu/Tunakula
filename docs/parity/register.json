@@ -51,7 +51,7 @@
       "parity": "M",
       "approach": "Structured fields plus free text; safety-critical requirements are structured, never notes (§11.2)",
       "status": "PARTIAL",
-      "evidence": "Structured allergen flags vs advisory notes in the order aggregate (services/api ordering)"
+      "evidence": "Structured allergen flags vs advisory notes in the order aggregate (backend/api ordering)"
     },
     {
       "section": "B.1 Customer app and website",
@@ -253,7 +253,7 @@
       "parity": "NEW",
       "approach": "Not in the benchmark. Native in Tunakula (§19)",
       "status": "DOMAIN",
-      "evidence": "Currency Registry, Money, FX quotes, flags (packages/ts-money)"
+      "evidence": "Currency Registry, Money, FX quotes, flags (shared/ts-money)"
     },
     {
       "section": "B.1 Customer app and website",

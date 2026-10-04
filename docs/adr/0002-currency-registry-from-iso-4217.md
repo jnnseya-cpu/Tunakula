@@ -9,7 +9,7 @@ every Appendix A currency from day one. It also needs fields ISO does not publis
 FX sources, controls and redenomination history.
 
 ## Decision
-- `packages/ts-money/data/iso4217.json` is **generated** by `scripts/generate-iso4217.ts` from SIX's
+- `shared/ts-money/data/iso4217.json` is **generated** by `scripts/generate-iso4217.ts` from SIX's
   `list_one.xml` (shipped verbatim in the `currency-codes` package; SIX's site is not reachable from the
   build environment). Fund codes and instruments without minor units are excluded.
 - `data/registry-policy.json` overlays platform policy. Unlisted currencies default to `VOLATILE`

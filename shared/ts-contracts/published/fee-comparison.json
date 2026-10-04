@@ -1,0 +1,36 @@
+{
+  "$comment": "The 'same meal' comparison on the website (home and restaurants pages). The Tunakula row is checked by the backend test published-figures.test.ts against the pricing engine at the group defaults (rider-ladder.json `pricing`). Competitor rows follow the stated rule: the menu is raised by markup_bps, the platform keeps commission_bps of it, and the customer pays the raised menu plus the same delivery fee and service charge. They illustrate common practice, not any company's terms.",
+  "currency": "USD",
+  "goods": "20.00",
+  "distance_km": 3,
+  "tunakula": {
+    "menu": "20.00",
+    "commission": "0.00",
+    "delivery": "3.00",
+    "service": "2.00",
+    "customer_pays": "25.00",
+    "restaurant_keeps": "20.00"
+  },
+  "competitors": [
+    {
+      "label": "Typical app at 25% commission, menu +15%",
+      "commission_bps": 2500,
+      "markup_bps": 1500,
+      "menu": "23.00",
+      "commission": "5.75",
+      "customer_pays": "28.30",
+      "restaurant_keeps": "17.25",
+      "short_label": "Typical app, 25%, menu raised 15%"
+    },
+    {
+      "label": "Typical app at 30% commission, menu +20%",
+      "commission_bps": 3000,
+      "markup_bps": 2000,
+      "menu": "24.00",
+      "commission": "7.20",
+      "customer_pays": "29.40",
+      "restaurant_keeps": "16.80",
+      "short_label": "Typical app, 30%, menu raised 20%"
+    }
+  ]
+}

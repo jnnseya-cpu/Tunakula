@@ -2,10 +2,10 @@
  * End-to-end: HTTP → NestJS → services → PostgreSQL (RLS, append-only, balanced journals).
  * Needs a PostgreSQL 16 server (TEST_DATABASE_ADMIN_URL); each run creates and drops its own database.
  */
+import { syntheticProfileDocument } from "@tunakula/ts-contracts/testing";
 import { after, before, describe, test } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
 import pg from "pg";
 import type { NestFastifyApplication } from "@nestjs/platform-fastify";
 import { SandboxConnector } from "@tunakula/payment-connector-sandbox";
@@ -19,7 +19,7 @@ import { loadVersions, saveVersions } from "../src/persistence/config.ts";
 import { CountryConfigRegistry, GROUP_INTERNAL_BRAND, READINESS_AREAS, TUNAKULA_BRAND } from "../src/index.ts";
 
 const profile = (iso: "cd" | "gb" | "sn") => {
-  const p = JSON.parse(readFileSync(new URL(`../../../packages/ts-contracts/fixtures/country-profiles/${iso}.synthetic.json`, import.meta.url), "utf8"));
+  const p = syntheticProfileDocument(iso);
   delete p.synthetic;
   p.country.status = "LIVE";
   if (iso !== "gb") p.compliance.data_residency = "africa-south1";

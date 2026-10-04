@@ -1,0 +1,71 @@
+{
+  "$comment": "Figures published on the website (frontend/customer, /riders). The backend test published-figures.test.ts recomputes every row with the pricing engine under `pricing`; if the engine or the policy changes, that test fails until this file is updated.",
+  "currency": "USD",
+  "pricing": {
+    "service_charge_bps": 1000,
+    "all_in_pricing": false,
+    "delivery_fee": {
+      "per_km": "1.00",
+      "cap": "5.00",
+      "cap_hold_km": 7,
+      "band_km": 8,
+      "band_step_bps": 3000,
+      "rural_bps": 7500
+    },
+    "rider_share_bps": 7000,
+    "rider_bonus_bps": 1000,
+    "surge_max_multiplier": "2.0",
+    "discovery_radius_km": 10,
+    "promise_minutes": 45
+  },
+  "rows": [
+    {
+      "label": "1 km",
+      "from_km": 1,
+      "to_km": 1,
+      "fee": "1.00",
+      "rider": "0.70",
+      "rider_rural": "0.52"
+    },
+    {
+      "label": "3 km",
+      "from_km": 3,
+      "to_km": 3,
+      "fee": "3.00",
+      "rider": "2.10",
+      "rider_rural": "1.58"
+    },
+    {
+      "label": "5 to 7 km",
+      "from_km": 5,
+      "to_km": 7,
+      "fee": "5.00",
+      "rider": "3.50",
+      "rider_rural": "2.62"
+    },
+    {
+      "label": "8 to 15 km",
+      "from_km": 8,
+      "to_km": 15,
+      "fee": "6.50",
+      "rider": "4.55",
+      "rider_rural": "3.42"
+    },
+    {
+      "label": "16 to 23 km",
+      "from_km": 16,
+      "to_km": 23,
+      "fee": "8.45",
+      "rider": "5.92",
+      "rider_rural": "4.44"
+    },
+    {
+      "label": "24 to 31 km",
+      "from_km": 24,
+      "to_km": 31,
+      "fee": "10.98",
+      "rider": "7.69",
+      "rider_rural": "5.77"
+    }
+  ]
+}

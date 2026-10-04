@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Phone, SiteFooter, SiteNav } from "../components/site";
 import { PayScreen, TrackingScreen } from "../components/screens";
 import { DISHES, DishCard } from "../components/dish";
+import fees from "@tunakula/ts-contracts/published/fee-comparison.json";
 
 
 export default function Home() {
@@ -104,16 +105,17 @@ export default function Home() {
           <div className="table-scroll">
           <table className="ledger">
             <thead>
-              <tr><th>The same 20.00 of food</th><th>Food</th><th>Delivery</th><th>Service</th><th>You pay</th><th>Restaurant keeps</th></tr>
+              <tr><th>The same {fees.goods} of food</th><th>Food</th><th>Delivery</th><th>Service</th><th>You pay</th><th>Restaurant keeps</th></tr>
             </thead>
             <tbody>
-              <tr className="us total"><td>Tunakula — 0% commission</td><td>20.00</td><td>3.00</td><td>2.00</td><td>25.00</td><td>20.00</td></tr>
-              <tr className="them"><td>Typical app at 25% commission, menu +15%</td><td>23.00</td><td>—</td><td>—</td><td>28.29</td><td>17.25</td></tr>
-              <tr className="them"><td>Typical app at 30% commission, menu +20%</td><td>24.00</td><td>—</td><td>—</td><td>29.39</td><td>16.80</td></tr>
+              <tr className="us total"><td>Tunakula — 0% commission</td><td>{fees.tunakula.menu}</td><td>{fees.tunakula.delivery}</td><td>{fees.tunakula.service}</td><td>{fees.tunakula.customer_pays}</td><td>{fees.tunakula.restaurant_keeps}</td></tr>
+              {fees.competitors.map((c) => (
+                <tr className="them" key={c.label}><td>{c.label}</td><td>{c.menu}</td><td>—</td><td>—</td><td>{c.customer_pays}</td><td>{c.restaurant_keeps}</td></tr>
+              ))}
             </tbody>
           </table>
           </div>
-          <p className="footnote">Amounts in US dollars for comparison. Competitor rows illustrate common market practice, not any company&rsquo;s quoted terms. Delivery is 1.00 per kilometre up to 5.00, and the fee never changes the price of the food.</p>
+          <p className="footnote">Amounts in US dollars for comparison. Competitor rows illustrate common market practice, not any company&rsquo;s quoted terms, and assume the same delivery fee and service charge on the raised menu. Delivery is 1.00 per kilometre up to 5.00, and the fee never changes the price of the food.</p>
         </div>
       </section>
 

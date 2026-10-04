@@ -4,20 +4,29 @@
   "description": "Tunakula \u2014 multi-country, multi-currency food ordering and delivery platform on NZELA-OS",
   "type": "module",
   "workspaces": [
-    "packages/*",
-    "services/*",
-    "adapters/*/*",
-    "web/*"
+    "shared/*",
+    "backend/api",
+    "backend/adapters/*/*",
+    "frontend/*"
   ],
   "engines": {
     "node": ">=22.18"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit && tsc --noEmit -p services/api/tsconfig.json",
-    "test": "node --test \"packages/*/test/**/*.test.ts\" \"services/*/test/**/*.test.ts\" \"adapters/*/*/test/**/*.test.ts\"",
-    "check": "npm run typecheck && npm run guard && npm test && npm run test:api",
-    "guard": "node tools/guard-core.ts",
-    "test:api": "tsx --tsconfig services/api/tsconfig.json --test \"services/api/test-http/**/*.test.ts\""
+    "typecheck": "npm run typecheck:shared && npm run typecheck:backend && npm run typecheck:frontend && tsc --noEmit -p tsconfig.json",
+    "typecheck:shared": "tsc --noEmit -p shared/tsconfig.json",
+    "typecheck:backend": "tsc --noEmit -p backend/tsconfig.json && tsc --noEmit -p backend/api/tsconfig.json",
+    "typecheck:frontend": "tsc --noEmit -p frontend/customer/tsconfig.json",
+    "guard": "node tools/guard-core.ts && node tools/guard-boundaries.ts",
+    "test": "npm run test:shared && npm run test:backend",
+    "test:shared": "node --test \"shared/*/test/**/*.test.ts\"",
+    "test:backend": "node --test \"backend/api/test/**/*.test.ts\" \"backend/adapters/*/*/test/**/*.test.ts\"",
+    "test:api": "tsx --tsconfig backend/api/tsconfig.json --test \"backend/api/test-http/**/*.test.ts\"",
+    "build:frontend": "npm run build -w @tunakula/web-customer",
+    "check:shared": "npm run typecheck:shared && npm run test:shared",
+    "check:backend": "npm run typecheck:backend && npm run test:backend && npm run test:api",
+    "check:frontend": "npm run typecheck:frontend && npm run build:frontend",
+    "check": "npm run guard && tsc --noEmit -p tsconfig.json && npm run check:shared && npm run check:backend && npm run check:frontend"
   },
   "devDependencies": {
     "@types/node": "^22.19.0",

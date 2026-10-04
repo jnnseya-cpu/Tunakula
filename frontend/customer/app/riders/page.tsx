@@ -2,18 +2,12 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Phone, SiteFooter, SiteNav } from "../../components/site";
 import { JobOfferScreen } from "../../components/screens";
+import ladder from "@tunakula/ts-contracts/published/rider-ladder.json";
 
 export const metadata: Metadata = { title: "Ride with Tunakula" };
 
-const LADDER: [string, string, string, string][] = [
-  // Computed by the pricing engine (services/api pricing) at group defaults.
-  ["1 km", "1.00", "0.70", "0.52"],
-  ["3 km", "3.00", "2.10", "1.58"],
-  ["5 to 7 km", "5.00", "3.50", "2.62"],
-  ["8 to 15 km", "6.50", "4.55", "3.42"],
-  ["16 to 23 km", "8.45", "5.92", "4.44"],
-  ["24 to 31 km", "10.98", "7.69", "5.77"],
-];
+// The same file the backend test checks against the pricing engine, so these figures cannot drift from what riders are paid.
+const LADDER: [string, string, string, string][] = ladder.rows.map((r) => [r.label, r.fee, r.rider, r.rider_rural]);
 
 export default function Riders() {
   return (
