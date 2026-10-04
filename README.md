@@ -18,7 +18,9 @@ This is the platform foundation: the parts every other context depends on, writt
 | `packages/ts-money` | `Money` (signed 64-bit integer minor units, no floats), exact rational rounding, Currency Registry seeded from official ISO 4217 data, FX quotes with volatility-class TTLs and spread, cash rounding | §19 |
 | `packages/ts-contracts` | Country Profile types, JSON Schema and validator; Payment Orchestration contracts (method taxonomy, normalised states, reason codes, `PaymentConnector` / `PayoutConnector` ports) | §7.2, §20 |
 | `packages/ts-contracts/fixtures` | Synthetic market profiles for the §33 test matrix: dual-currency landmark (CD), single-currency postcode (GB), zero-decimal mobile-money (SN) | §33 |
-| `services/api` | Framework-free domain modules for the NestJS modular monolith: payment routing with safe fallback and circuit breakers; double-entry append-only ledger journals | §9, §19.3, §20.4 |
+| `services/api` — payments, money | Payment routing with safe fallback and circuit breakers; double-entry append-only ledger journals | §19.3, §20.4 |
+| `services/api` — identity | Scoped RBAC policy layer: §8.2 role matrix, deny by default, never crosses the active country | §8.2, §9.5 |
+| `services/api` — ordering | Event-sourced order aggregate: §10.1 state machine with the §11 chain-of-custody gates, evidence bundle projection, idempotent store | §10, §11, §12.2 |
 | `adapters/payments/certification` | Connector certification contract suite every connector must pass | §20.7 |
 | `adapters/payments/sandbox` | Reference sandbox connector (passes certification) | §20.7 |
 | `tools/guard-core.ts` | Blocks market-specific branches in core code and floats in money paths | §7.3, §32.2 |
