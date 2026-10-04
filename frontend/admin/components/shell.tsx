@@ -31,6 +31,26 @@ const store = {
 };
 
 type NavItem = { href: string; key: Key; cap?: keyof Me["capabilities"]; soon?: boolean };
+/** 24×24 outline icons (single path each) for the side menu. */
+const ICON: Record<string, string> = {
+  overview: "M4 13h6V4H4v9Zm0 7h6v-5H4v5Zm10 0h6v-9h-6v9Zm0-16v5h6V4h-6Z",
+  orders: "M7 4h10l1 3h3v2h-1l-1.5 10h-13L4 9H3V7h3l1-3Zm1.4 3h7.2l-.3-1H8.7l-.3 1ZM6 9l1.3 8h9.4L18 9H6Z",
+  pos: "M4 4h16v10H4V4Zm2 2v6h12V6H6Zm-1 10h14v4H5v-4Zm3 1v2h2v-2H8Zm4 0v2h2v-2h-2Z",
+  support: "M12 3a8 8 0 0 0-8 8v5a3 3 0 0 0 3 3h2v-7H6v-1a6 6 0 1 1 12 0v1h-3v7h2.2a2 2 0 0 1-2 1H13v2h2.2a4 4 0 0 0 3.9-3.2A3 3 0 0 0 20 16v-5a8 8 0 0 0-8-8Z",
+  merchants: "M4 4h16l1 5a3 3 0 0 1-2 2.8V20H5v-8.2A3 3 0 0 1 3 9l1-5Zm3 9v5h4v-5H7Zm6 0v5h4v-5h-4Z",
+  zones: "M12 2a7 7 0 0 0-7 7c0 5.2 7 13 7 13s7-7.8 7-13a7 7 0 0 0-7-7Zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5Z",
+  promotions: "M3 11v2l2 .5V18h2v-4l9 3V7L5 10.5 3 11Zm15-4h2v10h-2V7Z",
+  customers: "M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm0 2c-3.3 0-7 1.7-7 4v3h14v-3c0-2.3-3.7-4-7-4Zm8-2a3 3 0 1 0 0-6v6Zm1 2.2c1.8.6 4 1.7 4 3.8v3h-4v-3c0-1.4-.5-2.7-1.3-3.6l1.3-.2Z",
+  riders: "M5 11a4 4 0 1 0 0 8 4 4 0 0 0 0-8Zm0 6a2 2 0 1 1 0-4 2 2 0 0 1 0 4Zm14-6a4 4 0 1 0 0 8 4 4 0 0 0 0-8Zm0 6a2 2 0 1 1 0-4 2 2 0 0 1 0 4ZM15 5h-3v2h2.3l1.6 3H10l-2-3H5v2h2l1.7 2.6L7.3 12h2.3l1-1.5h5.9l.7 1.4 1.8-.9L15 5Z",
+  finance: "M4 20V10h3v10H4Zm6 0V4h3v16h-3Zm6 0v-7h3v7h-3Z",
+  payments: "M3 6h18v12H3V6Zm2 2v2h14V8H5Zm0 5v3h14v-3H5Zm2 1h4v1H7v-1Z",
+  payouts: "M12 2 3 7v2h18V7l-9-5ZM5 11v6h2v-6H5Zm4 0v6h2v-6H9Zm4 0v6h2v-6h-2Zm4 0v6h2v-6h-2ZM3 19v2h18v-2H3Z",
+  team: "M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-7 8v-1c0-2.8 3.1-5 7-5s7 2.2 7 5v1H5Z",
+  markets: "M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm6.9 9h-3a15 15 0 0 0-1.3-6 8 8 0 0 1 4.3 6ZM12 4c.9 1.2 1.8 3.7 1.9 7h-3.8c.1-3.3 1-5.8 1.9-7ZM9.4 5a15 15 0 0 0-1.3 6h-3a8 8 0 0 1 4.3-6Zm-4.3 8h3a15 15 0 0 0 1.3 6 8 8 0 0 1-4.3-6ZM12 20c-.9-1.2-1.8-3.7-1.9-7h3.8c-.1 3.3-1 5.8-1.9 7Zm2.6-1a15 15 0 0 0 1.3-6h3a8 8 0 0 1-4.3 6Z",
+  audit: "M12 2 4 5v6c0 5 3.4 9.7 8 11 4.6-1.3 8-6 8-11V5l-8-3Zm-1.2 14.2-3.5-3.5 1.4-1.4 2.1 2.1 4.6-4.6 1.4 1.4-6 6Z",
+};
+const Icon = ({ k }: { k: string }) => <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden className="nav-ico"><path fill="currentColor" d={ICON[k] ?? ""} /></svg>;
+
 const NAV: { group: Key; items: NavItem[] }[] = [
   { group: "g_operations", items: [
     { href: "/", key: "overview", cap: "overview" },
@@ -114,9 +134,9 @@ export function Shell({ title, children, actions }: { title: Key; children: Reac
               <div key={g.group} style={{ display: "contents" }}>
                 <div className="group">{t(g.group)}</div>
                 {items.map((i) => i.soon ? (
-                  <a key={i.href} aria-disabled="true" style={{ opacity: 0.55, cursor: "default" }}>{t(i.key)}<span className="soon">{t("soon")}</span></a>
+                  <a key={i.href} aria-disabled="true" style={{ opacity: 0.55, cursor: "default" }}><Icon k={i.key} />{t(i.key)}<span className="soon">{t("soon")}</span></a>
                 ) : (
-                  <Link key={i.href} href={i.href} aria-current={path === i.href || (i.href !== "/" && path.startsWith(i.href)) ? "page" : undefined}>{t(i.key)}</Link>
+                  <Link key={i.href} href={i.href} aria-current={path === i.href || (i.href !== "/" && path.startsWith(i.href)) ? "page" : undefined}><Icon k={i.key} />{t(i.key)}</Link>
                 ))}
               </div>
             );

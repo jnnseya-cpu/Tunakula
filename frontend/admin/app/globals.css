@@ -174,3 +174,8 @@ dl.kv dt { color: var(--muted); }
   .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   dl.kv { grid-template-columns: 1fr; }
 }
+.nav-ico { flex: none; opacity: 0.85; }
+.side a[aria-current="page"] .nav-ico { opacity: 1; }
+.side a .soon { margin-left: auto; }
+.tile { box-shadow: 0 1px 2px rgba(20, 27, 51, 0.05), 0 8px 20px -12px rgba(20, 27, 51, 0.18); }
+.card { box-shadow: 0 1px 2px rgba(20, 27, 51, 0.04), 0 10px 26px -16px rgba(20, 27, 51, 0.2); }
