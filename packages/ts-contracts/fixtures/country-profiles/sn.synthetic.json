@@ -9,36 +9,118 @@
     "status": "DRAFT",
     "market_role": "CHALLENGER",
     "default_locale": "fr-SN",
-    "timezones": ["Africa/Dakar"],
+    "timezones": [
+      "Africa/Dakar"
+    ],
     "phone_country_code": "+221"
   },
   "money": {
-    "currencies": ["XOF"],
+    "currencies": [
+      "XOF"
+    ],
     "settlement_currency": "XOF",
     "display_default": "XOF",
     "dual_currency": false,
-    "cash_rounding": [{ "currency": "XOF", "increment": "25", "mode": "half-up" }],
+    "cash_rounding": [
+      {
+        "currency": "XOF",
+        "increment": "25",
+        "mode": "half-up"
+      }
+    ],
     "price_refresh_policy": "STANDARD"
   },
   "payments": {
     "methods": [
-      { "type": "MOBILE_MONEY_PUSH", "rank": 1, "limits": [{ "currency": "XOF", "min": "100", "max": "1000000" }] },
-      { "type": "QR", "rank": 2 },
-      { "type": "CASH_ON_DELIVERY", "rank": 3 }
+      {
+        "type": "MOBILE_MONEY_PUSH",
+        "rank": 1,
+        "limits": [
+          {
+            "currency": "XOF",
+            "min": "100",
+            "max": "1000000"
+          }
+        ]
+      },
+      {
+        "type": "QR",
+        "rank": 2
+      },
+      {
+        "type": "CASH_ON_DELIVERY",
+        "rank": 3
+      }
     ],
-    "connectors": [{ "id": "bitripay", "priority": 0 }, { "id": "sandbox", "priority": 10 }],
-    "cod_policy": { "enabled": true, "cash_cap": [{ "currency": "XOF", "amount": "75000" }] },
-    "payout_rails": ["MOBILE_MONEY"]
+    "connectors": [
+      {
+        "id": "bitripay",
+        "priority": 0
+      },
+      {
+        "id": "sandbox",
+        "priority": 10
+      }
+    ],
+    "cod_policy": {
+      "enabled": true,
+      "cash_cap": [
+        {
+          "currency": "XOF",
+          "amount": "75000"
+        }
+      ]
+    },
+    "payout_rails": [
+      "MOBILE_MONEY"
+    ]
   },
   "trust": {
-    "otp_channels": ["SMS", "WHATSAPP"],
-    "id_document_types": ["NATIONAL_ID", "PASSPORT"],
-    "kyc_levels": { "rider": ["ID", "MOTO_LICENCE"], "restaurant": ["NINEA", "ID"] },
+    "otp_channels": [
+      "SMS",
+      "WHATSAPP"
+    ],
+    "id_document_types": [
+      "NATIONAL_ID",
+      "PASSPORT"
+    ],
+    "kyc_levels": {
+      "rider": [
+        "ID",
+        "MOTO_LICENCE"
+      ],
+      "restaurant": [
+        "NINEA",
+        "ID"
+      ]
+    },
     "fraud_profile_id": "fraud-default-v1"
   },
-  "addressing": { "model": "HYBRID", "fields": ["pin", "landmark", "quartier", "street"], "resolver_adapter": "landmark-resolver", "access_notes_enabled": true },
-  "mobility": { "vehicle_types": ["MOTO", "CAR"], "routing_adapter": "maps-with-learned-correction", "seasonal_factors": [] },
-  "labour": { "model": "FLEET", "adapter": "labour-fleet", "max_shift_hours": 10, "transparency_disclosures": true },
+  "addressing": {
+    "model": "HYBRID",
+    "fields": [
+      "pin",
+      "landmark",
+      "quartier",
+      "street"
+    ],
+    "resolver_adapter": "landmark-resolver",
+    "access_notes_enabled": true
+  },
+  "mobility": {
+    "vehicle_types": [
+      "MOTO",
+      "CAR"
+    ],
+    "routing_adapter": "maps-with-learned-correction",
+    "seasonal_factors": []
+  },
+  "labour": {
+    "model": "FLEET",
+    "adapter": "labour-fleet",
+    "max_shift_hours": 10,
+    "transparency_disclosures": true
+  },
   "compliance": {
     "pack_id": "compliance-sn-draft",
     "data_residency": "PENDING_LEGAL_OPINION",
@@ -46,25 +128,97 @@
     "tax_profile_id": "tax-sn-pending-adviser",
     "invoice_format": "invoice-sn-draft"
   },
-  "calendar": { "holidays": [{ "name": "Independence Day", "date": "04-04" }], "religious_periods": ["RAMADAN", "TABASKI", "MAGAL"], "paydays": ["END_OF_MONTH"], "seasonal_events": [] },
-  "food": { "tags": ["halal", "vegetarian", "spicy"], "allergen_rules": "allergens-declared-optional", "group_orders": true, "gifting": true },
-  "infrastructure": { "network_profile": "MIXED", "device_profile": "MIXED", "power_reliability": "MEDIUM", "low_bandwidth_default": true },
-  "channels": {
-    "app": { "enabled": true, "priority": 1 },
-    "web": { "enabled": true, "priority": 3 },
-    "whatsapp": { "enabled": true, "priority": 2 },
-    "sms": { "enabled": true, "priority": 4 },
-    "ussd": { "enabled": true, "priority": 5 },
-    "voice_support": { "enabled": false, "priority": 6 }
+  "calendar": {
+    "holidays": [
+      {
+        "name": "Independence Day",
+        "date": "04-04"
+      }
+    ],
+    "religious_periods": [
+      "RAMADAN",
+      "TABASKI",
+      "MAGAL"
+    ],
+    "paydays": [
+      "END_OF_MONTH"
+    ],
+    "seasonal_events": []
   },
-  "experience": { "brand_id": "tunakula", "theme_id": "tunakula-default", "locales": ["fr-SN", "wo", "en"], "checkout_layout_id": "mobile-money-first", "home_layout_id": "default" },
+  "food": {
+    "tags": [
+      "halal",
+      "vegetarian",
+      "spicy"
+    ],
+    "allergen_rules": "allergens-declared-optional",
+    "group_orders": true,
+    "gifting": true
+  },
+  "infrastructure": {
+    "network_profile": "MIXED",
+    "device_profile": "MIXED",
+    "power_reliability": "MEDIUM",
+    "low_bandwidth_default": true
+  },
+  "channels": {
+    "app": {
+      "enabled": true,
+      "priority": 1
+    },
+    "web": {
+      "enabled": true,
+      "priority": 3
+    },
+    "whatsapp": {
+      "enabled": true,
+      "priority": 2
+    },
+    "sms": {
+      "enabled": true,
+      "priority": 4
+    },
+    "ussd": {
+      "enabled": true,
+      "priority": 5
+    },
+    "voice_support": {
+      "enabled": false,
+      "priority": 6
+    }
+  },
+  "experience": {
+    "brand_id": "tunakula",
+    "theme_id": "tunakula-default",
+    "locales": [
+      "fr-SN",
+      "wo",
+      "en"
+    ],
+    "checkout_layout_id": "mobile-money-first",
+    "home_layout_id": "default"
+  },
   "operations": {
     "playbook_id": "playbook-challenger",
     "support_hours": "08:00-23:00",
-    "support_channels": ["WHATSAPP", "IN_APP_CHAT"],
-    "sla_promises": { "rider_assignment_seconds": 90 },
+    "support_channels": [
+      "WHATSAPP",
+      "IN_APP_CHAT"
+    ],
+    "sla_promises": {
+      "rider_assignment_seconds": 90
+    },
     "confirmation_model": "AGENT_OPTIMISED",
-    "business_models": ["COMMISSION", "HYBRID"]
+    "business_models": [
+      "COMMISSION",
+      "HYBRID"
+    ],
+    "support_refund_limit": [
+      {
+        "currency": "XOF",
+        "amount": "15000"
+      }
+    ]
   },
   "feature_flags": {}
 }

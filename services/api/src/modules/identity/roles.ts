@@ -1,0 +1,185 @@
+/**
+ * Role matrix (PRD §8.2). Every binding is scoped; a role may only be bound
+ * at the scope types listed for it. Permissions are coarse actions; the
+ * conditions on a grant are evaluated against the request in `policy.ts`.
+ */
+
+export const SCOPE_TYPES = ["GROUP", "COUNTRY", "CITY", "ZONE", "RESTAURANT_GROUP", "BRANCH", "GLOBAL_IDENTITY"] as const;
+export type ScopeType = (typeof SCOPE_TYPES)[number];
+
+export type Scope =
+  | { readonly type: "GROUP" }
+  | { readonly type: "GLOBAL_IDENTITY" }
+  | { readonly type: "COUNTRY"; readonly id: string }
+  | { readonly type: "CITY" | "ZONE" | "RESTAURANT_GROUP" | "BRANCH"; readonly id: string };
+
+export const ACTIONS = [
+  // Platform
+  "country:create",
+  "brand:create",
+  "agent_autonomy:set",
+  // Configuration and commercial
+  "country_config:write",
+  "zone:write",
+  "restaurant:manage",
+  "commission:write",
+  "campaign:write",
+  // Finance
+  "ledger:read",
+  "fx:manage",
+  "settlement:manage",
+  "payout:approve",
+  "cod_reconciliation:manage",
+  "refund:issue",
+  // Compliance
+  "audit:read",
+  "kyc:review",
+  "model_governance:manage",
+  // Operations and support
+  "dispatch:manage",
+  "rider:manage",
+  "exception:manage",
+  "order:read",
+  "order:manage",
+  "ai_chat:takeover",
+  // Restaurant
+  "menu:write",
+  "price:write",
+  "branch:manage",
+  "staff:manage",
+  "payout:read",
+  "analytics:read",
+  "ads:manage",
+  "availability:write",
+  "shift:manage",
+  "pos:operate",
+  "order:accept",
+  "order:prepare",
+  "order:handover",
+  // Fleet and rider
+  "fleet_rider:manage",
+  "earnings:read",
+  "job:accept",
+  "cash_in_hand:read",
+  "document:manage",
+  // Customer
+  "order:place",
+  "wallet:manage",
+  "xbo:send",
+] as const;
+export type Action = (typeof ACTIONS)[number];
+
+/**
+ * Extra checks on a grant:
+ * - OWN_RESOURCE: the resource belongs to the principal (customer orders, rider earnings…).
+ * - OWN_FLEET: the resource belongs to the fleet named on the binding.
+ * - WITHIN_SUPPORT_REFUND_LIMIT: amount ≤ the country's support refund limit (§8.2 "refunds ≤ threshold").
+ * - MARKET_OPEN: the market is LIVE, or PILOT and the principal is invited.
+ */
+export type Condition = "OWN_RESOURCE" | "OWN_FLEET" | "WITHIN_SUPPORT_REFUND_LIMIT" | "MARKET_OPEN";
+
+export interface Grant {
+  readonly action: Action | "*";
+  readonly conditions?: readonly Condition[];
+}
+
+export interface RoleDefinition {
+  readonly scopes: readonly ScopeType[];
+  readonly grants: readonly Grant[];
+}
+
+const all = (...actions: Action[]): Grant[] => actions.map((action) => ({ action }));
+const when = (conditions: Condition[], ...actions: Action[]): Grant[] => actions.map((action) => ({ action, conditions }));
+
+export const ROLES = {
+  SUPER_ADMIN: { scopes: ["GROUP"], grants: [{ action: "*" }] },
+  GROUP_FINANCE: {
+    scopes: ["GROUP"],
+    grants: all("ledger:read", "fx:manage", "settlement:manage", "payout:approve", "order:read"),
+  },
+  COMPLIANCE_OFFICER: {
+    scopes: ["GROUP"],
+    grants: all("audit:read", "kyc:review", "model_governance:manage", "ledger:read", "order:read"),
+  },
+  COUNTRY_ADMIN: {
+    scopes: ["COUNTRY"],
+    grants: all("country_config:write", "zone:write", "restaurant:manage", "commission:write", "campaign:write", "order:read", "rider:manage"),
+  },
+  CITY_OPS: {
+    scopes: ["CITY"],
+    grants: all("dispatch:manage", "rider:manage", "exception:manage", "order:read", "order:manage"),
+  },
+  COUNTRY_FINANCE: {
+    scopes: ["COUNTRY"],
+    grants: all("settlement:manage", "cod_reconciliation:manage", "refund:issue", "ledger:read", "order:read"),
+  },
+  SUPPORT_AGENT: {
+    scopes: ["COUNTRY"],
+    grants: [...all("order:read", "order:manage", "ai_chat:takeover"), ...when(["WITHIN_SUPPORT_REFUND_LIMIT"], "refund:issue")],
+  },
+  RESTAURANT_OWNER: {
+    scopes: ["RESTAURANT_GROUP"],
+    grants: all(
+      "menu:write",
+      "price:write",
+      "branch:manage",
+      "staff:manage",
+      "payout:read",
+      "analytics:read",
+      "ads:manage",
+      "availability:write",
+      "shift:manage",
+      "pos:operate",
+      "order:read",
+      "order:accept",
+      "order:prepare",
+      "order:handover",
+    ),
+  },
+  BRANCH_MANAGER: {
+    scopes: ["BRANCH"],
+    grants: all("availability:write", "shift:manage", "pos:operate", "order:read", "order:accept", "order:prepare", "order:handover"),
+  },
+  KITCHEN_STAFF: { scopes: ["BRANCH"], grants: all("order:accept", "order:prepare", "order:handover") },
+  FLEET_PARTNER: {
+    scopes: ["COUNTRY"],
+    grants: when(["OWN_FLEET"], "fleet_rider:manage", "shift:manage", "earnings:read", "payout:read"),
+  },
+  RIDER: {
+    scopes: ["ZONE"],
+    grants: [...all("job:accept"), ...when(["OWN_RESOURCE"], "earnings:read", "cash_in_hand:read", "document:manage")],
+  },
+  CUSTOMER: {
+    scopes: ["GLOBAL_IDENTITY"],
+    grants: [...when(["MARKET_OPEN"], "order:place", "xbo:send"), ...when(["OWN_RESOURCE"], "order:read", "wallet:manage")],
+  },
+} as const satisfies Record<string, RoleDefinition>;
+
+export type Role = keyof typeof ROLES;
+
+export interface RoleBinding {
+  readonly id: string;
+  readonly userId: string;
+  readonly role: Role;
+  readonly scope: Scope;
+  /** Required for FLEET_PARTNER: the fleet this binding manages. */
+  readonly fleetId?: string;
+}
+
+export function scopeKey(scope: Scope): string {
+  return "id" in scope ? `${scope.type}:${scope.id}` : scope.type;
+}
+
+/** Validates a binding before it is granted (`role.granted`). */
+export function assertValidBinding(binding: RoleBinding): void {
+  const definition: RoleDefinition = ROLES[binding.role];
+  if (!definition) throw new Error(`Unknown role ${String(binding.role)}`);
+  if (!definition.scopes.includes(binding.scope.type)) {
+    throw new Error(`${binding.role} cannot be bound at ${binding.scope.type} scope (allowed: ${definition.scopes.join(", ")})`);
+  }
+  if (binding.scope.type === "COUNTRY" && !/^[A-Z]{2}$/.test(binding.scope.id)) {
+    throw new Error(`Invalid country scope "${binding.scope.id}"`);
+  }
+  if ("id" in binding.scope && binding.scope.id.length === 0) throw new Error("Scope id is required");
+  if (binding.role === "FLEET_PARTNER" && !binding.fleetId) throw new Error("FLEET_PARTNER bindings must name a fleet");
+}

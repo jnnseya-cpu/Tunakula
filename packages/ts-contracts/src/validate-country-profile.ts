@@ -127,6 +127,17 @@ function semanticIssues(p: CountryProfile, options: ValidateOptions): ProfileIss
     });
   });
 
+  const limited = new Set<string>();
+  p.operations.support_refund_limit.forEach((limit, i) => {
+    const path = `/operations/support_refund_limit/${i}`;
+    if (limited.has(limit.currency)) issue(path, `duplicate support refund limit for ${limit.currency}`);
+    limited.add(limit.currency);
+    checkAmount(path, limit.currency, limit.amount);
+  });
+  for (const code of p.money.currencies) {
+    if (!limited.has(code)) issue("/operations/support_refund_limit", `no support refund limit for ${code}`);
+  }
+
   if (!p.experience.locales.includes(p.country.default_locale)) {
     issue("/country/default_locale", "default_locale must be one of experience.locales");
   }

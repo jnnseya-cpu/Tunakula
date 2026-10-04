@@ -9,36 +9,106 @@
     "status": "DRAFT",
     "market_role": "CORRIDOR_ORIGIN",
     "default_locale": "en-GB",
-    "timezones": ["Europe/London"],
+    "timezones": [
+      "Europe/London"
+    ],
     "phone_country_code": "+44"
   },
   "money": {
-    "currencies": ["GBP"],
+    "currencies": [
+      "GBP"
+    ],
     "settlement_currency": "GBP",
     "display_default": "GBP",
     "dual_currency": false,
-    "cash_rounding": [{ "currency": "GBP", "increment": "0.01", "mode": "half-up" }],
+    "cash_rounding": [
+      {
+        "currency": "GBP",
+        "increment": "0.01",
+        "mode": "half-up"
+      }
+    ],
     "price_refresh_policy": "STANDARD"
   },
   "payments": {
     "methods": [
-      { "type": "CARD", "rank": 1 },
-      { "type": "WALLET_TOKEN", "rank": 2 },
-      { "type": "TUNAKULA_WALLET", "rank": 3 }
+      {
+        "type": "CARD",
+        "rank": 1
+      },
+      {
+        "type": "WALLET_TOKEN",
+        "rank": 2
+      },
+      {
+        "type": "TUNAKULA_WALLET",
+        "rank": 3
+      }
     ],
-    "connectors": [{ "id": "bitripay", "priority": 0 }, { "id": "sandbox", "priority": 10 }],
-    "cod_policy": { "enabled": false },
-    "payout_rails": ["BANK"]
+    "connectors": [
+      {
+        "id": "bitripay",
+        "priority": 0
+      },
+      {
+        "id": "sandbox",
+        "priority": 10
+      }
+    ],
+    "cod_policy": {
+      "enabled": false
+    },
+    "payout_rails": [
+      "BANK"
+    ]
   },
   "trust": {
-    "otp_channels": ["SMS"],
-    "id_document_types": ["PASSPORT", "DRIVING_LICENCE", "BRP"],
-    "kyc_levels": { "rider": ["RIGHT_TO_WORK", "ID"], "restaurant": ["COMPANIES_HOUSE", "FOOD_HYGIENE_REGISTRATION"] },
+    "otp_channels": [
+      "SMS"
+    ],
+    "id_document_types": [
+      "PASSPORT",
+      "DRIVING_LICENCE",
+      "BRP"
+    ],
+    "kyc_levels": {
+      "rider": [
+        "RIGHT_TO_WORK",
+        "ID"
+      ],
+      "restaurant": [
+        "COMPANIES_HOUSE",
+        "FOOD_HYGIENE_REGISTRATION"
+      ]
+    },
     "fraud_profile_id": "fraud-default-v1"
   },
-  "addressing": { "model": "POSTCODE", "fields": ["postcode", "line1", "line2", "city"], "resolver_adapter": "postcode-lookup", "access_notes_enabled": true },
-  "mobility": { "vehicle_types": ["BICYCLE", "MOTO", "CAR"], "routing_adapter": "maps-with-learned-correction", "seasonal_factors": [] },
-  "labour": { "model": "SELF_EMPLOYED", "adapter": "labour-self-employed", "max_shift_hours": 12, "transparency_disclosures": true },
+  "addressing": {
+    "model": "POSTCODE",
+    "fields": [
+      "postcode",
+      "line1",
+      "line2",
+      "city"
+    ],
+    "resolver_adapter": "postcode-lookup",
+    "access_notes_enabled": true
+  },
+  "mobility": {
+    "vehicle_types": [
+      "BICYCLE",
+      "MOTO",
+      "CAR"
+    ],
+    "routing_adapter": "maps-with-learned-correction",
+    "seasonal_factors": []
+  },
+  "labour": {
+    "model": "SELF_EMPLOYED",
+    "adapter": "labour-self-employed",
+    "max_shift_hours": 12,
+    "transparency_disclosures": true
+  },
   "compliance": {
     "pack_id": "compliance-gb-draft",
     "data_residency": "europe-west2",
@@ -46,25 +116,96 @@
     "tax_profile_id": "tax-gb-vat",
     "invoice_format": "invoice-gb-vat"
   },
-  "calendar": { "holidays": [{ "name": "Christmas Day", "date": "12-25" }], "religious_periods": ["CHRISTMAS", "RAMADAN"], "paydays": ["END_OF_MONTH"], "seasonal_events": [] },
-  "food": { "tags": ["vegetarian", "vegan", "halal", "gluten_free"], "allergen_rules": "uk-14-allergens", "group_orders": true, "gifting": true },
-  "infrastructure": { "network_profile": "GOOD", "device_profile": "HIGH_END", "power_reliability": "HIGH", "low_bandwidth_default": false },
-  "channels": {
-    "app": { "enabled": true, "priority": 1 },
-    "web": { "enabled": true, "priority": 2 },
-    "whatsapp": { "enabled": true, "priority": 3 },
-    "sms": { "enabled": true, "priority": 4 },
-    "ussd": { "enabled": false, "priority": 5 },
-    "voice_support": { "enabled": false, "priority": 6 }
+  "calendar": {
+    "holidays": [
+      {
+        "name": "Christmas Day",
+        "date": "12-25"
+      }
+    ],
+    "religious_periods": [
+      "CHRISTMAS",
+      "RAMADAN"
+    ],
+    "paydays": [
+      "END_OF_MONTH"
+    ],
+    "seasonal_events": []
   },
-  "experience": { "brand_id": "tunakula", "theme_id": "tunakula-default", "locales": ["en-GB", "fr"], "checkout_layout_id": "card-first", "home_layout_id": "corridor-send-home" },
+  "food": {
+    "tags": [
+      "vegetarian",
+      "vegan",
+      "halal",
+      "gluten_free"
+    ],
+    "allergen_rules": "uk-14-allergens",
+    "group_orders": true,
+    "gifting": true
+  },
+  "infrastructure": {
+    "network_profile": "GOOD",
+    "device_profile": "HIGH_END",
+    "power_reliability": "HIGH",
+    "low_bandwidth_default": false
+  },
+  "channels": {
+    "app": {
+      "enabled": true,
+      "priority": 1
+    },
+    "web": {
+      "enabled": true,
+      "priority": 2
+    },
+    "whatsapp": {
+      "enabled": true,
+      "priority": 3
+    },
+    "sms": {
+      "enabled": true,
+      "priority": 4
+    },
+    "ussd": {
+      "enabled": false,
+      "priority": 5
+    },
+    "voice_support": {
+      "enabled": false,
+      "priority": 6
+    }
+  },
+  "experience": {
+    "brand_id": "tunakula",
+    "theme_id": "tunakula-default",
+    "locales": [
+      "en-GB",
+      "fr"
+    ],
+    "checkout_layout_id": "card-first",
+    "home_layout_id": "corridor-send-home"
+  },
   "operations": {
     "playbook_id": "playbook-corridor-origin",
     "support_hours": "08:00-22:00",
-    "support_channels": ["IN_APP_CHAT", "EMAIL", "WHATSAPP"],
+    "support_channels": [
+      "IN_APP_CHAT",
+      "EMAIL",
+      "WHATSAPP"
+    ],
     "sla_promises": {},
     "confirmation_model": "RESTAURANT_FIRST",
-    "business_models": ["COMMISSION"]
+    "business_models": [
+      "COMMISSION"
+    ],
+    "support_refund_limit": [
+      {
+        "currency": "GBP",
+        "amount": "20.00"
+      }
+    ]
   },
-  "feature_flags": { "xbo_send": true }
+  "feature_flags": {
+    "xbo_send": true
+  }
 }

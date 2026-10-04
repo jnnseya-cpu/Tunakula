@@ -129,6 +129,7 @@ export const countryProfileSchema = {
         sla_promises: { type: "object", additionalProperties: { type: "number" } },
         confirmation_model: enumOf(CONFIRMATION_MODELS),
         business_models: { type: "array", minItems: 1, items: enumOf(BUSINESS_MODELS) },
+        support_refund_limit: { type: "array", items: obj({ currency: ccy, amount: decimal }) },
       }),
       feature_flags: { type: "object", additionalProperties: bool },
       synthetic: bool,

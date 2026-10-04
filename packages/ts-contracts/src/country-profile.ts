@@ -148,6 +148,8 @@ export interface CountryProfile {
     readonly sla_promises: Readonly<Record<string, number>>;
     readonly confirmation_model: OneOf<typeof CONFIRMATION_MODELS>;
     readonly business_models: readonly OneOf<typeof BUSINESS_MODELS>[];
+    /** Largest refund a Support Agent may issue, per accepted currency (§8.2). Above it, Country Finance. */
+    readonly support_refund_limit: readonly { readonly currency: string; readonly amount: string }[];
   };
   readonly feature_flags: Readonly<Record<string, boolean>>;
 }

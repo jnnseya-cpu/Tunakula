@@ -72,3 +72,8 @@ test("locale and time zone checks", () => {
   hasIssue(mutate("gb.synthetic.json", (p) => (p.country.default_locale = "de-DE")), "/country/default_locale", /experience.locales/);
   hasIssue(mutate("gb.synthetic.json", (p) => (p.country.timezones = ["Mars/Olympus"])), "/country/timezones/0", /IANA/);
 });
+
+test("every accepted currency needs a support refund limit", () => {
+  hasIssue(mutate("cd.synthetic.json", (p) => p.operations.support_refund_limit.pop()), "/operations/support_refund_limit", /no support refund limit for CDF/);
+  hasIssue(mutate("sn.synthetic.json", (p) => (p.operations.support_refund_limit[0].amount = "1.5")), "/operations/support_refund_limit/0", /decimal places/);
+});
