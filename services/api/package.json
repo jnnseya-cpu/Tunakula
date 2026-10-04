@@ -2,16 +2,31 @@
   "name": "@tunakula/api",
   "version": "0.1.0",
   "private": true,
-  "description": "NestJS modular monolith (PRD §9). Domain modules are framework-free; Nest wiring is added on top.",
+  "description": "NestJS modular monolith (PRD \u00a79). Domain modules are framework-free; Nest wiring is added on top.",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@nestjs/common": "^12.1.2",
+    "@nestjs/core": "^12.1.2",
+    "@nestjs/platform-fastify": "^12.1.2",
+    "@tunakula/ts-contracts": "*",
     "@tunakula/ts-money": "*",
-    "@tunakula/ts-contracts": "*"
+    "pg": "^8.23.1",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2",
+    "@tunakula/payment-connector-bitripay": "*",
+    "@tunakula/payment-connector-koda": "*",
+    "@tunakula/payment-connector-sandbox": "*"
   },
   "devDependencies": {
-    "@tunakula/payment-connector-sandbox": "*"
+    "@types/pg": "^8.23.1",
+    "tsx": "^4.23.15"
+  },
+  "scripts": {
+    "start": "tsx --tsconfig tsconfig.json src/http/main.ts",
+    "migrate": "node src/db/migrate-cli.ts",
+    "bootstrap-admin": "node src/db/bootstrap-cli.ts"
   }
 }

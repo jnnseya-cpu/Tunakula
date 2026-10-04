@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "experimentalDecorators": true,
+    "erasableSyntaxOnly": false
+  },
+  "include": [
+    "src/**/*.ts",
+    "test/**/*.ts",
+    "test-http/**/*.ts"
+  ],
+  "exclude": []
+}

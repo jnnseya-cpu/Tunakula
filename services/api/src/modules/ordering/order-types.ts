@@ -96,6 +96,19 @@ export interface OrderSnapshot {
   /** MR-3: every order records price, order, settlement and reporting currencies. */
   readonly currencies: { readonly price: string; readonly order: string; readonly settlement: string; readonly reporting: string };
   readonly fxQuoteId?: string;
+  /** §21 order.money: every priced component, in minor units, as accepted by the customer. */
+  readonly money?: {
+    readonly goods: MoneyJSON;
+    readonly serviceCharge: MoneyJSON;
+    readonly deliveryFee: MoneyJSON;
+    readonly merchantDeliveryContribution: MoneyJSON;
+    readonly riderShare: MoneyJSON;
+    readonly platformDeliveryShare: MoneyJSON;
+    readonly tip: MoneyJSON;
+    readonly merchantReceives: MoneyJSON;
+    readonly riderReceives: MoneyJSON;
+    readonly platformReceives: MoneyJSON;
+  };
   readonly paymentMode: "PREPAID" | "CASH_ON_DELIVERY";
   /** As configured (§10.2); AGENT_OPTIMISED must be resolved at placement. */
   readonly configuredConfirmationModel: "RESTAURANT_FIRST" | "RIDER_FIRST" | "AGENT_OPTIMISED";

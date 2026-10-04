@@ -14,8 +14,23 @@
     "isolatedModules": true,
     "skipLibCheck": true,
     "noEmit": true,
-    "types": ["node"],
+    "types": [
+      "node"
+    ],
     "resolveJsonModule": true
   },
-  "include": ["packages/*/src/**/*.ts", "packages/*/test/**/*.ts", "packages/*/scripts/**/*.ts", "services/*/src/**/*.ts", "services/*/test/**/*.ts", "adapters/*/*/src/**/*.ts", "adapters/*/*/test/**/*.ts", "tools/**/*.ts"]
+  "include": [
+    "packages/*/src/**/*.ts",
+    "packages/*/test/**/*.ts",
+    "packages/*/scripts/**/*.ts",
+    "services/*/src/**/*.ts",
+    "services/*/test/**/*.ts",
+    "adapters/*/*/src/**/*.ts",
+    "adapters/*/*/test/**/*.ts",
+    "tools/**/*.ts"
+  ],
+  "exclude": [
+    "services/api/src/http/**",
+    "services/api/test-http/**"
+  ]
 }

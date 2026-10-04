@@ -30,6 +30,7 @@ This is the platform foundation: the parts every other context depends on, writt
 | `adapters/payments/bitripay` | BitriPay connector — group rail: intents, refunds, payouts, settlement statements, HMAC + Ed25519 webhooks, connected accounts | §20, ADR 0008 |
 | `adapters/payments/koda` | KODA connector — mobile-money verification by operator SMS reference, hosted checkout, signed webhooks | §20.9, ADR 0008 |
 | `adapters/payments/http` | Transport that separates "never sent" from "outcome unknown" | ADR 0003 |
+| `services/api` — HTTP API and database | NestJS on Fastify over PostgreSQL 16: `/v1` sign-in, catalogue, quotes, orders and custody transitions, payment intents and webhooks, Country Profile administration with dual control; SQL migrations with forced row-level security per country, append-only custody/ledger/audit tables and a commit-time balanced-journal check | §9.5, §19, §21, §25, ADR 0010 |
 | `tools/guard-core.ts` | Blocks market-specific branches in core code and floats in money paths | §7.3, §32.2 |
 
 ## Getting started
@@ -42,6 +43,25 @@ npm run check      # typecheck + core guard + all tests
 npm test           # tests only
 npm run seed:iso4217 -w @tunakula/ts-money   # regenerate the ISO 4217 seed
 ```
+
+### API and database
+
+Needs PostgreSQL 16 with a migrating owner role (CREATEDB, not superuser) and an application role
+`tunakula_app` (no BYPASSRLS):
+
+```bash
+npm run test:api   # end-to-end: HTTP → PostgreSQL, in a throwaway database (TEST_DATABASE_ADMIN_URL)
+
+DATABASE_OWNER_URL=postgres://tunakula:…@localhost/tunakula \
+DATABASE_URL=postgres://tunakula_app:…@localhost/tunakula \
+TUNAKULA_TOKEN_SECRET=<32+ chars> TUNAKULA_SANDBOX_PAYMENTS=1 TUNAKULA_DEV_OTP=1 \
+  npm start -w @tunakula/api            # migrates, then listens on :8080
+
+DATABASE_URL=… npm run bootstrap-admin -w @tunakula/api -- +243810000000 "Name"   # first Super Admin
+```
+
+A fresh database has no markets: a country admin drafts a Country Profile
+(`POST /v1/admin/countries/drafts`) and a Super Admin publishes it with the §28.10 readiness review.
 
 ## Principles enforced here
 

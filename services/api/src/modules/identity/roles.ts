@@ -20,6 +20,8 @@ export const ACTIONS = [
   "agent_autonomy:set",
   // Configuration and commercial
   "country_config:write",
+  /** Second-person approval for publishes that touch money, pricing, payments or labour (§17, dual control). */
+  "country_config:approve",
   "zone:write",
   "restaurant:manage",
   "commission:write",

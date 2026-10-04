@@ -110,6 +110,20 @@ export class CountryConfigRegistry {
     return draft;
   }
 
+  /** Every version of every country, for persistence. */
+  allVersions(): ProfileVersion[] {
+    return [...this.#versions.values()].flat();
+  }
+
+  /** Rehydrates the registry from storage at boot (no validation re-run: these versions were accepted when written). */
+  restore(versions: readonly ProfileVersion[]): void {
+    this.#versions.clear();
+    this.#cache.clear();
+    for (const v of [...versions].sort((a, b) => a.version - b.version)) {
+      this.#versions.set(v.iso2, [...(this.#versions.get(v.iso2) ?? []), v]);
+    }
+  }
+
   history(iso2: string): readonly ProfileVersion[] {
     return this.#versions.get(iso2) ?? [];
   }

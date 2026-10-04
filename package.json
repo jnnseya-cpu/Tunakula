@@ -1,7 +1,7 @@
 {
   "name": "tunakula",
   "private": true,
-  "description": "Tunakula — multi-country, multi-currency food ordering and delivery platform on NZELA-OS",
+  "description": "Tunakula \u2014 multi-country, multi-currency food ordering and delivery platform on NZELA-OS",
   "type": "module",
   "workspaces": [
     "packages/*",
@@ -13,10 +13,11 @@
     "node": ">=22.18"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p services/api/tsconfig.json",
     "test": "node --test \"packages/*/test/**/*.test.ts\" \"services/*/test/**/*.test.ts\" \"adapters/*/*/test/**/*.test.ts\"",
-    "check": "npm run typecheck && npm run guard && npm test",
-    "guard": "node tools/guard-core.ts"
+    "check": "npm run typecheck && npm run guard && npm test && npm run test:api",
+    "guard": "node tools/guard-core.ts",
+    "test:api": "tsx --tsconfig services/api/tsconfig.json --test \"services/api/test-http/**/*.test.ts\""
   },
   "devDependencies": {
     "@types/node": "^22.19.0",

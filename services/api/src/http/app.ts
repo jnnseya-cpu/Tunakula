@@ -1,0 +1,64 @@
+/** Composes the API: services over one database, NestJS on Fastify. */
+import "reflect-metadata";
+import { Module, type DynamicModule } from "@nestjs/common";
+import { NestFactory } from "@nestjs/core";
+import { FastifyAdapter, type NestFastifyApplication } from "@nestjs/platform-fastify";
+import type { PaymentConnector } from "@tunakula/ts-contracts";
+import { AuthService, type OtpSender } from "../app/auth.ts";
+import { CatalogueService } from "../app/catalogue.ts";
+import { CommerceService } from "../app/commerce.ts";
+import { ConfigService } from "../app/config.ts";
+import { PaymentService } from "../app/payments.ts";
+import { straightLineRouting, type RoutingProvider } from "../app/routing.ts";
+import { TokenService } from "../app/tokens.ts";
+import type { Db } from "../db/db.ts";
+import type { CountryConfigRegistry } from "../modules/config/config-registry.ts";
+import { PaymentRouter } from "../modules/payments/payment-router.ts";
+import { IdempotencyInterceptor, ProblemFilter, TOKENS } from "./common.ts";
+import { AdminConfigController, AuthController, CatalogueController, OrdersController, PaymentsController, PlatformController, WebhooksController } from "./controllers.ts";
+
+export interface ApiDeps {
+  readonly db: Db;
+  readonly registry: CountryConfigRegistry;
+  readonly connectors: readonly PaymentConnector[];
+  readonly tokenSecret: string;
+  readonly otp: OtpSender;
+  readonly routing?: RoutingProvider;
+  readonly now?: () => Date;
+  readonly onError?: (e: unknown) => void;
+}
+
+export async function createApi(deps: ApiDeps): Promise<NestFastifyApplication> {
+  const now = deps.now ?? (() => new Date());
+  const tokens = new TokenService(deps.tokenSecret, { now });
+  const commerce = new CommerceService(deps.db, deps.registry, deps.routing ?? straightLineRouting(), now);
+  const router = new PaymentRouter(deps.connectors, { now });
+  const payments = new PaymentService(deps.db, router, new Map(deps.connectors.map((c) => [c.id, c])), commerce);
+
+  @Module({})
+  class ApiModule {
+    static register(): DynamicModule {
+      return {
+        module: ApiModule,
+        controllers: [AdminConfigController, PlatformController, AuthController, CatalogueController, OrdersController, PaymentsController, WebhooksController],
+        providers: [
+          { provide: TOKENS.db, useValue: deps.db },
+          { provide: TOKENS.registry, useValue: deps.registry },
+          { provide: TOKENS.tokens, useValue: tokens },
+          { provide: TOKENS.auth, useValue: new AuthService(deps.db, deps.otp, tokens, now) },
+          { provide: TOKENS.commerce, useValue: commerce },
+          { provide: TOKENS.payments, useValue: payments },
+          { provide: TOKENS.catalogue, useValue: new CatalogueService(deps.db, deps.registry) },
+          { provide: TOKENS.config, useValue: new ConfigService(deps.db, deps.registry) },
+        ],
+      };
+    }
+  }
+
+  const app = await NestFactory.create<NestFastifyApplication>(ApiModule.register(), new FastifyAdapter({ bodyLimit: 1_048_576 }), { logger: false, rawBody: true });
+  app.useGlobalFilters(new ProblemFilter(deps.onError ?? ((e) => console.error(e))));
+  app.useGlobalInterceptors(new IdempotencyInterceptor(deps.db, tokens));
+  await app.init();
+  await app.getHttpAdapter().getInstance().ready();
+  return app;
+}

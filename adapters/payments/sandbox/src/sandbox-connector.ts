@@ -41,6 +41,8 @@ export interface SandboxOptions {
   webhookSecret?: string;
   /** Simulates the provider being down: `initiate` throws before sending. */
   unreachable?: boolean;
+  /** Outcome when an intent carries no sandbox_outcome (default SUCCEED). */
+  defaultOutcome?: string;
   now?: () => Date;
 }
 
@@ -50,6 +52,7 @@ export class SandboxConnector implements PaymentConnector {
   readonly id: string;
   readonly version = "0.1.0";
   unreachable: boolean;
+  defaultOutcome: string;
   readonly #capabilities: readonly ConnectorCapability[];
   readonly #secret: string;
   readonly #now: () => Date;
@@ -63,6 +66,7 @@ export class SandboxConnector implements PaymentConnector {
     this.#capabilities = options.capabilities;
     this.#secret = options.webhookSecret ?? "sandbox-secret";
     this.unreachable = options.unreachable ?? false;
+    this.defaultOutcome = options.defaultOutcome ?? "SUCCEED";
     this.#now = options.now ?? (() => new Date());
   }
 
@@ -81,7 +85,7 @@ export class SandboxConnector implements PaymentConnector {
     const existingRef = this.#byIdempotencyKey.get(intent.idempotencyKey);
     if (existingRef) return this.#toInitiateResult(this.#mustGet(existingRef));
 
-    const outcome = intent.metadata?.["sandbox_outcome"] ?? "SUCCEED";
+    const outcome = intent.metadata?.["sandbox_outcome"] ?? this.defaultOutcome;
     const payment: SandboxPayment = {
       providerRef: `sbx_${randomUUID()}`,
       intent,

@@ -17,6 +17,20 @@ jobs:
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # Mirrors production: a non-superuser owner that migrates, and an app role with no RLS bypass.
+      TEST_DATABASE_ADMIN_URL: postgres://tunakula:tunakula@localhost:5432/postgres
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -30,5 +44,13 @@ jobs:
         run: npm run guard
       - name: Tests
         run: npm test
+      - name: Database roles
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -U postgres -v ON_ERROR_STOP=1 -c "CREATE ROLE tunakula LOGIN PASSWORD 'tunakula' CREATEDB NOSUPERUSER NOBYPASSRLS"
+          psql -h localhost -U postgres -v ON_ERROR_STOP=1 -c "CREATE ROLE tunakula_app LOGIN PASSWORD 'tunakula_app' NOSUPERUSER NOBYPASSRLS"
+      - name: API end-to-end (HTTP → PostgreSQL 16)
+        run: npm run test:api
       - name: Dependency audit (high and critical)
         run: npm audit --audit-level=high
