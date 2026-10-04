@@ -1,0 +1,34 @@
+# PRD §28.1 "Test (per PR)" and §28.7: every change is typechecked, guarded and tested.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Core guard (no market branches in core, no floats in money paths)
+        run: npm run guard
+      - name: Tests
+        run: npm test
+      - name: Dependency audit (high and critical)
+        run: npm audit --audit-level=high

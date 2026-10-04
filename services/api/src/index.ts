@@ -120,3 +120,7 @@ export {
   type PricingConfig,
   type SurgeInput,
 } from "./modules/pricing/pricing.ts";
+export { REDACTED, createLogger, isSensitiveKey, redact, redactString, type LogContext, type LogLevel, type LogSink, type Logger } from "./platform/logger.ts";
+export { PLATFORM_SLOS, errorBudget, releaseFreeze, type ErrorBudget, type SloDefinition, type SloWindow } from "./platform/slo.ts";
+export { proveLedger, type LedgerBreak, type LedgerBreakCode, type LedgerProof, type StoredEntry, type StoredJournal } from "./modules/money/ledger-proof.ts";
+export { FeatureFlags, FlagError, type FeatureFlag, type FlagContext, type FlagRule } from "./modules/config/feature-flags.ts";
