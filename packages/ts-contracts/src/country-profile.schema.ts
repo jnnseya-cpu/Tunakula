@@ -16,6 +16,7 @@ import {
 const ccy = { type: "string", pattern: "^[A-Z]{3}$" } as const;
 const decimal = { type: "string", pattern: "^\\d+(\\.\\d+)?$" } as const;
 const id = { type: "string", minLength: 1 } as const;
+const bps = { type: "integer", minimum: 0, maximum: 10000 } as const;
 const ids = { type: "array", items: id } as const;
 const bool = { type: "boolean" } as const;
 const enumOf = (values: readonly string[]) => ({ enum: [...values] });
@@ -132,6 +133,23 @@ export const countryProfileSchema = {
         business_models: { type: "array", minItems: 1, items: enumOf(BUSINESS_MODELS) },
         delivery_fee_formula_id: id,
         support_refund_limit: { type: "array", items: obj({ currency: ccy, amount: decimal }) },
+      }),
+      pricing: obj({
+        service_charge_bps: bps,
+        all_in_pricing: bool,
+        delivery_fee: obj({
+          per_km: decimal,
+          cap: decimal,
+          cap_hold_km: { type: "integer", minimum: 1 },
+          band_km: { type: "integer", minimum: 1 },
+          band_step_bps: bps,
+          rural_bps: bps,
+        }),
+        rider_share_bps: bps,
+        rider_bonus_bps: bps,
+        surge_max_multiplier: decimal,
+        discovery_radius_km: { type: "integer", minimum: 1 },
+        promise_minutes: { type: "integer", minimum: 1 },
       }),
       feature_flags: { type: "object", additionalProperties: bool },
       synthetic: bool,

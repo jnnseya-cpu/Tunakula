@@ -78,8 +78,10 @@ test("end to end: payer in GB sends a meal to Kinshasa (PRD §19.2, §33.1)", as
   );
   assert.equal(outcome.status, "SUCCEEDED");
 
-  // 4. Ledger: each currency balances on its own; commission in settlement currency (MR-5).
-  const [commission, restaurantNet] = menu.allocate([12, 88]) as [Money, Money];
+  // 4. Ledger: each currency balances on its own; splits in settlement currency (MR-5).
+  // §18.1: zero merchant commission — the restaurant receives the full menu price;
+  // the rider keeps 70% of the delivery fee and the platform 30%.
+  const riderShare = deliveryFee.multiply("0.70");
   const ledger = new Ledger();
   ledger.post(createJournal({ id: "j-collect", idempotencyKey: `${quote.id}:collect`, description: "XBO collection in GBP", entries: [
     { account: "psp_clearing", country: "GB", amount: fx.charged },
@@ -88,12 +90,13 @@ test("end to end: payer in GB sends a meal to Kinshasa (PRD §19.2, §33.1)", as
   ] }));
   ledger.post(createJournal({ id: "j-settle", idempotencyKey: `${quote.id}:settle`, description: "Partner settles USD to the CD market", entries: [
     { account: "psp_clearing", country: "CD", amount: subtotal },
-    { account: "restaurant_payable", country: "CD", amount: restaurantNet.negate() },
-    { account: "commission_revenue", country: "CD", amount: commission.negate() },
-    { account: "rider_payable", country: "CD", amount: deliveryFee.negate() },
+    { account: "restaurant_payable", country: "CD", amount: menu.negate() },
+    { account: "rider_payable", country: "CD", amount: riderShare.negate() },
+    { account: "delivery_fee_revenue", country: "CD", amount: deliveryFee.subtract(riderShare).negate() },
   ] }));
 
-  assert.equal(ledger.balance("restaurant_payable", "CD", "USD").toDecimalString(), "-16.28");
-  assert.equal(ledger.balance("commission_revenue", "CD", "USD").toDecimalString(), "-2.22");
+  assert.equal(ledger.balance("restaurant_payable", "CD", "USD").toDecimalString(), "-18.50");
+  assert.ok(ledger.balance("commission_revenue", "CD", "USD").isZero(), "no commission, ever (PRC-001)");
+  assert.equal(ledger.balance("rider_payable", "CD", "USD").toDecimalString(), "-1.40");
   assert.equal(ledger.balance("fx_spread_revenue", "GB", "GBP").toDecimalString(), "-0.15");
 });

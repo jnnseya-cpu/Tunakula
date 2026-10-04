@@ -155,5 +155,35 @@ export interface CountryProfile {
     /** Largest refund a Support Agent may issue, per accepted currency (§8.2). Above it, Country Finance. */
     readonly support_refund_limit: readonly { readonly currency: string; readonly amount: string }[];
   };
+  /**
+   * §18 pricing — every rate is per-market configuration. Amounts are major-unit
+   * decimal strings in the settlement currency (MR-5); rates are basis points.
+   */
+  readonly pricing: {
+    /** §18.2 customer service charge on the merchant subtotal (group default 1000 = 10%). */
+    readonly service_charge_bps: number;
+    /** §18.2/§18.9: compulsory fees included in the first price shown (e.g. UK DMCC Act). */
+    readonly all_in_pricing: boolean;
+    readonly delivery_fee: {
+      readonly per_km: string;
+      readonly cap: string;
+      /** The cap holds up to this distance (group default 7 km). */
+      readonly cap_hold_km: number;
+      /** Beyond the hold, the fee steps up once per band (group default 8 km, +30%). */
+      readonly band_km: number;
+      readonly band_step_bps: number;
+      /** Rural zones pay this share of the city fee (group default 7500 = 75%). */
+      readonly rural_bps: number;
+    };
+    /** §18.4 rider share of the delivery fee actually charged (group default 7000 = 70%). */
+    readonly rider_share_bps: number;
+    /** §18.4 performance bonus as a share of the rider's own delivery earnings. */
+    readonly rider_bonus_bps: number;
+    /** §18.5 published maximum surge multiplier, e.g. "2.0". */
+    readonly surge_max_multiplier: string;
+    /** §18.6 discovery radius and delivery promise. */
+    readonly discovery_radius_km: number;
+    readonly promise_minutes: number;
+  };
   readonly feature_flags: Readonly<Record<string, boolean>>;
 }

@@ -222,5 +222,22 @@
       }
     ]
   },
+  "pricing": {
+    "service_charge_bps": 1000,
+    "all_in_pricing": false,
+    "delivery_fee": {
+      "per_km": "600",
+      "cap": "3000",
+      "cap_hold_km": 7,
+      "band_km": 8,
+      "band_step_bps": 3000,
+      "rural_bps": 7500
+    },
+    "rider_share_bps": 7000,
+    "rider_bonus_bps": 1000,
+    "surge_max_multiplier": "2.0",
+    "discovery_radius_km": 10,
+    "promise_minutes": 45
+  },
   "feature_flags": {}
 }

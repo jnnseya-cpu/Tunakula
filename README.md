@@ -23,6 +23,7 @@ This is the platform foundation: the parts every other context depends on, writt
 | `services/api` — accounts | Business accounts (platform, merchants of any kind, fleets) with multiple holders, per-member access levels and branch limits, no privilege escalation; profile and cover pictures; self-service account deletion with blockers, grace period and pseudonymisation | §8.2, §12.4, ADR 0005 |
 | `services/api` — ordering | Event-sourced order aggregate: §10.1 state machine with the §11 chain-of-custody gates, evidence bundle projection, idempotent store | §10, §11, §12.2 |
 | `services/api` — config | Country Config derived from the published profile; versioned publish with §28.10 go-live gate, diff and rollback; brand themes (light/dark, WCAG AA-validated) served at runtime | §17, CFG-002, ADR 0006 |
+| `services/api` — pricing | Zero commission, 10% service charge, §18.3 distance ladder with rural rate and surge, 70/30 rider split, promotions, tips, proportional refunds, all-in display, balanced settlement journal | §18, ADR 0007 |
 | `services/api` — printing | Every printed document carries the Tunakula logo and the business's logo | ADR 0006 |
 | `adapters/payments/certification` | Connector certification contract suite every connector must pass | §20.7 |
 | `adapters/payments/sandbox` | Reference sandbox connector (passes certification) | §20.7 |

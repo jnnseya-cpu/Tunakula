@@ -14,6 +14,8 @@ export const LEDGER_ACCOUNTS = [
   "fleet_payable",
   "commission_revenue",
   "subscription_revenue",
+  // §18.2: the 10% customer service charge — the platform's main revenue under 0% merchant commission.
+  "service_charge_revenue",
   "delivery_fee_revenue",
   "ads_revenue",
   "xbo_fee_revenue",

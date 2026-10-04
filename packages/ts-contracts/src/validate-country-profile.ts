@@ -1,5 +1,5 @@
 import { Ajv2020 } from "ajv/dist/2020.js";
-import { Money, currencies as defaultRegistry, incrementInMinorUnits, type CurrencyRegistry } from "@tunakula/ts-money";
+import { Money, currencies as defaultRegistry, incrementInMinorUnits, parseDecimal, type CurrencyRegistry } from "@tunakula/ts-money";
 import type { CountryProfile } from "./country-profile.ts";
 import { countryProfileSchema } from "./country-profile.schema.ts";
 
@@ -137,6 +137,18 @@ function semanticIssues(p: CountryProfile, options: ValidateOptions): ProfileIss
   for (const code of p.money.currencies) {
     if (!limited.has(code)) issue("/operations/support_refund_limit", `no support refund limit for ${code}`);
   }
+
+  const fee = p.pricing.delivery_fee;
+  checkAmount("/pricing/delivery_fee/per_km", p.money.settlement_currency, fee.per_km);
+  checkAmount("/pricing/delivery_fee/cap", p.money.settlement_currency, fee.cap);
+  try {
+    const ccy = p.money.settlement_currency;
+    if (Money.of(fee.cap, ccy, registry).compare(Money.of(fee.per_km, ccy, registry)) < 0) issue("/pricing/delivery_fee/cap", "cap must be at least the per-km rate");
+  } catch {
+    // Representability is already reported by checkAmount.
+  }
+  const surge = parseDecimal(p.pricing.surge_max_multiplier);
+  if (surge.numerator < surge.denominator) issue("/pricing/surge_max_multiplier", "surge cap must be at least 1.0");
 
   if (!p.experience.locales.includes(p.country.default_locale)) {
     issue("/country/default_locale", "default_locale must be one of experience.locales");
