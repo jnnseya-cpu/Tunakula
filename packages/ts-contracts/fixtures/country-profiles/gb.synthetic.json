@@ -81,7 +81,8 @@
         "FOOD_HYGIENE_REGISTRATION"
       ]
     },
-    "fraud_profile_id": "fraud-default-v1"
+    "fraud_profile_id": "fraud-default-v1",
+    "rider_kyc_rules_id": "rider-kyc-gb-rtw-id"
   },
   "addressing": {
     "model": "POSTCODE",
@@ -198,6 +199,7 @@
     "business_models": [
       "COMMISSION"
     ],
+    "delivery_fee_formula_id": "fee-base-per-km",
     "support_refund_limit": [
       {
         "currency": "GBP",

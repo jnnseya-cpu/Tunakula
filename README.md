@@ -22,6 +22,8 @@ This is the platform foundation: the parts every other context depends on, writt
 | `services/api` — identity | Scoped RBAC policy layer: §8.2 role matrix, deny by default, never crosses the active country | §8.2, §9.5 |
 | `services/api` — accounts | Business accounts (platform, merchants of any kind, fleets) with multiple holders, per-member access levels and branch limits, no privilege escalation; profile and cover pictures; self-service account deletion with blockers, grace period and pseudonymisation | §8.2, §12.4, ADR 0005 |
 | `services/api` — ordering | Event-sourced order aggregate: §10.1 state machine with the §11 chain-of-custody gates, evidence bundle projection, idempotent store | §10, §11, §12.2 |
+| `services/api` — config | Country Config derived from the published profile; versioned publish with §28.10 go-live gate, diff and rollback; brand themes (light/dark, WCAG AA-validated) served at runtime | §17, CFG-002, ADR 0006 |
+| `services/api` — printing | Every printed document carries the Tunakula logo and the business's logo | ADR 0006 |
 | `adapters/payments/certification` | Connector certification contract suite every connector must pass | §20.7 |
 | `adapters/payments/sandbox` | Reference sandbox connector (passes certification) | §20.7 |
 | `tools/guard-core.ts` | Blocks market-specific branches in core code and floats in money paths | §7.3, §32.2 |

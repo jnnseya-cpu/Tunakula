@@ -95,6 +95,7 @@ export const countryProfileSchema = {
         id_document_types: ids,
         kyc_levels: { type: "object", additionalProperties: ids },
         fraud_profile_id: id,
+        rider_kyc_rules_id: id,
       }),
       addressing: obj({ model: enumOf(ADDRESS_MODELS), fields: ids, resolver_adapter: id, access_notes_enabled: bool }),
       mobility: obj({
@@ -129,6 +130,7 @@ export const countryProfileSchema = {
         sla_promises: { type: "object", additionalProperties: { type: "number" } },
         confirmation_model: enumOf(CONFIRMATION_MODELS),
         business_models: { type: "array", minItems: 1, items: enumOf(BUSINESS_MODELS) },
+        delivery_fee_formula_id: id,
         support_refund_limit: { type: "array", items: obj({ currency: ccy, amount: decimal }) },
       }),
       feature_flags: { type: "object", additionalProperties: bool },

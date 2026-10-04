@@ -82,6 +82,8 @@ export interface CountryProfile {
     readonly id_document_types: readonly string[];
     readonly kyc_levels: Readonly<Record<string, readonly string[]>>;
     readonly fraud_profile_id: string;
+    /** §17 rider_kyc_rules: reference to the market's rider onboarding checks. */
+    readonly rider_kyc_rules_id: string;
   };
   /** D4 — Addressing. */
   readonly addressing: {
@@ -148,6 +150,8 @@ export interface CountryProfile {
     readonly sla_promises: Readonly<Record<string, number>>;
     readonly confirmation_model: OneOf<typeof CONFIRMATION_MODELS>;
     readonly business_models: readonly OneOf<typeof BUSINESS_MODELS>[];
+    /** §17 delivery_fee_formula: reference to the market's fee formula (§18.3). */
+    readonly delivery_fee_formula_id: string;
     /** Largest refund a Support Agent may issue, per accepted currency (§8.2). Above it, Country Finance. */
     readonly support_refund_limit: readonly { readonly currency: string; readonly amount: string }[];
   };

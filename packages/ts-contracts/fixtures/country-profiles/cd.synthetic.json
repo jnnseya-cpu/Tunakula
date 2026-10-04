@@ -117,7 +117,8 @@
         "ID"
       ]
     },
-    "fraud_profile_id": "fraud-default-v1"
+    "fraud_profile_id": "fraud-default-v1",
+    "rider_kyc_rules_id": "rider-kyc-cd-id-moto-fleet"
   },
   "addressing": {
     "model": "LANDMARK_PIN",
@@ -260,6 +261,7 @@
       "SUBSCRIPTION",
       "HYBRID"
     ],
+    "delivery_fee_formula_id": "fee-base-per-km-zone-surcharge",
     "support_refund_limit": [
       {
         "currency": "USD",
