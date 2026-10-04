@@ -1,0 +1,14 @@
+{
+  "name": "@tunakula/payment-connector-certification",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Connector certification contract suite (PRD §20.7, sandbox stage).",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@tunakula/ts-money": "*",
+    "@tunakula/ts-contracts": "*"
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "name": "tunakula",
+  "private": true,
+  "description": "Tunakula — multi-country, multi-currency food ordering and delivery platform on NZELA-OS",
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "services/*",
+    "adapters/*/*"
+  ],
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --test \"packages/*/test/**/*.test.ts\" \"services/*/test/**/*.test.ts\" \"adapters/*/*/test/**/*.test.ts\"",
+    "check": "npm run typecheck && npm run guard && npm test",
+    "guard": "node tools/guard-core.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.0",
+    "currency-codes": "^2.2.0",
+    "fast-check": "^4.10.2",
+    "typescript": "^5.9.3"
+  }
+}

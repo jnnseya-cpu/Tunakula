@@ -1,0 +1,40 @@
+{
+  "$comment": "Platform policy layered over ISO 4217 data (PRD §19.4–19.6). Volatility classes are a PROPOSED baseline pending Group Finance approval; the FX & Treasury Watch agent (A9) reviews them monthly. Any currency not listed defaults to defaultVolatilityClass, which is deliberately conservative (short FX quote TTL).",
+  "status": "PROPOSED",
+  "defaultVolatilityClass": "VOLATILE",
+  "volatilityClasses": {
+    "PEGGED": ["XOF", "XAF", "KMF", "CVE", "STN", "DJF", "ERN", "LSL", "NAD", "SZL", "AED", "SAR"],
+    "MANAGED": ["USD", "EUR", "GBP", "CHF", "CAD", "JPY", "AUD", "NZD", "SEK", "NOK", "DKK", "CNY"]
+  },
+  "controls": {},
+  "fxSources": {},
+  "redenominations": [
+    {
+      "code": "MRO",
+      "numericCode": "478",
+      "name": "Ouguiya (pre-2018)",
+      "minorUnits": 2,
+      "replacedBy": "MRU",
+      "effectiveDate": "2018-01-01",
+      "conversionFactor": "10"
+    },
+    {
+      "code": "STD",
+      "numericCode": "678",
+      "name": "Dobra (pre-2018)",
+      "minorUnits": 2,
+      "replacedBy": "STN",
+      "effectiveDate": "2018-01-01",
+      "conversionFactor": "1000"
+    },
+    {
+      "code": "SLL",
+      "numericCode": "694",
+      "name": "Leone (pre-2022)",
+      "minorUnits": 2,
+      "replacedBy": "SLE",
+      "effectiveDate": "2022-07-01",
+      "conversionFactor": "1000"
+    }
+  ]
+}

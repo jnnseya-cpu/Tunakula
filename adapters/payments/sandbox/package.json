@@ -1,0 +1,17 @@
+{
+  "name": "@tunakula/payment-connector-sandbox",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Reference PaymentConnector for development and certification (PRD §20.7).",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@tunakula/ts-money": "*",
+    "@tunakula/ts-contracts": "*"
+  },
+  "devDependencies": {
+    "@tunakula/payment-connector-certification": "*"
+  }
+}

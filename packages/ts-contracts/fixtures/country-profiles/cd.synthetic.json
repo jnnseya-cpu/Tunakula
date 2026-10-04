@@ -1,0 +1,94 @@
+{
+  "schema_version": 1,
+  "version": 1,
+  "status": "DRAFT",
+  "synthetic": true,
+  "country": {
+    "iso2": "CD",
+    "name": "RD Congo",
+    "status": "DRAFT",
+    "market_role": "HOME_LEADER",
+    "default_locale": "fr-CD",
+    "timezones": ["Africa/Kinshasa", "Africa/Lubumbashi"],
+    "phone_country_code": "+243"
+  },
+  "money": {
+    "currencies": ["USD", "CDF"],
+    "settlement_currency": "USD",
+    "display_default": "USD",
+    "dual_currency": true,
+    "cash_rounding": [
+      { "currency": "CDF", "increment": "100", "mode": "half-up" },
+      { "currency": "USD", "increment": "0.25", "mode": "half-up" }
+    ],
+    "price_refresh_policy": "DRIFT_ALERT"
+  },
+  "payments": {
+    "methods": [
+      { "type": "MOBILE_MONEY_PUSH", "rank": 1, "limits": [{ "currency": "USD", "min": "1.00", "max": "500.00" }, { "currency": "CDF", "min": "2800", "max": "1400000" }] },
+      { "type": "CASH_ON_DELIVERY", "rank": 2 },
+      { "type": "CARD", "rank": 3 },
+      { "type": "TUNAKULA_WALLET", "rank": 4 }
+    ],
+    "connectors": [
+      { "id": "bitripay", "priority": 0 },
+      { "id": "sandbox", "priority": 10 }
+    ],
+    "cod_policy": {
+      "enabled": true,
+      "cash_cap": [{ "currency": "USD", "amount": "150.00" }, { "currency": "CDF", "amount": "400000" }]
+    },
+    "payout_rails": ["MOBILE_MONEY", "BANK"]
+  },
+  "trust": {
+    "otp_channels": ["SMS", "WHATSAPP"],
+    "id_document_types": ["NATIONAL_ID", "VOTER_CARD", "PASSPORT"],
+    "kyc_levels": { "rider": ["ID", "MOTO_LICENCE", "FLEET_LINK"], "restaurant": ["RCCM", "ID"] },
+    "fraud_profile_id": "fraud-default-v1"
+  },
+  "addressing": {
+    "model": "LANDMARK_PIN",
+    "fields": ["pin", "landmark", "commune", "quartier", "voice_note"],
+    "resolver_adapter": "landmark-resolver",
+    "access_notes_enabled": true
+  },
+  "mobility": {
+    "vehicle_types": ["MOTO", "CAR", "FOOT"],
+    "routing_adapter": "maps-with-learned-correction",
+    "seasonal_factors": [{ "name": "rainy_season", "months": [10, 11, 12, 1, 2, 3, 4, 5], "travel_time_factor": "1.3" }]
+  },
+  "labour": { "model": "HYBRID", "adapter": "labour-self-employed-and-fleet", "max_shift_hours": 12, "transparency_disclosures": true },
+  "compliance": {
+    "pack_id": "compliance-cd-draft",
+    "data_residency": "PENDING_LEGAL_OPINION",
+    "retention_policy_id": "retention-default",
+    "tax_profile_id": "tax-cd-tva-pending-adviser",
+    "invoice_format": "invoice-cd-draft"
+  },
+  "calendar": {
+    "holidays": [{ "name": "Independence Day", "date": "06-30" }],
+    "religious_periods": ["CHRISTMAS", "EASTER", "RAMADAN"],
+    "paydays": ["END_OF_MONTH"],
+    "seasonal_events": ["RAINY_SEASON", "SCHOOL_TERM"]
+  },
+  "food": { "tags": ["vegetarian", "vegan", "halal", "spicy"], "allergen_rules": "allergens-declared-optional", "group_orders": true, "gifting": true },
+  "infrastructure": { "network_profile": "MIXED", "device_profile": "LOW_END", "power_reliability": "LOW", "low_bandwidth_default": true },
+  "channels": {
+    "app": { "enabled": true, "priority": 1 },
+    "web": { "enabled": true, "priority": 3 },
+    "whatsapp": { "enabled": true, "priority": 2 },
+    "sms": { "enabled": true, "priority": 4 },
+    "ussd": { "enabled": false, "priority": 5 },
+    "voice_support": { "enabled": true, "priority": 6 }
+  },
+  "experience": { "brand_id": "tunakula", "theme_id": "tunakula-default", "locales": ["fr-CD", "ln", "sw", "en"], "checkout_layout_id": "mobile-money-first", "home_layout_id": "default" },
+  "operations": {
+    "playbook_id": "playbook-home-leader",
+    "support_hours": "07:00-23:00",
+    "support_channels": ["WHATSAPP", "IN_APP_CHAT", "PHONE"],
+    "sla_promises": { "rider_assignment_seconds": 90 },
+    "confirmation_model": "RIDER_FIRST",
+    "business_models": ["COMMISSION", "SUBSCRIPTION", "HYBRID"]
+  },
+  "feature_flags": { "xbo_receive": true, "whatsapp_order": true }
+}

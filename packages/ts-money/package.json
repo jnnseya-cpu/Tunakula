@@ -1,0 +1,13 @@
+{
+  "name": "@tunakula/ts-money",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Money, Currency Registry and FX primitives (PRD §19). Integer minor units only.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "seed:iso4217": "node scripts/generate-iso4217.ts"
+  }
+}
