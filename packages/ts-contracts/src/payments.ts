@@ -58,6 +58,8 @@ export const PAYMENT_REASON_CODES = [
   "FRAUD_SUSPECTED",
   "CURRENCY_NOT_SUPPORTED",
   "DUPLICATE",
+  /** The connector does not offer this operation (e.g. refunds on a verification-only rail). */
+  "NOT_SUPPORTED",
   "UNKNOWN",
 ] as const;
 export type PaymentReasonCode = (typeof PAYMENT_REASON_CODES)[number];
@@ -185,4 +187,30 @@ export interface Beneficiary {
 export interface PayoutConnector {
   readonly id: string;
   payout(beneficiary: Beneficiary, amount: MoneyJSON, idempotencyKey: string): Promise<{ payoutRef: string; state: "PENDING" | "SENT" | "FAILED"; reasonCode?: PaymentReasonCode }>;
+}
+
+/**
+ * Thrown by a connector only when it is certain nothing reached the provider
+ * (connection refused, DNS failure, rate-limited before acceptance). It is the
+ * one error after which orchestration may safely try another route (ADR 0003).
+ */
+export class ConnectorUnavailableError extends Error {
+  readonly connectorId: string;
+
+  constructor(connectorId: string, detail = "nothing was sent to the provider") {
+    super(`Connector ${connectorId} is unreachable; ${detail}`);
+    this.name = "ConnectorUnavailableError";
+    this.connectorId = connectorId;
+  }
+}
+
+/** The provider may or may not have acted (timeout after sending, 5xx). Resolve by status before anything else. */
+export class ConnectorOutcomeUnknownError extends Error {
+  readonly connectorId: string;
+
+  constructor(connectorId: string, detail: string) {
+    super(`Connector ${connectorId}: outcome unknown (${detail})`);
+    this.name = "ConnectorOutcomeUnknownError";
+    this.connectorId = connectorId;
+  }
 }

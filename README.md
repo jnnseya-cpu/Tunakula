@@ -27,6 +27,9 @@ This is the platform foundation: the parts every other context depends on, writt
 | `services/api` — printing | Every printed document carries the Tunakula logo and the business's logo | ADR 0006 |
 | `adapters/payments/certification` | Connector certification contract suite every connector must pass | §20.7 |
 | `adapters/payments/sandbox` | Reference sandbox connector (passes certification) | §20.7 |
+| `adapters/payments/bitripay` | BitriPay connector — group rail: intents, refunds, payouts, settlement statements, HMAC + Ed25519 webhooks, connected accounts | §20, ADR 0008 |
+| `adapters/payments/koda` | KODA connector — mobile-money verification by operator SMS reference, hosted checkout, signed webhooks | §20.9, ADR 0008 |
+| `adapters/payments/http` | Transport that separates "never sent" from "outcome unknown" | ADR 0003 |
 | `tools/guard-core.ts` | Blocks market-specific branches in core code and floats in money paths | §7.3, §32.2 |
 
 ## Getting started

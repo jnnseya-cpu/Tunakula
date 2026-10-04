@@ -39,6 +39,13 @@ const isInFlight = (s: string) => (IN_FLIGHT_STATES as readonly string[]).includ
 const isFailed = (s: string) => (FAILED_STATES as readonly string[]).includes(s);
 
 export function certifyPaymentConnector(name: string, harness: CertificationHarness): void {
+  /** Initiates and, for asynchronous rails, drives the payment to completion as the customer would. */
+  const pay = async (connector: PaymentConnector, intent: PaymentIntent) => {
+    const result = await connector.initiate(intent);
+    if (isInFlight(result.state) && harness.completeAsync) await harness.completeAsync(connector, result.providerRef);
+    return result;
+  };
+
   describe(`PaymentConnector certification: ${name}`, () => {
     test("declares valid capabilities", async () => {
       const connector = await harness.createConnector();
@@ -61,7 +68,7 @@ export function certifyPaymentConnector(name: string, harness: CertificationHarn
 
     test("successful payment reaches SUCCEEDED", async () => {
       const connector = await harness.createConnector();
-      const result = await connector.initiate(harness.intentFor("SUCCEED"));
+      const result = await pay(connector, harness.intentFor("SUCCEED"));
       assert.ok(result.providerRef);
       assert.ok(PAYMENT_STATES.includes(result.state));
       const status = await connector.getStatus(result.providerRef);
@@ -71,7 +78,7 @@ export function certifyPaymentConnector(name: string, harness: CertificationHarn
     test("idempotency: the same key never charges twice", async () => {
       const connector = await harness.createConnector();
       const intent = harness.intentFor("SUCCEED");
-      const first = await connector.initiate(intent);
+      const first = await pay(connector, intent);
       const second = await connector.initiate(intent);
       assert.equal(second.providerRef, first.providerRef);
       const lines = await connector.fetchStatement(harness.statementDate());
@@ -110,10 +117,12 @@ export function certifyPaymentConnector(name: string, harness: CertificationHarn
         const connector = await harness.createConnector();
         const result = await connector.initiate(harness.intentFor("ASYNC_SUCCEED"));
         const webhook = await completeAsync(connector, result.providerRef);
-        const tampered = webhook.body.replace("SUCCEEDED", "REFUNDED");
+        // Any change to the raw body must break the signature — here, one trailing byte.
+        const tampered = `${webhook.body} `;
         assert.equal(connector.verifyWebhook(webhook.headers, tampered), false);
         assert.equal(connector.verifyWebhook({}, webhook.body), false);
         assert.throws(() => connector.parseWebhook(webhook.headers, tampered));
+        assert.throws(() => connector.parseWebhook({}, webhook.body));
       });
     }
 
@@ -122,9 +131,14 @@ export function certifyPaymentConnector(name: string, harness: CertificationHarn
       const intent = harness.intentFor("SUCCEED");
       const cap = connector.capabilities().find((c) => c.methodType === intent.methodType);
       assert.ok(cap, "intent uses a declared method");
-      const { providerRef } = await connector.initiate(intent);
+      const { providerRef } = await pay(connector, intent);
       const paid = Money.fromJSON(intent.amount);
-      if (cap.refund === "NONE") return;
+      if (cap.refund === "NONE") {
+        const refused = await connector.refund(providerRef, paid.toJSON(), "r-none");
+        assert.equal(refused.state, "FAILED", "a rail without refunds must refuse, not pretend");
+        assert.equal(refused.reasonCode, "NOT_SUPPORTED");
+        return;
+      }
 
       const over = await connector.refund(providerRef, paid.add(Money.ofMinor(1n, paid.currency)).toJSON(), "r-over");
       assert.equal(over.state, "FAILED");
@@ -145,7 +159,7 @@ export function certifyPaymentConnector(name: string, harness: CertificationHarn
     test("statement lines reconcile to successful payments", async () => {
       const connector = await harness.createConnector();
       const ok = harness.intentFor("SUCCEED");
-      const okRef = (await connector.initiate(ok)).providerRef;
+      const okRef = (await pay(connector, ok)).providerRef;
       const failed = harness.failureScenarios[0];
       const failedRef = failed ? (await connector.initiate(harness.intentFor(failed))).providerRef : undefined;
       const lines = await connector.fetchStatement(harness.statementDate());

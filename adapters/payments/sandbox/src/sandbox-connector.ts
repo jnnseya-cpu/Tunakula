@@ -10,6 +10,7 @@
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { Money, type MoneyJSON } from "@tunakula/ts-money";
 import {
+  ConnectorUnavailableError,
   PAYMENT_REASON_CODES,
   type ConnectorCapability,
   type ConnectorHealth,
@@ -23,16 +24,6 @@ import {
   type StatementLine,
   type StatusResult,
 } from "@tunakula/ts-contracts";
-
-export class ConnectorUnavailableError extends Error {
-  readonly connectorId: string;
-
-  constructor(connectorId: string) {
-    super(`Connector ${connectorId} is unreachable; nothing was sent to the provider`);
-    this.name = "ConnectorUnavailableError";
-    this.connectorId = connectorId;
-  }
-}
 
 interface SandboxPayment {
   providerRef: string;

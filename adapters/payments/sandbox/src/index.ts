@@ -1,1 +1,2 @@
-export { SandboxConnector, ConnectorUnavailableError, type SandboxOptions } from "./sandbox-connector.ts";
+export { SandboxConnector, type SandboxOptions } from "./sandbox-connector.ts";
+export { ConnectorUnavailableError } from "@tunakula/ts-contracts";

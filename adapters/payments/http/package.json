@@ -1,0 +1,13 @@
+{
+  "name": "@tunakula/payment-http",
+  "version": "0.1.0",
+  "private": true,
+  "description": "HTTP transport for payment connectors: timeouts and the sent / not-sent distinction orchestration depends on (ADR 0003).",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@tunakula/ts-contracts": "*"
+  }
+}

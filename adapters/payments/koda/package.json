@@ -1,0 +1,18 @@
+{
+  "name": "@tunakula/payment-connector-koda",
+  "version": "0.1.0",
+  "private": true,
+  "description": "KODA PaymentConnector — mobile-money payment verification by operator SMS reference (PRD §20.9).",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@tunakula/payment-http": "*",
+    "@tunakula/ts-contracts": "*",
+    "@tunakula/ts-money": "*"
+  },
+  "devDependencies": {
+    "@tunakula/payment-connector-certification": "*"
+  }
+}

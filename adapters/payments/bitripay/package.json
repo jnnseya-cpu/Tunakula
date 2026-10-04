@@ -1,0 +1,18 @@
+{
+  "name": "@tunakula/payment-connector-bitripay",
+  "version": "0.1.0",
+  "private": true,
+  "description": "BitriPay PaymentConnector and PayoutConnector — the group payment rail and default orchestration provider (PRD §20).",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@tunakula/payment-http": "*",
+    "@tunakula/ts-contracts": "*",
+    "@tunakula/ts-money": "*"
+  },
+  "devDependencies": {
+    "@tunakula/payment-connector-certification": "*"
+  }
+}
