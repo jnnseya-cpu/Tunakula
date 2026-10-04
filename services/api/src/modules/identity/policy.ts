@@ -7,7 +7,7 @@
  */
 import { Money, type MoneyJSON } from "@tunakula/ts-money";
 import type { CountryProfile } from "@tunakula/ts-contracts";
-import { ROLES, scopeKey, type Action, type Condition, type RoleBinding, type RoleDefinition } from "./roles.ts";
+import { bindingGrants, bindingLabel, scopeKey, type Action, type Condition, type RoleBinding } from "./roles.ts";
 
 /** Where a resource sits in the Country → City → Zone and Restaurant Group → Branch hierarchies. */
 export interface ResourceContext {
@@ -55,12 +55,11 @@ export function authorize(principal: Principal, action: Action, resource: Resour
   for (const binding of principal.bindings) {
     if (binding.userId !== principal.userId) continue;
     if (!covers(binding, resource)) continue;
-    const definition: RoleDefinition = ROLES[binding.role];
-    for (const grant of definition.grants) {
+    for (const grant of bindingGrants(binding)) {
       if (grant.action !== "*" && grant.action !== action) continue;
       const failed = (grant.conditions ?? []).find((c) => !conditionHolds(c, binding, principal, resource, request));
-      if (!failed) return { allowed: true, bindingId: binding.id, role: binding.role };
-      refusals.push(`${binding.role}@${scopeKey(binding.scope)}: condition ${failed} not met`);
+      if (!failed) return { allowed: true, bindingId: binding.id, role: bindingLabel(binding) };
+      refusals.push(`${bindingLabel(binding)}@${scopeKey(binding.scope)}: condition ${failed} not met`);
     }
   }
   return { allowed: false, reason: refusals.length > 0 ? refusals.join("; ") : `no binding grants ${action} on this ${resource.type}` };

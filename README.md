@@ -20,6 +20,7 @@ This is the platform foundation: the parts every other context depends on, writt
 | `packages/ts-contracts/fixtures` | Synthetic market profiles for the §33 test matrix: dual-currency landmark (CD), single-currency postcode (GB), zero-decimal mobile-money (SN) | §33 |
 | `services/api` — payments, money | Payment routing with safe fallback and circuit breakers; double-entry append-only ledger journals | §19.3, §20.4 |
 | `services/api` — identity | Scoped RBAC policy layer: §8.2 role matrix, deny by default, never crosses the active country | §8.2, §9.5 |
+| `services/api` — accounts | Business accounts (platform, merchants of any kind, fleets) with multiple holders, per-member access levels and branch limits, no privilege escalation; profile and cover pictures; self-service account deletion with blockers, grace period and pseudonymisation | §8.2, §12.4, ADR 0005 |
 | `services/api` — ordering | Event-sourced order aggregate: §10.1 state machine with the §11 chain-of-custody gates, evidence bundle projection, idempotent store | §10, §11, §12.2 |
 | `adapters/payments/certification` | Connector certification contract suite every connector must pass | §20.7 |
 | `adapters/payments/sandbox` | Reference sandbox connector (passes certification) | §20.7 |

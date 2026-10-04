@@ -39,3 +39,29 @@ export {
 } from "./modules/ordering/order-aggregate.ts";
 export { ConcurrencyError, InMemoryOrderStore } from "./modules/ordering/order-store.ts";
 export { evidenceBundle, type EvidenceBundle } from "./modules/ordering/evidence.ts";
+export { bindingGrants, bindingLabel, type BuiltInRoleBinding, type Grant, type ProfileRoleBinding } from "./modules/identity/roles.ts";
+export {
+  AccountDirectory,
+  AccountError,
+  GRANTABLE_ACTIONS,
+  IMAGE_RULES,
+  IMAGE_TYPES,
+  TEMPLATES,
+  validateImage,
+  type AccessProfile,
+  type AccountImages,
+  type AccountStatus,
+  type AuditRecord,
+  type BusinessAccount,
+  type BusinessKind,
+  type DeletionBlocker,
+  type DeletionChecks,
+  type DeletionOutcome,
+  type DeletionSubject,
+  type ImageRef,
+  type ImageSlot,
+  type Membership,
+  type MembershipStatus,
+  type MerchantCategory,
+  type UserAccount,
+} from "./modules/identity/accounts.ts";

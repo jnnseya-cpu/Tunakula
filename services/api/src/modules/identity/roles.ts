@@ -62,6 +62,16 @@ export const ACTIONS = [
   "job:accept",
   "cash_in_hand:read",
   "document:manage",
+  // Point of sale (§12.4, OMN-005): authorisation levels per staff member
+  "pos:discount",
+  "pos:void",
+  "pos:refund",
+  "cash_drawer:manage",
+  // Account administration (any business account)
+  "account_member:manage",
+  "access_profile:manage",
+  "account_profile:edit",
+  "account:delete",
   // Customer
   "order:place",
   "wallet:manage",
@@ -157,13 +167,34 @@ export const ROLES = {
 
 export type Role = keyof typeof ROLES;
 
-export interface RoleBinding {
+interface BindingBase {
   readonly id: string;
   readonly userId: string;
-  readonly role: Role;
   readonly scope: Scope;
-  /** Required for FLEET_PARTNER: the fleet this binding manages. */
+  /** Required for FLEET_PARTNER and fleet profiles: the fleet this binding manages. */
   readonly fleetId?: string;
+  /** The business account this binding comes from, for account-member bindings. */
+  readonly accountId?: string;
+}
+
+/** A built-in §8.2 role. */
+export interface BuiltInRoleBinding extends BindingBase {
+  readonly role: Role;
+}
+
+/** A per-member access profile defined by a business account (see accounts.ts). */
+export interface ProfileRoleBinding extends BindingBase {
+  readonly profile: { readonly id: string; readonly name: string; readonly grants: readonly Grant[] };
+}
+
+export type RoleBinding = BuiltInRoleBinding | ProfileRoleBinding;
+
+export function bindingGrants(binding: RoleBinding): readonly Grant[] {
+  return "role" in binding ? (ROLES[binding.role] as RoleDefinition).grants : binding.profile.grants;
+}
+
+export function bindingLabel(binding: RoleBinding): string {
+  return "role" in binding ? binding.role : `profile:${binding.profile.name}`;
 }
 
 export function scopeKey(scope: Scope): string {
@@ -172,6 +203,12 @@ export function scopeKey(scope: Scope): string {
 
 /** Validates a binding before it is granted (`role.granted`). */
 export function assertValidBinding(binding: RoleBinding): void {
+  if (!("role" in binding)) {
+    if (binding.profile.grants.some((g) => g.conditions?.includes("OWN_FLEET")) && !binding.fleetId) {
+      throw new Error("Fleet profile bindings must name a fleet");
+    }
+    return;
+  }
   const definition: RoleDefinition = ROLES[binding.role];
   if (!definition) throw new Error(`Unknown role ${String(binding.role)}`);
   if (!definition.scopes.includes(binding.scope.type)) {
