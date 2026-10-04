@@ -212,6 +212,8 @@ section.tight { padding: 72px 0; }
 
 /* Printed menu */
 .menu-board { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; border-top: 1px solid var(--ink); }
+.menu-board.four { grid-template-columns: repeat(4, 1fr); }
+.menu-board.two { grid-template-columns: repeat(2, 1fr); }
 .menu-board .col { padding: 30px 30px 10px 0; }
 .menu-board .col + .col { padding-left: 30px; border-left: 1px solid var(--rule); }
 .menu-board .kitchen { font-family: var(--display); font-size: 28px; line-height: 1.05; }
@@ -297,7 +299,7 @@ footer .legal { margin-top: 64px; padding-top: 22px; border-top: 1px solid var(-
   .hero .stage .note { display: none; }
   .facts { grid-template-columns: 1fr 1fr; }
   .facts > div { border-left: 0; padding-left: 0; border-top: 1px solid var(--rule); }
-  .menu-board, .flow, .flow.two { grid-template-columns: 1fr; }
+  .menu-board, .menu-board.four, .menu-board.two, .flow, .flow.two { grid-template-columns: 1fr; }
   .flow.two li:nth-child(n) { padding-left: 0; border-left: 0; }
   .flow.two li + li { border-top: 1px solid var(--rule); }
   .dish .name { white-space: normal; }
@@ -453,7 +455,8 @@ footer .legal { margin-top: 64px; padding-top: 22px; border-top: 1px solid var(-
 .store-meta { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 15px; color: var(--ink-2); }
 .store-badges { display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
 .badge { font-size: 13px; border: 1px solid rgba(31, 48, 93, 0.25); color: var(--navy); background: var(--tint); border-radius: 30px; padding: 5px 12px; white-space: nowrap; }
-.store-body { display: grid; grid-template-columns: 1fr 360px; gap: 48px; align-items: start; padding: 0 0 96px; }
+.store-menu { min-width: 0; }
+.store-body { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 48px; align-items: start; padding: 0 0 96px; }
 .menu-tabs { position: sticky; top: 0; z-index: 3; background: var(--paper); display: flex; gap: 6px; overflow-x: auto; padding: 16px 0; border-bottom: 1px solid var(--rule); }
 .menu-tabs a { padding: 8px 14px; border-radius: 30px; font-size: 14.5px; font-weight: 550; white-space: nowrap; }
 .menu-tabs a:hover { background: var(--paper-2); }

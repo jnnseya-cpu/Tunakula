@@ -61,7 +61,7 @@ export default function Kinshasa() {
             </div>
             <p className="lede">For anyone ordering from abroad, or new in town. Each kitchen makes these its own way — the menu says how.</p>
           </div>
-          <div className="menu-board" style={{ gridTemplateColumns: "repeat(2, 1fr)" }}>
+          <div className="menu-board two">
             {[DISHES.slice(0, 4), DISHES.slice(4)].map((col, i) => (
               <div className="col" key={i}>
                 {col.map(([name, what]) => (

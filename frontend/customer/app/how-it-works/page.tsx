@@ -52,7 +52,7 @@ export default function HowItWorks() {
             </div>
             <p className="lede">The two failures that hurt most are the wrong food leaving the kitchen and the right food reaching the wrong person. This is how we prevent both.</p>
           </div>
-          <div className="menu-board" style={{ gridTemplateColumns: "repeat(4, 1fr)" }}>
+          <div className="menu-board four">
             {CUSTODY.map(([h, p], i) => (
               <div className="col" key={h}>
                 <div className="kicker"><span className="n">{String(i + 1).padStart(2, "0")}</span></div>

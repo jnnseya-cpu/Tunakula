@@ -35,7 +35,7 @@ export default function About() {
             </div>
             <p className="lede">They are written into how the platform works — the ledger, the prices, the ratings — not into a slogan.</p>
           </div>
-          <div className="menu-board" style={{ gridTemplateColumns: "repeat(2, 1fr)" }}>
+          <div className="menu-board two">
             {[BELIEFS.slice(0, 2), BELIEFS.slice(2)].map((col, i) => (
               <div className="col" key={i}>
                 {col.map(([h, p]) => (
