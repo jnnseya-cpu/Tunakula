@@ -5,6 +5,7 @@ import { SiteFooter, SiteNav } from "../../../components/site";
 import { AddButton, BasketBar, BasketPanel, BasketProvider } from "../../../components/basket";
 import { Cover, DELIVERY_FROM, Logo, SERVICE_BPS, Stars } from "../../../components/merchant";
 import { FoodImage } from "../../../components/plate";
+import { EtaChip, OpenBadge } from "../../../components/location";
 import { fc, merchant, MERCHANTS } from "../../../lib/catalogue";
 
 export function generateStaticParams() {
@@ -37,7 +38,8 @@ export default async function Storefront({ params }: { params: Promise<{ slug: s
           <h1 className="display">{m.name}</h1>
           <p className="store-meta">
             <Stars m={m} />
-            <span>{m.eta}</span>
+            <EtaChip slug={m.slug} size="lg" />
+            <OpenBadge slug={m.slug} />
             <span>Delivery from {DELIVERY_FROM}</span>
             <span>Open {m.hours}</span>
           </p>

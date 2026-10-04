@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { SiteFooter, SiteNav } from "../../components/site";
 import { JoinCard, MerchantCard } from "../../components/merchant";
 import { StoreFilter } from "../../components/filter";
+import { StoreSorter } from "../../components/location";
 import { MERCHANTS } from "../../lib/catalogue";
 
 export const metadata: Metadata = { title: "Order food in Kinshasa", description: "Restaurants, grills, malewa, bakeries and groceries delivering across Kinshasa." };
@@ -13,19 +14,16 @@ export default function Order() {
       <div className="preview-note"><div className="wrap">Preview · sample kitchens and shops showing how ordering works. Ordering opens at launch.</div></div>
       <section className="tight order-top">
         <div className="wrap">
-          <p className="eyebrow"><b>Kinshasa</b> · delivering now</p>
+          <p className="eyebrow"><b>Kinshasa</b> · delivering now · distances by road from your location</p>
           <h1 className="display" style={{ margin: "14px 0 26px" }}>What are you hungry for?</h1>
           <StoreFilter />
         </div>
       </section>
       <section className="tight" style={{ borderBottom: 0 }}>
         <div className="wrap">
-          <div className="mgrid">
-            {MERCHANTS.map((m) => (
-              <div key={m.slug} data-store data-kind={m.kind} data-search={[m.name, m.cuisine, m.commune, m.kind, ...m.menu.flatMap((s) => s.items.map((i) => i.name))].join(" ").toLowerCase()}>
-                <MerchantCard m={m} />
-              </div>
-            ))}
+          <StoreSorter scope="order" />
+          <div className="mgrid" data-scope="order">
+            {MERCHANTS.map((m) => <MerchantCard key={m.slug} m={m} />)}
             <JoinCard />
           </div>
           <p id="no-stores" className="lede" hidden>Nothing matches yet. Try a dish, like &ldquo;pondu&rdquo;, or a commune.</p>

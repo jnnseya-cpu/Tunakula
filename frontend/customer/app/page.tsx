@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { Phone, SiteFooter, SiteNav } from "../components/site";
+import { HeroCarousel, NearMeButton, PlaceLine } from "../components/hero";
+import { EtaChip, StoreSorter } from "../components/location";
 import { PayScreen, TrackingScreen } from "../components/screens";
 import { JoinCard, MerchantCard } from "../components/merchant";
 import { FoodImage, PlateArt, type Recipe } from "../components/plate";
@@ -17,7 +19,6 @@ const CRAVINGS: [string, Recipe, string][] = [
   ["Groceries", "fruits", "fruit"],
 ];
 
-const AREAS = ["Gombe", "Limete", "Bandalungwa", "Ngaliema", "Kintambo", "Lingwala", "Kalamu", "Lemba"];
 
 export default function Home() {
   const picks = favourites(8);
@@ -25,37 +26,74 @@ export default function Home() {
     <>
       <SiteNav current="/" />
 
-      <section className="hero-food">
-        <div className="wrap hf-grid">
-          <div className="hf-copy">
-            <p className="eyebrow light"><b>Kinshasa</b> · 24 communes · francs or dollars</p>
-            <h1 className="display">Hungry, <em>Kinshasa?</em></h1>
-            <p className="hf-lede">Moambe, pondu, brochettes off the grill and bread still warm, from the kitchens you already love, at your gate in about 30 minutes.</p>
-            <form className="where" action="/order/" method="get" role="search">
-              <label>
-                <span className="sr">Where should we deliver?</span>
-                <span className="pin" aria-hidden />
-                <input name="q" placeholder="Your commune, avenue or a landmark" autoComplete="street-address" />
-              </label>
-              <button className="btn accent" type="submit">Find food</button>
-            </form>
-            <p className="areas">
-              <span>Popular:</span>
-              {AREAS.map((a) => <Link key={a} href={`/order/?q=${encodeURIComponent(a)}`}>{a}</Link>)}
-            </p>
+      <section className="m-hero">
+        <div className="wrap">
+          <HeroCarousel
+            labels={["Food near you", "Send a meal home", "For restaurants", "For riders"]}
+            slides={[
+              <div key="food" className="hs hs-food">
+                <div className="hs-copy">
+                  <p className="eyebrow light"><b>Kinshasa</b> · 24 communes · francs or dollars</p>
+                  <h1 className="display">Hungry, <em>Kinshasa?</em></h1>
+                  <p className="hs-lede">Moambe, pondu, brochettes off the grill and bread still warm, from the kitchens you already love. See how far each one is and when it reaches you.</p>
+                  <div className="hs-actions">
+                    <NearMeButton className="btn navy">Find food near me</NearMeButton>
+                    <a className="btn ghost-light" href="/order/">Browse all</a>
+                  </div>
+                </div>
+                <div className="hs-art" aria-hidden>
+                  <PlateArt className="hp hp-main" recipe="moambe" seed="hero" />
+                  <PlateArt className="hp hp-a" recipe="brochettes" seed="hero" />
+                  <PlateArt className="hp hp-b" recipe="pondu" seed="hero" />
+                  <PlateArt className="hp hp-c" recipe="jus" seed="hero" />
+                  <PlateArt className="hp hp-d" recipe="makemba" seed="hero" />
+                </div>
+              </div>,
+              <div key="send" className="hs hs-send">
+                <div className="hs-copy">
+                  <p className="eyebrow light"><b>From London, Paris or Brussels</b></p>
+                  <h2 className="display">Send dinner home to <em>Maman.</em></h2>
+                  <p className="hs-lede">Pay in pounds, euros or dollars. A Kinshasa kitchen cooks it, a rider brings it, she confirms with a code, and you get the photo.</p>
+                  <div className="hs-actions"><a className="btn accent" href="/send-home/">Send a meal home</a></div>
+                </div>
+                <div className="hs-art" aria-hidden>
+                  <PlateArt className="hp hp-main" recipe="liboke" seed="send" />
+                  <PlateArt className="hp hp-a" recipe="moambe" seed="send" />
+                  <PlateArt className="hp hp-c" recipe="jus" seed="send2" />
+                </div>
+              </div>,
+              <div key="merchants" className="hs hs-merchant">
+                <div className="hs-copy">
+                  <p className="eyebrow light"><b>Restaurants, malewa, bakeries, shops</b></p>
+                  <h2 className="display"><em>0%</em> commission. Your prices.</h2>
+                  <p className="hs-lede">Your own storefront, a till on the phone you already own, and every franc of your menu price.</p>
+                  <div className="hs-actions"><a className="btn accent" href="/restaurants/">Open a storefront</a></div>
+                </div>
+                <div className="hs-art" aria-hidden>
+                  <PlateArt className="hp hp-main" recipe="brochettes" seed="m" />
+                  <PlateArt className="hp hp-b" recipe="beignets" seed="m" />
+                  <PlateArt className="hp hp-d" recipe="fruits" seed="m" />
+                </div>
+              </div>,
+              <div key="riders" className="hs hs-rider">
+                <div className="hs-copy">
+                  <p className="eyebrow light"><b>Riders and fleets</b></p>
+                  <h2 className="display">Ride today. <em>Get paid today.</em></h2>
+                  <p className="hs-lede">See the distance and what you&rsquo;ll earn before you accept. Saying no never costs you jobs.</p>
+                  <div className="hs-actions"><a className="btn accent" href="/riders/">Ride with Tunakula</a></div>
+                </div>
+                <div className="hs-art" aria-hidden>
+                  <PlateArt className="hp hp-main" recipe="pondu" seed="r" />
+                  <PlateArt className="hp hp-a" recipe="poisson" seed="r" />
+                </div>
+              </div>,
+            ]}
+          />
+          <div className="trust-row">
+            <span><b>Counter prices.</b> Restaurants pay 0% commission.</span>
+            <span><b>M-Pesa, Orange Money, Airtel Money</b> or card.</span>
+            <span><b>A code at your door.</b> Your food reaches you, not a neighbour.</span>
           </div>
-          <div className="hf-table" aria-hidden>
-            <PlateArt className="hp hp-main" recipe="moambe" seed="hero" />
-            <PlateArt className="hp hp-a" recipe="brochettes" seed="hero" />
-            <PlateArt className="hp hp-b" recipe="pondu" seed="hero" />
-            <PlateArt className="hp hp-c" recipe="jus" seed="hero" />
-            <PlateArt className="hp hp-d" recipe="makemba" seed="hero" />
-          </div>
-        </div>
-        <div className="wrap hf-trust">
-          <span><b>Counter prices.</b> Restaurants pay 0% commission.</span>
-          <span><b>M-Pesa, Orange Money, Airtel Money</b> or card.</span>
-          <span><b>A code at your door.</b> Your food reaches you, not a neighbour.</span>
         </div>
       </section>
 
@@ -64,7 +102,7 @@ export default function Home() {
           <h2 className="sec-title">What are you craving?</h2>
           <nav className="crave" aria-label="Cravings">
             {CRAVINGS.map(([label, recipe, q]) => (
-              <Link key={label} href={`/order/?q=${encodeURIComponent(q)}`}>
+              <Link key={label} href={`/order/?q=${encodeURIComponent(q)}`} data-reveal>
                 <PlateArt className="crave-pic" recipe={recipe} seed={`crave-${q}`} />
                 <span>{label}</span>
               </Link>
@@ -73,16 +111,17 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="tight">
+      <section className="tight" id="near">
         <div className="wrap">
           <div className="sec-head">
             <div>
-              <h2 className="sec-title">Popular in Kinshasa tonight</h2>
-              <p className="muted">Sample kitchens and shops: this is how storefronts will look at launch.</p>
+              <h2 className="sec-title">Near you</h2>
+              <PlaceLine />
             </div>
             <Link className="link" href="/order/">See everything</Link>
           </div>
-          <div className="mgrid">
+          <StoreSorter scope="home" />
+          <div className="mgrid" data-scope="home">
             {MERCHANTS.map((m) => <MerchantCard key={m.slug} m={m} />)}
             <JoinCard />
           </div>
@@ -92,19 +131,20 @@ export default function Home() {
       <section className="tight">
         <div className="wrap">
           <div className="sec-head">
-            <h2 className="sec-title">Dishes people order again and again</h2>
+            <h2 className="sec-title">Popular dishes</h2>
             <Link className="link" href="/order/">Browse menus</Link>
           </div>
           <div className="fav-grid">
             {picks.map(({ merchant: m, item }) => (
-              <Link key={`${m.slug}-${item.id}`} className="fav" href={`/r/${m.slug}/`}>
+              <Link key={`${m.slug}-${item.id}`} className="fav" href={`/r/${m.slug}/`} data-reveal>
                 <div className="fav-pic" style={{ background: m.tone.bg }}>
                   <FoodImage slug={`${m.slug}-${item.id}`} recipe={item.recipe} alt={item.name} className="pic" />
                   <span className="fav-add" aria-hidden>+</span>
                 </div>
                 <h3>{item.name}</h3>
                 <p className="muted">{m.name} · {m.commune}</p>
-                <p className="fav-foot"><b className="num">{fc(item.price)}</b><span>{m.eta}</span></p>
+                <p className="fav-foot"><b className="num">{fc(item.price)}</b></p>
+                <EtaChip slug={m.slug} />
               </Link>
             ))}
           </div>
@@ -125,21 +165,6 @@ export default function Home() {
           <div className="stage" style={{ position: "relative", height: 640, overflow: "hidden" }}>
             <Phone className="p1"><TrackingScreen /></Phone>
             <Phone className="p2"><PayScreen /></Phone>
-          </div>
-        </div>
-      </section>
-
-      <section className="send-band">
-        <div className="wrap split">
-          <div className="stack">
-            <p className="eyebrow light"><b>From London, Paris or Brussels</b></p>
-            <h2 className="display">Send dinner home to <em>Maman.</em></h2>
-            <p className="lede">Pay in pounds, euros or dollars. The kitchen in Kinshasa cooks it, a rider brings it, she confirms with a code, and you get the photo.</p>
-            <div className="cta-row"><Link className="btn accent" href="/send-home/">Send a meal home</Link></div>
-          </div>
-          <div className="send-plates" aria-hidden>
-            <PlateArt className="sp sp1" recipe="moambe" seed="send" />
-            <PlateArt className="sp sp2" recipe="liboke" seed="send" />
           </div>
         </div>
       </section>

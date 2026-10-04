@@ -16,15 +16,13 @@ import { distanceMetres } from "../modules/ordering/order-aggregate.ts";
 import type { GeoPoint } from "../modules/ordering/order-types.ts";
 import { deliveryFee } from "../modules/pricing/pricing.ts";
 import { badRequest, notFound } from "./errors.ts";
-import { localHour, modelSeconds, type RoutingProvider } from "./routing.ts";
+import { DEFAULT_PICKUP_MIN, etaRange, HANDOVER_MIN, localHour, modelSeconds, ROAD_FACTOR } from "@tunakula/ts-contracts/eta-model";
+import type { RoutingProvider } from "./routing.ts";
 
 const LOOKBACK_DAYS = 30;
-const DEFAULT_PICKUP_MIN = 18;
 const MIN_BRANCH_SAMPLES = 8;
 const MIN_HOUR_SAMPLES = 15;
 const MIN_MARKET_SAMPLES = 20;
-const HANDOVER_MIN = 2;
-const ROAD_FACTOR = 1.3;
 const LEARN_TTL_MS = 10 * 60_000;
 const ACTIVE_STATES = ["PLACED", "ACCEPTED", "PREPARING", "PACKED"];
 
@@ -61,10 +59,7 @@ interface Learned {
 
 type BranchRow = { id: string; name: string; commune: string | null; status: string; lat: string; lng: string; active: string };
 
-export function etaRange(minutes: number): { low: number; high: number } {
-  const low = Math.max(10, 5 * Math.floor(minutes / 5));
-  return { low, high: low + 10 };
-}
+export { etaRange };
 
 const median = (xs: number[]) => {
   if (!xs.length) return null;

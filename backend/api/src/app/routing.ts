@@ -8,10 +8,11 @@
  *  - straightLineRouting: always available; great-circle distance × road factor and the congestion profile.
  * withFallback() tries the live adapter and falls back pair by pair; cachedRouting() keeps answers for minutes.
  */
+import { localHour, modelSeconds, ROAD_FACTOR, type Vehicle } from "@tunakula/ts-contracts/eta-model";
 import { distanceMetres } from "../modules/ordering/order-aggregate.ts";
 import type { GeoPoint } from "../modules/ordering/order-types.ts";
 
-export type Vehicle = "MOTO" | "BICYCLE" | "CAR" | "FOOT";
+export type { Vehicle };
 
 export interface Route {
   readonly meters: number;
@@ -29,28 +30,9 @@ export interface RoutingProvider {
   routes?(origins: readonly GeoPoint[], to: GeoPoint, vehicle: Vehicle, departAt: Date): Promise<(Route | null)[]>;
 }
 
-/** Free-flow speeds in km/h, before congestion. */
-export const FREE_FLOW_KMH: Record<Vehicle, number> = { MOTO: 28, CAR: 24, BICYCLE: 14, FOOT: 4.5 };
+export { DEFAULT_CONGESTION, FREE_FLOW_KMH, localHour, modelSeconds } from "@tunakula/ts-contracts/eta-model";
 
-/**
- * Speed multiplier by local hour (0–23) for a dense African capital: morning and evening rush,
- * a lunchtime slowdown, free flow at night. Learned per market from delivered orders (see eta.ts).
- */
-export const DEFAULT_CONGESTION: readonly number[] = [
-  1, 1, 1, 1, 1, 0.95, 0.8, 0.6, 0.55, 0.65, 0.75, 0.75, 0.7, 0.7, 0.75, 0.7, 0.6, 0.5, 0.5, 0.6, 0.75, 0.85, 0.95, 1,
-];
-
-export function localHour(at: Date, timeZone: string): number {
-  return Number(new Intl.DateTimeFormat("en-GB", { hour: "numeric", hourCycle: "h23", timeZone }).format(at)) % 24;
-}
-
-/** Travel seconds for a road distance at a given local hour, using free-flow speed × congestion. */
-export function modelSeconds(meters: number, vehicle: Vehicle, hour: number, congestion: readonly number[] = DEFAULT_CONGESTION): number {
-  const kmh = FREE_FLOW_KMH[vehicle] * (congestion[hour] ?? 1);
-  return Math.round((meters / 1000 / kmh) * 3600);
-}
-
-export function straightLineRouting(roadFactor = 1.3, opts: { timeZone?: string; congestion?: readonly number[] } = {}): RoutingProvider {
+export function straightLineRouting(roadFactor = ROAD_FACTOR, opts: { timeZone?: string; congestion?: readonly number[] } = {}): RoutingProvider {
   const tz = opts.timeZone ?? "Africa/Kinshasa";
   return {
     id: "straight-line-estimate",

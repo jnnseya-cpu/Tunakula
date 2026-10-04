@@ -30,7 +30,10 @@ export interface Merchant {
   readonly hours: string;
   readonly rating: number;
   readonly ratings: number;
-  readonly eta: string;
+  /** Where the kitchen is: distance and delivery time are computed from here to the customer. */
+  readonly location: { readonly lat: number; readonly lng: number };
+  /** Typical minutes until an order is ready for the rider (learned from orders once live). */
+  readonly prep: number;
   /** Profile picture: a monogram in the merchant's colours until they upload their logo. */
   readonly monogram: string;
   readonly tone: { readonly bg: string; readonly fg: string; readonly accent: string };
@@ -51,7 +54,8 @@ export const MERCHANTS: readonly Merchant[] = [
     hours: "11:00 – 22:30",
     rating: 4.8,
     ratings: 1240,
-    eta: "25–35 min",
+    location: { lat: -4.3045, lng: 15.3085 },
+    prep: 16,
     monogram: "MP",
     tone: { bg: "#7e2a10", fg: "#fbefe4", accent: "#e9a24a" },
     cover: ["moambe", "liboke", "pondu"],
@@ -99,7 +103,8 @@ export const MERCHANTS: readonly Merchant[] = [
     hours: "10:00 – 21:00",
     rating: 4.6,
     ratings: 860,
-    eta: "20–30 min",
+    location: { lat: -4.3600, lng: 15.3390 },
+    prep: 14,
     monogram: "ML",
     tone: { bg: "#27402a", fg: "#eef0e2", accent: "#d9b24a" },
     cover: ["pondu", "fumbwa", "makemba"],
@@ -133,7 +138,8 @@ export const MERCHANTS: readonly Merchant[] = [
     hours: "16:00 – 01:00",
     rating: 4.7,
     ratings: 1015,
-    eta: "30–40 min",
+    location: { lat: -4.3270, lng: 15.2780 },
+    prep: 20,
     monogram: "BK",
     tone: { bg: "#2a1d16", fg: "#f3e6d6", accent: "#e0643a" },
     cover: ["brochettes", "poisson", "mbika"],
@@ -172,7 +178,8 @@ export const MERCHANTS: readonly Merchant[] = [
     hours: "05:30 – 20:00",
     rating: 4.7,
     ratings: 540,
-    eta: "15–25 min",
+    location: { lat: -4.3420, lng: 15.3120 },
+    prep: 10,
     monogram: "BV",
     tone: { bg: "#8a5a22", fg: "#fff4e3", accent: "#f2c46a" },
     cover: ["pain", "beignets", "jus"],
@@ -210,7 +217,8 @@ export const MERCHANTS: readonly Merchant[] = [
     hours: "07:00 – 21:00",
     rating: 4.5,
     ratings: 390,
-    eta: "35–50 min",
+    location: { lat: -4.3480, lng: 15.2490 },
+    prep: 22,
     monogram: "ME",
     tone: { bg: "#1f5a50", fg: "#eef6f2", accent: "#f2b84b" },
     cover: ["fruits", "grocery", "chikwangue"],

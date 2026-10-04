@@ -1,9 +1,10 @@
 import Link from "next/link";
 
 import { CONTACT_EMAIL } from "../lib/site";
+import { LocationButton } from "./location";
 
 const LINKS = [
-  { href: "/order/", label: "Order food" },
+  { href: "/order/", label: "Restaurants" },
   { href: "/how-it-works/", label: "How it works" },
   { href: "/send-home/", label: "Send a meal home" },
   { href: "/restaurants/", label: "For restaurants" },
@@ -28,29 +29,51 @@ export function Wordmark() {
 
 export function SiteNav({ current }: { current: string }) {
   return (
-    <header className="nav">
-      <div className="wrap">
-        <Wordmark />
-        <nav aria-label="Main">
-          {LINKS.map((l) => (
-            <Link key={l.href} href={l.href} aria-current={l.href === current ? "page" : undefined}>
-              {l.label}
+    <>
+      <header className="nav">
+        <div className="wrap">
+          <Wordmark />
+          <LocationButton />
+          <form className="nav-search" action="/order/" method="get" role="search">
+            <span className="sr">Search dishes, kitchens or communes</span>
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden><path fill="currentColor" d="M10 3a7 7 0 1 0 4.2 12.6l5.1 5.1 1.4-1.4-5.1-5.1A7 7 0 0 0 10 3Zm0 2a5 5 0 1 1 0 10 5 5 0 0 1 0-10Z" /></svg>
+            <input name="q" placeholder="Search food or restaurants" />
+          </form>
+          <nav aria-label="Main">
+            {LINKS.map((l) => (
+              <Link key={l.href} href={l.href} aria-current={l.href === current ? "page" : undefined}>
+                {l.label}
+              </Link>
+            ))}
+          </nav>
+          <div className="right">
+            <span className="langs" aria-label="Languages">
+              <b>EN</b> FR LN SW
+            </span>
+            <Link className="btn accent" href="/order/">
+              Order now
             </Link>
-          ))}
-        </nav>
-        <div className="right">
-          <span className="city">Kinshasa</span>
-          <span className="langs" aria-label="Languages">
-            <b>EN</b> FR LN SW
-          </span>
-          <Link className="btn accent" href="/order/">
-            Order now
-          </Link>
+          </div>
         </div>
-      </div>
-    </header>
+      </header>
+      <nav className="tabbar" aria-label="App">
+        {TABS.map(([href, label, d]) => (
+          <Link key={href} href={href} aria-current={href === current ? "page" : undefined}>
+            <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden><path fill="currentColor" d={d} /></svg>
+            <span>{label}</span>
+          </Link>
+        ))}
+      </nav>
+    </>
   );
 }
+
+const TABS: [string, string, string][] = [
+  ["/", "Home", "M12 3 2 11h3v9h5v-6h4v6h5v-9h3L12 3Z"],
+  ["/order/", "Explore", "M10 3a7 7 0 1 0 4.2 12.6l5.1 5.1 1.4-1.4-5.1-5.1A7 7 0 0 0 10 3Zm0 2a5 5 0 1 1 0 10 5 5 0 0 1 0-10Z"],
+  ["/send-home/", "Send home", "M20 6h-2.2A3 3 0 0 0 12 4.2 3 3 0 0 0 6.2 6H4a1 1 0 0 0-1 1v4h1v9h16v-9h1V7a1 1 0 0 0-1-1Zm-5-1a1 1 0 1 1 0 2h-2a1 1 0 0 1 1-2h1Zm-6 0h1a1 1 0 0 1 1 1v1H9a1 1 0 1 1 0-2Zm2 13H6v-7h5v7Zm0-9H5V8h6v1Zm7 9h-5v-7h5v7Zm1-9h-6V8h6v1Z"],
+  ["/restaurants/", "Partners", "M4 4h16l1 5a3 3 0 0 1-2 2.8V20H5v-8.2A3 3 0 0 1 3 9l1-5Zm3 9v5h4v-5H7Zm6 0v5h4v-5h-4Z"],
+];
 
 export function SiteFooter() {
   return (

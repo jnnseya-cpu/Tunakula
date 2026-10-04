@@ -6,6 +6,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./eta-model": "./src/eta-model.ts",
     "./testing": "./src/testing.ts",
     "./published/*": "./published/*"
   },
