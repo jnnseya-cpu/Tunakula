@@ -56,6 +56,7 @@ test("a market is launched by publishing a profile — no code change (§17)", (
   assert.equal(config.apiHost, "https://af.api.tunakula.com");
   assert.deepEqual(config.currencies.accepted.map((c) => c.code), ["USD", "CDF"]);
   assert.equal(config.currencies.accepted.find((c) => c.code === "CDF")?.symbol, "FC");
+  assert.deepEqual(config.currencies.accepted.map((c) => c.flag?.emoji), ["🇺🇸", "🇨🇩"], "every currency carries its flag");
   assert.deepEqual(config.paymentMethods, ["MOBILE_MONEY_PUSH", "CASH_ON_DELIVERY", "CARD", "TUNAKULA_WALLET"]);
   assert.deepEqual(config.languages, ["fr-CD", "ln", "sw", "en"]);
   assert.equal(config.confirmationModel, "RIDER_FIRST");

@@ -3,11 +3,45 @@
   "status": "PROPOSED",
   "defaultVolatilityClass": "VOLATILE",
   "volatilityClasses": {
-    "PEGGED": ["XOF", "XAF", "KMF", "CVE", "STN", "DJF", "ERN", "LSL", "NAD", "SZL", "AED", "SAR"],
-    "MANAGED": ["USD", "EUR", "GBP", "CHF", "CAD", "JPY", "AUD", "NZD", "SEK", "NOK", "DKK", "CNY"]
+    "PEGGED": [
+      "XOF",
+      "XAF",
+      "KMF",
+      "CVE",
+      "STN",
+      "DJF",
+      "ERN",
+      "LSL",
+      "NAD",
+      "SZL",
+      "AED",
+      "SAR"
+    ],
+    "MANAGED": [
+      "USD",
+      "EUR",
+      "GBP",
+      "CHF",
+      "CAD",
+      "JPY",
+      "AUD",
+      "NZD",
+      "SEK",
+      "NOK",
+      "DKK",
+      "CNY"
+    ]
   },
   "controls": {},
   "fxSources": {},
+  "flagIssuer": {
+    "$comment": "Flag shown for a currency used by several countries when no market context applies: the issuing central bank's seat or bloc.",
+    "EUR": "EU",
+    "XOF": "SN",
+    "XAF": "CM",
+    "XCD": "KN",
+    "XPF": "PF"
+  },
   "redenominations": [
     {
       "code": "MRO",

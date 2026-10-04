@@ -4,10 +4,13 @@ export {
   VOLATILITY_CLASSES,
   createDefaultRegistry,
   currencies,
+  currencyFlag,
   displayName,
+  flagEmoji,
   displaySymbol,
   type CurrencyControls,
   type CurrencyDefinition,
+  type CurrencyFlag,
   type VolatilityClass,
 } from "./registry.ts";
 export { Money, CurrencyMismatchError, type MoneyJSON } from "./money.ts";

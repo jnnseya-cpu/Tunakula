@@ -4,7 +4,7 @@
  * published Country Profile and the brand — never edited by hand — and leaves
  * out internal settings (fraud profiles, connector ids, KYC internals).
  */
-import { displayName, displaySymbol } from "@tunakula/ts-money";
+import { currencyFlag, displayName, displaySymbol } from "@tunakula/ts-money";
 import type { CountryProfile, PaymentMethodType } from "@tunakula/ts-contracts";
 import { themeVersion, type Brand, type ThemeTokens } from "./brand.ts";
 
@@ -20,7 +20,13 @@ export interface CountryConfig {
   readonly defaultLocale: string;
   readonly phone: { readonly countryCode: string; readonly otpChannels: readonly string[] };
   readonly currencies: {
-    readonly accepted: readonly { readonly code: string; readonly name: string; readonly symbol: string }[];
+    readonly accepted: readonly {
+      readonly code: string;
+      readonly name: string;
+      readonly symbol: string;
+      /** Appendix A: every currency is shown with a flag (emoji, plus the country code for SVG rendering). */
+      readonly flag?: { readonly country: string; readonly emoji: string };
+    }[];
     readonly settlement: string;
     readonly displayDefault: string;
     readonly dualCurrency: boolean;
@@ -67,7 +73,10 @@ export function deriveCountryConfig(profile: CountryProfile, brand: Brand, apiHo
     defaultLocale: locale,
     phone: { countryCode: profile.country.phone_country_code, otpChannels: profile.trust.otp_channels },
     currencies: {
-      accepted: profile.money.currencies.map((code) => ({ code, name: displayName(code, locale), symbol: displaySymbol(code, locale) })),
+      accepted: profile.money.currencies.map((code) => {
+        const flag = currencyFlag(code, { market: profile.country.iso2 });
+        return { code, name: displayName(code, locale), symbol: displaySymbol(code, locale), ...(flag ? { flag } : {}) };
+      }),
       settlement: profile.money.settlement_currency,
       displayDefault: profile.money.display_default,
       dualCurrency: profile.money.dual_currency,

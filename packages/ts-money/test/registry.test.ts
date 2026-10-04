@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CurrencyRegistry, UnknownCurrencyError, currencies, displayName, displaySymbol } from "../src/index.ts";
+import { CurrencyRegistry, UnknownCurrencyError, currencies, currencyFlag, displayName, displaySymbol, flagEmoji } from "../src/index.ts";
 
 // PRD Appendix A — every currency must be present from day one.
 const APPENDIX_A = {
@@ -50,6 +50,7 @@ test("unknown and malformed currencies are rejected", () => {
   assert.throws(() => currencies.get("ABC"), UnknownCurrencyError);
   const registry = new CurrencyRegistry([]);
   const base = {
+    countries: [],
     numericCode: "999",
     name: "Test",
     minorUnits: 2,
@@ -68,4 +69,33 @@ test("names and symbols are localised from CLDR, not hard-coded", () => {
   assert.match(displayName("CDF", "fr"), /franc congolais/i);
   assert.equal(displaySymbol("CDF", "fr-CD"), "FC");
   assert.equal(displaySymbol("GBP", "en-GB"), "£");
+});
+
+test("Appendix A: every currency has a flag", () => {
+  for (const code of Object.values(APPENDIX_A).flat()) {
+    const flag = currencyFlag(code);
+    assert.ok(flag, `${code} has a flag`);
+    assert.match(flag.emoji, /^\p{Regional_Indicator}{2}$/u, code);
+  }
+  assert.equal(currencyFlag("CDF")?.emoji, "🇨🇩");
+  assert.equal(currencyFlag("USD")?.emoji, "🇺🇸");
+  assert.equal(currencyFlag("GBP")?.emoji, "🇬🇧");
+  assert.equal(currencyFlag("ZAR")?.emoji, "🇿🇦");
+  assert.equal(currencyFlag("EUR")?.emoji, "🇪🇺");
+  assert.equal(currencyFlag("SLE")?.emoji, "🇸🇱");
+  assert.equal(currencyFlag("SLL")?.emoji, "🇸🇱", "retired currencies keep their country's flag");
+});
+
+test("shared currencies show the flag of the market they are used in", () => {
+  assert.deepEqual(currencyFlag("XOF", { market: "CI" }), { country: "CI", emoji: "🇨🇮" });
+  assert.equal(currencyFlag("XOF", { market: "SN" })?.emoji, "🇸🇳");
+  assert.equal(currencyFlag("XOF")?.emoji, "🇸🇳", "BCEAO seat by default");
+  assert.equal(currencyFlag("XAF", { market: "GA" })?.emoji, "🇬🇦");
+  assert.equal(currencyFlag("XAF")?.emoji, "🇨🇲", "BEAC seat by default");
+  assert.equal(currencyFlag("EUR", { market: "BE" })?.emoji, "🇧🇪");
+  // USD circulates in DRC but is not DRC's legal currency in ISO 4217: it keeps 🇺🇸, so CDF and USD never look alike.
+  assert.equal(currencyFlag("USD", { market: "CD" })?.emoji, "🇺🇸");
+  assert.deepEqual(currencies.get("XOF").countries, ["BF", "BJ", "CI", "GW", "ML", "NE", "SN", "TG"]);
+  assert.deepEqual(currencies.get("XAF").countries, ["CF", "CG", "CM", "GA", "GQ", "TD"]);
+  assert.throws(() => flagEmoji("cd"), TypeError);
 });

@@ -23,6 +23,10 @@ export interface CurrencyDefinition {
   readonly name: string;
   /** ISO 4217 minor units (0–4). */
   readonly minorUnits: number;
+  /** ISO 3166-1 alpha-2 codes of the countries ISO lists for this currency (from ISO 4217 data). */
+  readonly countries: readonly string[];
+  /** Flag country when no market context applies (issuer bloc or central-bank seat). */
+  readonly flagCountry?: string;
   readonly volatilityClass: VolatilityClass;
   /** Ordered FX rate providers. */
   readonly fxSources: readonly string[];
@@ -117,6 +121,7 @@ export function displaySymbol(code: string, locale: string): string {
 }
 
 interface RegistryPolicy {
+  flagIssuer: Partial<Record<string, string>>;
   defaultVolatilityClass: string;
   volatilityClasses: Partial<Record<string, readonly string[]>>;
   controls: Partial<Record<string, CurrencyControls>>;
@@ -140,6 +145,7 @@ export function createDefaultRegistry(): CurrencyRegistry {
     return p.defaultVolatilityClass as VolatilityClass;
   };
   const common = (code: string) => ({
+    ...(p.flagIssuer[code] ? { flagCountry: p.flagIssuer[code] as string } : {}),
     volatilityClass: classOf(code),
     fxSources: p.fxSources[code] ?? [],
     controls: p.controls[code] ?? {},
@@ -150,8 +156,10 @@ export function createDefaultRegistry(): CurrencyRegistry {
     ...common(c.code),
     status: "ACTIVE",
   }));
+  const countriesOf = (code: string) => iso4217.currencies.find((c) => c.code === code)?.countries ?? [];
   const retired: CurrencyDefinition[] = p.redenominations.map((r) => ({
     ...r,
+    countries: countriesOf(r.replacedBy),
     ...common(r.code),
     status: "RETIRED",
   }));
@@ -160,3 +168,33 @@ export function createDefaultRegistry(): CurrencyRegistry {
 
 /** Process-wide default registry. */
 export const currencies = createDefaultRegistry();
+
+/** Emoji flag for an ISO 3166-1 alpha-2 code (regional indicator symbols). */
+export function flagEmoji(alpha2: string): string {
+  if (!/^[A-Z]{2}$/.test(alpha2)) throw new TypeError(`Invalid country code "${alpha2}"`);
+  return String.fromCodePoint(...[...alpha2].map((c) => 0x1f1e6 + c.charCodeAt(0) - 65));
+}
+
+export interface CurrencyFlag {
+  /** ISO 3166-1 alpha-2 (or "EU"): apps render an SVG flag from this where emoji flags do not display. */
+  readonly country: string;
+  readonly emoji: string;
+}
+
+/**
+ * The flag shown next to a currency (Appendix A: "flag in every currency").
+ *  1. Inside a market where the currency is legal tender: that market's flag (XOF in Côte d'Ivoire → 🇨🇮).
+ *  2. Otherwise the ISO 4217 convention: the code starts with the issuer's country code (USD → 🇺🇸).
+ *  3. Otherwise the policy issuer (EUR → 🇪🇺, XOF → 🇸🇳 BCEAO, XAF → 🇨🇲 BEAC).
+ *  4. Otherwise the only country listed. Currencies with no country (supranational units) get none.
+ */
+export function currencyFlag(code: string, options: { market?: string; registry?: CurrencyRegistry } = {}): CurrencyFlag | undefined {
+  const c = (options.registry ?? currencies).get(code);
+  const prefix = c.code.slice(0, 2);
+  const country =
+    (options.market && c.countries.includes(options.market) ? options.market : undefined) ??
+    (c.countries.includes(prefix) ? prefix : undefined) ??
+    c.flagCountry ??
+    (c.countries.length === 1 ? c.countries[0] : undefined);
+  return country ? { country, emoji: flagEmoji(country) } : undefined;
+}
