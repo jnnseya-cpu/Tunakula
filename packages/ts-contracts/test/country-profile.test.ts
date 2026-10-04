@@ -77,3 +77,12 @@ test("every accepted currency needs a support refund limit", () => {
   hasIssue(mutate("cd.synthetic.json", (p) => p.operations.support_refund_limit.pop()), "/operations/support_refund_limit", /no support refund limit for CDF/);
   hasIssue(mutate("sn.synthetic.json", (p) => (p.operations.support_refund_limit[0].amount = "1.5")), "/operations/support_refund_limit/0", /decimal places/);
 });
+
+test("§29.6: cash on delivery needs a CEO-approved, dated exception that is still in force", () => {
+  hasIssue(mutate("cd.synthetic.json", (p) => delete p.payments.cod_policy.exception), "/payments/cod_policy/exception", /off by default/);
+  hasIssue(mutate("gb.synthetic.json", (p) => (p.payments.cod_policy.exception = structuredClone(load("cd.synthetic.json").payments.cod_policy.exception))), "/payments/cod_policy/exception", /only meaningful/);
+  hasIssue(mutate("cd.synthetic.json", (p) => (p.payments.cod_policy.exception.end_date = "2026-09-01")), "/payments/cod_policy/exception/end_date", /follow the approval/);
+  const expired = validateCountryProfile(load("cd.synthetic.json"), { asOf: new Date("2027-10-01") });
+  assert.ok(!expired.ok && expired.issues.some((i) => /ended on 2027-09-30/.test(i.message)));
+  assert.ok(validateCountryProfile(load("cd.synthetic.json"), { asOf: new Date("2026-10-04") }).ok);
+});

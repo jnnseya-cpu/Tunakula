@@ -70,9 +70,28 @@ export interface CountryProfile {
   readonly payments: {
     readonly methods: readonly PaymentMethodConfig[];
     readonly connectors: readonly ConnectorRoute[];
+    /**
+     * §29.6: cash on delivery is OFF by default. It can only be enabled by a
+     * CEO-approved, dated exception with a declining-share target; the cash
+     * controls then apply automatically and cannot be disabled by country staff.
+     */
     readonly cod_policy: {
       readonly enabled: boolean;
+      /** Rider float cap per currency. */
       readonly cash_cap?: readonly { readonly currency: string; readonly amount: string }[];
+      readonly exception?: {
+        readonly approved_by: string;
+        readonly approved_on: string;
+        readonly reason: string;
+        /** Date by which COD ends in this market (YYYY-MM-DD). */
+        readonly end_date: string;
+        /** Ceiling on COD as a share of orders, falling toward the end date (basis points). */
+        readonly max_share_bps: number;
+        /** Cash must reach the rail within this many hours of collection. */
+        readonly deposit_sla_hours: number;
+        /** Accounts younger than this always prepay (risk gating). */
+        readonly min_account_age_days: number;
+      };
     };
     readonly payout_rails: readonly string[];
   };

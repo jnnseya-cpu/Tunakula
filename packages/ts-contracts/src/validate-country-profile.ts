@@ -17,6 +17,8 @@ export interface ValidateOptions {
   readonly registry?: CurrencyRegistry;
   /** Synthetic (test-matrix) profiles are refused in production. */
   readonly environment?: "production" | "non-production";
+  /** Date the profile is validated for; dated exceptions must still be in force. */
+  readonly asOf?: Date;
 }
 
 const ajv = new Ajv2020({ allErrors: true, strict: true });
@@ -114,6 +116,16 @@ function semanticIssues(p: CountryProfile, options: ValidateOptions): ProfileIss
   }
   if (codEnabled && !(p.payments.cod_policy.cash_cap?.length)) {
     issue("/payments/cod_policy/cash_cap", "cash on delivery requires a per-currency cash cap");
+  }
+  const exception = p.payments.cod_policy.exception;
+  if (codEnabled && !exception) {
+    issue("/payments/cod_policy/exception", "cash on delivery is off by default; enabling it needs a CEO-approved, dated exception (§29.6)");
+  }
+  if (exception) {
+    if (!codEnabled) issue("/payments/cod_policy/exception", "an exception is only meaningful when cash on delivery is enabled");
+    if (exception.end_date <= exception.approved_on) issue("/payments/cod_policy/exception/end_date", "end date must follow the approval date");
+    const asOf = options.asOf?.toISOString().slice(0, 10);
+    if (asOf && exception.end_date < asOf) issue("/payments/cod_policy/exception/end_date", `the COD exception ended on ${exception.end_date}`);
   }
   p.payments.cod_policy.cash_cap?.forEach((cap, i) => checkAmount(`/payments/cod_policy/cash_cap/${i}`, cap.currency, cap.amount));
 

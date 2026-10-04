@@ -89,7 +89,16 @@
           "currency": "CDF",
           "amount": "400000"
         }
-      ]
+      ],
+      "exception": {
+        "approved_by": "ceo",
+        "approved_on": "2026-10-01",
+        "reason": "Cash-heavy launch market while agent cash-in coverage is built",
+        "end_date": "2027-09-30",
+        "max_share_bps": 3000,
+        "deposit_sla_hours": 24,
+        "min_account_age_days": 7
+      }
     },
     "payout_rails": [
       "MOBILE_MONEY",

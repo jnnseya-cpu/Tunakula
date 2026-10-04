@@ -196,7 +196,7 @@ export class CountryConfigRegistry {
 
   #publishIssues(profile: CountryProfile, iso2: string, review: ReadinessReview): ProfileIssue[] {
     const issues: ProfileIssue[] = [];
-    const result = validateCountryProfile(profile, { environment: "production" });
+    const result = validateCountryProfile(profile, { environment: "production", asOf: this.#now() });
     if (!result.ok) issues.push(...result.issues);
 
     const brand = this.#brands.get(profile.experience.brand_id);
