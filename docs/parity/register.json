@@ -1,0 +1,2444 @@
+{
+  "source": "PRD-NZG-001 v4.2 Appendices B and C",
+  "statuses": {
+    "DOMAIN": "Core rules built and tested in this repository; no API or app surface yet",
+    "PARTIAL": "Some of the capability's rules exist",
+    "REPLACED": "Benchmark behaviour deliberately replaced by the Tunakula design",
+    "NOT_STARTED": "Nothing built yet",
+    "DONE": "Usable end to end by its audience",
+    "REJECTED": "Deliberately not built (Appendix C decision)"
+  },
+  "capabilities": [
+    {
+      "section": "B.1 Customer app and website",
+      "capability": "Language selection and multi-language UI",
+      "parity": "M",
+      "approach": "Market languages from the Country Profile; Lingala, French, Swahili, English at launch; RTL ready",
+      "status": "PARTIAL",
+      "evidence": "Locales in Country Profile and config; no UI"
+    },
+    {
+      "section": "B.1 Customer app and website",
+      "capability": "Multiple login methods (manual, OTP, social)",
+      "parity": "M",
+      "approach": "Phone OTP primary (SMS or WhatsApp per market); social and email optional; one global account across markets (§8)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.1 Customer app and website",
+      "capability": "Firebase/mobile OTP and two-factor options",
+      "parity": "M",
+      "approach": "Per-market OTP channel adapter; step-up verification on risk",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.1 Customer app and website",
+      "capability": "Guest checkout",
+      "parity": "M",
+      "approach": "Guest ordering with account created at completion; cross-border recipients never need an account",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.1 Customer app and website",
+      "capability": "Location setup and address management with labels",
+      "parity": "M",
+      "approach": "Address model per market: postcode, street or landmark + pin + voice note; learned landmark resolver",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.1 Customer app and website",
+      "capability": "Delivery instructions at checkout",
+      "parity": "M",
+      "approach": "Structured fields plus free text; safety-critical requirements are structured, never notes (§11.2)",
+      "status": "PARTIAL",
+      "evidence": "Structured allergen flags vs advisory notes in the order aggregate (services/api ordering)"
+    },
+    {
+      "section": "B.1 Customer app and website",
+      "capability": "Home page with promotional banners",
+      "parity": "M",
+      "approach": "Server-driven layout per market and brand; personalised ranking with a popularity fallback",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.1 Customer app and website",
+      "capability": "Search bar, deep search, tags, voice search",
+      "parity": "M",
+      "approach": "Search with cuisine, dietary, price and delivery-time filters; voice search in local languages",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.1 Customer app and website",
+      "capability": "Favourites and wishlist",
+      "parity": "M",
+      "approach": "Favourites across markets; shared with the Concierge agent for conversational reorder",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.1 Customer app and website",
+      "capability": "Cart, restaurant-wise cart, cross-module cart sync",
+      "parity": "M",
+      "approach": "Server-side cart synced across app, web and WhatsApp; one cart per branch",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.1 Customer app and website",
+      "capability": "Running order view and live tracking",
+      "parity": "M",
+      "approach": "Learned ETAs, share-tracking link, proof of delivery to customer and, for gifts, to the payer",
+      "status": "PARTIAL",
+      "evidence": "Proof-of-delivery evidence bundle only (ordering/evidence.ts); no tracking"
+    },
+    {
+      "section": "B.1 Customer app and website",
+      "capability": "Order history and reorder",
+      "parity": "M",
+      "approach": "History across all markets and channels, including in-store purchases",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.1 Customer app and website",
+      "capability": "Scheduled delivery (30-minute slots)",
+      "parity": "M",
+      "approach": "Slot engine with real capacity, not fixed slots (§13.1)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.1 Customer app and website",
+      "capability": "Subscription ordering (daily, weekly, monthly, custom, slot-based)",
+      "parity": "S",
+      "approach": "Meal subscriptions funded by self, diaspora or employer; likelemba model; skip and pause",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.1 Customer app and website",
+      "capability": "Coupons",
+      "parity": "M",
+      "approach": "Per-currency values, budget caps, channel scoping",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.1 Customer app and website",
+      "capability": "Wallet with top-up and partial payment",
+      "parity": "M",
+      "approach": "One wallet per currency; no silent conversion; third-party top-up by phone number",
+      "status": "PARTIAL",
+      "evidence": "Per-currency ledger accounts exist; no wallet product"
+    },
+    {
+      "section": "B.1 Customer app and website",
+      "capability": "Loyalty points and conversion to wallet",
+      "parity": "M",
+      "approach": "Points valued per country; earned and spent across all three channels",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.1 Customer app and website",
+      "capability": "Referral with earnings and first-order discount",
+      "parity": "M",
+      "approach": "Staged vesting on completed orders, fraud detection and clawback (§30.9)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.1 Customer app and website",
+      "capability": "Join as deliveryman / open restaurant from the app",
+      "parity": "M",
+      "approach": "Full self-onboarding funnels with instant eligibility feedback (§28.8)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.1 Customer app and website",
+      "capability": "Live chat and help & support",
+      "parity": "M",
+      "approach": "Agent-first 24/7 in local languages, human escalation with SLA, in-app call-back",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.1 Customer app and website",
+      "capability": "Ratings and reviews for restaurant and rider",
+      "parity": "M",
+      "approach": "Only after delivery; photo feedback on complaints builds the evidence trail",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.1 Customer app and website",
+      "capability": "Legal pages",
+      "parity": "M",
+      "approach": "Per market and language from the Compliance Pack (§27)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.1 Customer app and website",
+      "capability": "Customer profile and self-delete account",
+      "parity": "M",
+      "approach": "Full data subject rights handling per market",
+      "status": "DOMAIN",
+      "evidence": "Account deletion with blockers, grace period, pseudonymisation (identity/accounts.ts)"
+    },
+    {
+      "section": "B.1 Customer app and website",
+      "capability": "Dark and light mode",
+      "parity": "M",
+      "approach": "Design tokens per brand and market, light and dark",
+      "status": "DOMAIN",
+      "evidence": "Light/dark design tokens served at runtime (config/brand.ts)"
+    },
+    {
+      "section": "B.1 Customer app and website",
+      "capability": "Veg/non-veg filter, allergy and nutrition tags, halal tag",
+      "parity": "M",
+      "approach": "Generalised dietary, religious and allergen model with structured enforcement (§11.7)",
+      "status": "PARTIAL",
+      "evidence": "Allergen acknowledgement gate at packing (ordering)"
+    },
+    {
+      "section": "B.1 Customer app and website",
+      "capability": "Food without image; image zoom",
+      "parity": "M",
+      "approach": "Photo quality scoring with AI assistance for merchants; graceful layouts without images",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.1 Customer app and website",
+      "capability": "AI chatbot for assistance and product search",
+      "parity": "M",
+      "approach": "Concierge agent (A1): conversational ordering in app and WhatsApp, not only search",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.1 Customer app and website",
+      "capability": "AI personalised home page",
+      "parity": "M",
+      "approach": "Per-market learned ranking with holdout measurement and a no-personalised-pricing rule (§24.5)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.1 Customer app and website",
+      "capability": "Restaurant reels / promotional content",
+      "parity": "C",
+      "approach": "Merchant-supplied short media, reviewed before publication",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.1 Customer app and website",
+      "capability": "Order editing after placement",
+      "parity": "M",
+      "approach": "Change control with re-acceptance, re-pricing and customer confirmation (§11.2)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.1 Customer app and website",
+      "capability": "Order cancellation",
+      "parity": "M",
+      "approach": "Policy-driven windows with automatic refunds to wallet or source",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.1 Customer app and website",
+      "capability": "WhatsApp ordering",
+      "parity": "NEW",
+      "approach": "Not in the benchmark. Full ordering channel in Tunakula",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.1 Customer app and website",
+      "capability": "Cross-border \"send a meal home\"",
+      "parity": "NEW",
+      "approach": "Not in the benchmark. Core Tunakula differentiator",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.1 Customer app and website",
+      "capability": "Multi-currency display and payment",
+      "parity": "NEW",
+      "approach": "Not in the benchmark. Native in Tunakula (§19)",
+      "status": "DOMAIN",
+      "evidence": "Currency Registry, Money, FX quotes, flags (packages/ts-money)"
+    },
+    {
+      "section": "B.1 Customer app and website",
+      "capability": "Group ordering and gifting",
+      "parity": "NEW",
+      "approach": "Not in the benchmark. Growth mechanism in Tunakula (§30.6)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.1 Customer app and website",
+      "capability": "Table booking and scheduled collection",
+      "parity": "NEW",
+      "approach": "Not in the benchmark. Tunakula §13",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.2 Admin: business configuration",
+      "capability": "Company and business rules setup",
+      "parity": "M",
+      "approach": "Country Profile (§7.2) drives all defaults; versioned, validated and reversible",
+      "status": "DOMAIN",
+      "evidence": "Country Profile schema, validation, versioned publish (ts-contracts, config)"
+    },
+    {
+      "section": "B.2 Admin: business configuration",
+      "capability": "Multiple business models (commission, subscription)",
+      "parity": "M",
+      "approach": "Commission, subscription and hybrid; per-market defaults; no commission on merchant-originated in-store sales (§12.13)",
+      "status": "DOMAIN",
+      "evidence": "business_models in Country Profile; 0% commission enforced in pricing"
+    },
+    {
+      "section": "B.2 Admin: business configuration",
+      "capability": "Order verification model (restaurant-first or rider-first)",
+      "parity": "M",
+      "approach": "Both, plus agent-optimised selection per order (§10.2)",
+      "status": "DOMAIN",
+      "evidence": "RIDER_FIRST / AGENT_OPTIMISED in the order aggregate"
+    },
+    {
+      "section": "B.2 Admin: business configuration",
+      "capability": "Home delivery and takeaway toggles",
+      "parity": "M",
+      "approach": "Plus dine-in, QR table ordering, scheduled collection and cross-border",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.2 Admin: business configuration",
+      "capability": "Scheduled delivery settings",
+      "parity": "M",
+      "approach": "Capacity-aware slot engine shared with bookings and collection",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.2 Admin: business configuration",
+      "capability": "Order cancellation and refund settings",
+      "parity": "M",
+      "approach": "Policy versions stored with each order; agent resolution within caps",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.2 Admin: business configuration",
+      "capability": "Deliveryman settings",
+      "parity": "M",
+      "approach": "Plus labour-model adapter per market, fleet partners and cash caps per currency",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.2 Admin: business configuration",
+      "capability": "Restaurant settings",
+      "parity": "M",
+      "approach": "Per-market and per-brand; trust tiers drive limits automatically (§28.8)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.2 Admin: business configuration",
+      "capability": "Customer settings",
+      "parity": "M",
+      "approach": "Including consent purposes and personalisation controls",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.2 Admin: business configuration",
+      "capability": "Language settings and auto-translate",
+      "parity": "M",
+      "approach": "Human review required for legal and payment text",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.2 Admin: business configuration",
+      "capability": "Email templates and push notification templates",
+      "parity": "M",
+      "approach": "Per market, language and channel (push, SMS, WhatsApp, email); never blank, always falls back",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.2 Admin: business configuration",
+      "capability": "Theme settings",
+      "parity": "M",
+      "approach": "Design-token brands served at runtime; no release needed to change a market brand (§17.1)",
+      "status": "DOMAIN",
+      "evidence": "Brands and themes served at runtime, WCAG-validated"
+    },
+    {
+      "section": "B.2 Admin: business configuration",
+      "capability": "Gallery / media library",
+      "parity": "M",
+      "approach": "With AI photo-quality checks and in-app capture rules for verification photos",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.2 Admin: business configuration",
+      "capability": "Social media links",
+      "parity": "M",
+      "approach": "Per market and brand",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.2 Admin: business configuration",
+      "capability": "Legal pages management",
+      "parity": "M",
+      "approach": "Versioned, per market and language, acceptance recorded",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.2 Admin: business configuration",
+      "capability": "Employee roles and management",
+      "parity": "M",
+      "approach": "Attribute-based RBAC scoped to group, country, city, zone, brand or branch (§8.2)",
+      "status": "DOMAIN",
+      "evidence": "Scoped RBAC + business accounts with per-member access levels"
+    },
+    {
+      "section": "B.2 Admin: business configuration",
+      "capability": "Zone setup with map drawing",
+      "parity": "M",
+      "approach": "Country → City → Zone hierarchy with overlap validation and learned zone demand",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.2 Admin: business configuration",
+      "capability": "Cuisine setup",
+      "parity": "M",
+      "approach": "Plus category trees for non-restaurant merchants",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.2 Admin: business configuration",
+      "capability": "Food category and subcategory setup",
+      "parity": "M",
+      "approach": "Shared catalogue model across all three channels",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.2 Admin: business configuration",
+      "capability": "Food addons and attributes",
+      "parity": "M",
+      "approach": "Modifier groups with min/max rules enforced at placement (§11.2)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.2 Admin: business configuration",
+      "capability": "Food settings (stock types, low-stock warnings)",
+      "parity": "M",
+      "approach": "One stock position per branch across channels, with offline buffers (§12.7)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.2 Admin: business configuration",
+      "capability": "Dynamic 12/24 hour format, time zone",
+      "parity": "M",
+      "approach": "From the Country Profile",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.2 Admin: business configuration",
+      "capability": "Maintenance mode with module control",
+      "parity": "M",
+      "approach": "Plus per-market, per-brand feature flags and agent kill switches",
+      "status": "DOMAIN",
+      "evidence": "Feature flags per market/city/brand/segment (config/feature-flags.ts)"
+    },
+    {
+      "section": "B.2 Admin: business configuration",
+      "capability": "Clean database / test data deletion",
+      "parity": "M",
+      "approach": "Environment-scoped only; never available in production",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.2 Admin: business configuration",
+      "capability": "ReCAPTCHA and bot protection",
+      "parity": "M",
+      "approach": "Bot and abuse protection on all public endpoints with rate limits",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.2 Admin: business configuration",
+      "capability": "Landing page settings",
+      "parity": "M",
+      "approach": "Generated city and cuisine pages per market and language (§30.6)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.2 Admin: business configuration",
+      "capability": "App and web settings, app version control",
+      "parity": "M",
+      "approach": "Minimum-version policy and staged store rollout (§27.5)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.2 Admin: business configuration",
+      "capability": "Third-party configuration (maps, SMS, mail, storage)",
+      "parity": "M",
+      "approach": "Adapter framework per market with certification and fallback (§7.3)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.3 Admin: operations",
+      "capability": "Add and manage restaurants (unlimited)",
+      "parity": "M",
+      "approach": "Self-onboarding with verification gates; no human contact required (§28.8)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.3 Admin: operations",
+      "capability": "Restaurant verification badge",
+      "parity": "M",
+      "approach": "Badge states exactly what was verified; continuous re-verification, not a one-off check",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.3 Admin: operations",
+      "capability": "Restaurant self-registration toggle",
+      "parity": "M",
+      "approach": "Always on; eligibility feedback before document upload",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.3 Admin: operations",
+      "capability": "Order details and management",
+      "parity": "M",
+      "approach": "Full chain-of-custody evidence bundle per order (§11.9)",
+      "status": "DOMAIN",
+      "evidence": "Order aggregate, evidence bundle, idempotent store"
+    },
+    {
+      "section": "B.3 Admin: operations",
+      "capability": "Subscription orders management",
+      "parity": "S",
+      "approach": "Including employer-funded B2B plans",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.3 Admin: operations",
+      "capability": "Order refunds management",
+      "parity": "M",
+      "approach": "Agent-resolved within caps; independent appeals route",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.3 Admin: operations",
+      "capability": "Dispatch management with manual assignment",
+      "parity": "M",
+      "approach": "Learned dispatch with acceptance propensity and batching rules; manual override retained",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.3 Admin: operations",
+      "capability": "Order reassignment to another rider",
+      "parity": "M",
+      "approach": "Agent-proposed reassignment on predicted ETA breach, within limits",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.3 Admin: operations",
+      "capability": "Deliveryman management and verification",
+      "parity": "M",
+      "approach": "Digital KYC, liveness, document expiry, trust tiers",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.3 Admin: operations",
+      "capability": "Freelance or salaried rider models",
+      "parity": "M",
+      "approach": "Plus fleet partners and market-specific labour models (§7.3)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.3 Admin: operations",
+      "capability": "Restaurant-wise rider assignment",
+      "parity": "M",
+      "approach": "Retained, plus platform pool and fleet overflow",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.3 Admin: operations",
+      "capability": "Maximum assigned orders per rider",
+      "parity": "M",
+      "approach": "Plus capacity pacing and batching limits (§11.10)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.3 Admin: operations",
+      "capability": "Shift setup and online time logging",
+      "parity": "M",
+      "approach": "Shift start liveness checks; working-time rules per market",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.3 Admin: operations",
+      "capability": "Vehicle categories with coverage and extra charges",
+      "parity": "M",
+      "approach": "Vehicle types feed travel-time models per city",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.3 Admin: operations",
+      "capability": "Rider incentives and bonuses",
+      "parity": "M",
+      "approach": "Budget-capped, zone-targeted, forecast-driven; fairness monitoring on allocation",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.3 Admin: operations",
+      "capability": "Cash in hand and overflow control",
+      "parity": "M",
+      "approach": "Cashless by default; where COD is approved, float caps, deposit SLAs and automatic suspension (§28.6)",
+      "status": "PARTIAL",
+      "evidence": "COD cash caps per currency in Country Profile; no rider float tracking yet"
+    },
+    {
+      "section": "B.3 Admin: operations",
+      "capability": "Collect cash from deliverymen",
+      "parity": "M",
+      "approach": "Deposits to rails only; no staff cash custody anywhere in the product",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.3 Admin: operations",
+      "capability": "Delivery proof managed by rider",
+      "parity": "M",
+      "approach": "OTP plus photo plus GPS, with geofence enforcement and per-drop verification (§11.5)",
+      "status": "DOMAIN",
+      "evidence": "Recipient code, per-drop scan, geofence in the order aggregate"
+    },
+    {
+      "section": "B.3 Admin: operations",
+      "capability": "Live tracking of riders",
+      "parity": "M",
+      "approach": "Plus live map of orders, riders and demand heat in the Admin app (§28.3)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.3 Admin: operations",
+      "capability": "Multiple delivery speed options (standard, express, delayed)",
+      "parity": "S",
+      "approach": "Priced options validated against learned ETAs so promises are achievable",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.3 Admin: operations",
+      "capability": "ETA calculation",
+      "parity": "M",
+      "approach": "Learned prep and travel models per branch and city, including in-store load",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.3 Admin: operations",
+      "capability": "Customer management",
+      "parity": "M",
+      "approach": "One global customer across markets and channels",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.3 Admin: operations",
+      "capability": "Chatting and contact messages",
+      "parity": "M",
+      "approach": "All partner and customer communication in-product, logged and translatable (§28.2)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.3 Admin: operations",
+      "capability": "Subscribed emails and export",
+      "parity": "S",
+      "approach": "Consent-scoped, with suppression honoured platform-wide",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.3 Admin: operations",
+      "capability": "Restaurant withdrawals",
+      "parity": "M",
+      "approach": "Scheduled payouts on local rails with reconciliation (§19.8)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.3 Admin: operations",
+      "capability": "Deliveryman payments",
+      "parity": "M",
+      "approach": "Same-day or instant payouts where the market allows",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.3 Admin: operations",
+      "capability": "Employee login with dynamic URLs",
+      "parity": "D",
+      "approach": "Replaced by scoped identity with MFA and device binding; obscure URLs are not a security control",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.4 Admin: money, pricing and reporting",
+      "capability": "Commission on orders (default and per restaurant)",
+      "parity": "M",
+      "approach": "Per market, per brand and per branch; versioned with effective dates",
+      "status": "REPLACED",
+      "evidence": "Superseded by §18.1: 0% commission enforced in pricing"
+    },
+    {
+      "section": "B.4 Admin: money, pricing and reporting",
+      "capability": "Commission on delivery charges",
+      "parity": "M",
+      "approach": "Computed in settlement currency so partners never absorb FX drift",
+      "status": "DOMAIN",
+      "evidence": "Rider 70% / platform 30% split in settlement currency (pricing)"
+    },
+    {
+      "section": "B.4 Admin: money, pricing and reporting",
+      "capability": "Zone-wise, restaurant-wise, distance, area and ZIP delivery charges",
+      "parity": "M",
+      "approach": "Formula engine per zone with learned travel time; no postcode dependency where addresses are informal",
+      "status": "PARTIAL",
+      "evidence": "Distance ladder with rural rate (pricing); zones not built"
+    },
+    {
+      "section": "B.4 Admin: money, pricing and reporting",
+      "capability": "Surge pricing",
+      "parity": "S",
+      "approach": "Zone-level supply and demand only, with a published cap per market; never personalised (§24.5)",
+      "status": "DOMAIN",
+      "evidence": "Zone-level capped surge with suppression (pricing)"
+    },
+    {
+      "section": "B.4 Admin: money, pricing and reporting",
+      "capability": "Free delivery by order amount or distance",
+      "parity": "M",
+      "approach": "Budget-capped and channel-scoped",
+      "status": "DOMAIN",
+      "evidence": "Merchant-funded delivery promotion (pricing)"
+    },
+    {
+      "section": "B.4 Admin: money, pricing and reporting",
+      "capability": "Extra packaging charge",
+      "parity": "M",
+      "approach": "Per branch, shown before payment",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.4 Admin: money, pricing and reporting",
+      "capability": "Service charge / platform fee",
+      "parity": "M",
+      "approach": "Per market, tax-correct, disclosed before payment",
+      "status": "DOMAIN",
+      "evidence": "10% service charge, all-in display, proportional refund (pricing)"
+    },
+    {
+      "section": "B.4 Admin: money, pricing and reporting",
+      "capability": "Rider tips",
+      "parity": "M",
+      "approach": "Paid through the ledger, visible to the rider immediately",
+      "status": "DOMAIN",
+      "evidence": "Tips 100% to rider, posted to rider_payable (pricing)"
+    },
+    {
+      "section": "B.4 Admin: money, pricing and reporting",
+      "capability": "Dashboard",
+      "parity": "M",
+      "approach": "Mission Control: group and market cockpits, phone-first (§28.3)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.4 Admin: money, pricing and reporting",
+      "capability": "Transaction and expense reports",
+      "parity": "M",
+      "approach": "Double-entry ledger as the single source; reports are projections, not separate books",
+      "status": "DOMAIN",
+      "evidence": "Double-entry journals and nightly ledger proof (money)"
+    },
+    {
+      "section": "B.4 Admin: money, pricing and reporting",
+      "capability": "Food and customer reports",
+      "parity": "M",
+      "approach": "Plus cohort retention and contribution margin by channel, zone and acquisition source",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.4 Admin: money, pricing and reporting",
+      "capability": "Restaurant and order reports",
+      "parity": "M",
+      "approach": "Channel as a dimension; one reconciliation across online, POS and kiosk",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.4 Admin: money, pricing and reporting",
+      "capability": "Day, week and month earnings with automatic payout lists",
+      "parity": "M",
+      "approach": "Payout batches generated from the ledger and matched to provider statements",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.4 Admin: money, pricing and reporting",
+      "capability": "Customer overview report (orders, reviews, wallet, loyalty, referral)",
+      "parity": "M",
+      "approach": "Single customer view across markets and channels",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.4 Admin: money, pricing and reporting",
+      "capability": "Export and import",
+      "parity": "M",
+      "approach": "Signed exports; access logged",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.4 Admin: money, pricing and reporting",
+      "capability": "Multi-currency",
+      "parity": "NEW",
+      "approach": "Not in the benchmark. Currency Registry, FX snapshots and per-currency wallets (§19)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.4 Admin: money, pricing and reporting",
+      "capability": "Double-entry ledger",
+      "parity": "NEW",
+      "approach": "Not in the benchmark. Core to remote operation and dispute-free payouts",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.5 Restaurant panel and app",
+      "capability": "Account information and configuration",
+      "parity": "M",
+      "approach": "Plus multi-branch groups under one owner",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.5 Restaurant panel and app",
+      "capability": "Restaurant wallet",
+      "parity": "M",
+      "approach": "Per-currency balances with payout scheduling",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.5 Restaurant panel and app",
+      "capability": "Restaurant subscription packages and free trial",
+      "parity": "M",
+      "approach": "Plus hybrid plans and employer B2B agreements",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.5 Restaurant panel and app",
+      "capability": "Customer reviews and replies",
+      "parity": "M",
+      "approach": "With complaint clustering feeding quality programmes",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.5 Restaurant panel and app",
+      "capability": "Chat section",
+      "parity": "M",
+      "approach": "In-product only; translation built in",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.5 Restaurant panel and app",
+      "capability": "Categories and restaurant-wise categories",
+      "parity": "M",
+      "approach": "Shared catalogue with per-channel visibility",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.5 Restaurant panel and app",
+      "capability": "Foods, variations, addons",
+      "parity": "M",
+      "approach": "Modifier groups with enforced rules; per-currency prices",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.5 Restaurant panel and app",
+      "capability": "Stock management and low-stock warnings",
+      "parity": "M",
+      "approach": "One stock position across channels; quick 86 from the till",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.5 Restaurant panel and app",
+      "capability": "Nutrition, allergy, halal and veg tags",
+      "parity": "M",
+      "approach": "Structured, enforced and never overridden by free text (§11.7)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.5 Restaurant panel and app",
+      "capability": "AI product content generation and SEO data",
+      "parity": "M",
+      "approach": "Menu copilot: descriptions, translations and photo checks, owner-approved",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.5 Restaurant panel and app",
+      "capability": "Campaigns and coupons",
+      "parity": "M",
+      "approach": "Per-currency, budget-capped, channel-scoped",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.5 Restaurant panel and app",
+      "capability": "Paid ads / storefront placement",
+      "parity": "S",
+      "approach": "Auction-based sponsored slots with a relevance floor",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.5 Restaurant panel and app",
+      "capability": "POS section",
+      "parity": "M",
+      "approach": "Full POS mode with dine-in, tables, drawer control, offline operation and fiscal receipts (§12.4)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.5 Restaurant panel and app",
+      "capability": "Order and subscription reports",
+      "parity": "M",
+      "approach": "Settlement-currency totals with order-currency breakdown",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.5 Restaurant panel and app",
+      "capability": "Expense report and dashboard",
+      "parity": "M",
+      "approach": "Plus channel comparison and prep-time accuracy",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.5 Restaurant panel and app",
+      "capability": "Deliveryman management by restaurant",
+      "parity": "M",
+      "approach": "Restaurant-managed riders supported alongside platform and fleet supply",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.5 Restaurant panel and app",
+      "capability": "Employee management and roles",
+      "parity": "M",
+      "approach": "Scoped permissions with discount, void and refund authorisation levels",
+      "status": "DOMAIN",
+      "evidence": "Business accounts: custom access levels, branch limits, POS authorisation actions"
+    },
+    {
+      "section": "B.5 Restaurant panel and app",
+      "capability": "Restaurant app: dashboard, food and rider management",
+      "parity": "M",
+      "approach": "Single app with owner, manager, kitchen and POS modes",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.5 Restaurant panel and app",
+      "capability": "Restaurant website builder (add-on)",
+      "parity": "C",
+      "approach": "Generated branded ordering page per merchant from the same catalogue",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.6 Deliveryman app",
+      "capability": "Sign in and sign up",
+      "parity": "M",
+      "approach": "Full digital onboarding with liveness and document checks (§28.8)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.6 Deliveryman app",
+      "capability": "Dashboard and earnings",
+      "parity": "M",
+      "approach": "Transparent expected earnings before accepting a job",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.6 Deliveryman app",
+      "capability": "Order requests and acceptance",
+      "parity": "M",
+      "approach": "Offer timeout per market; rejection reasons captured for learning",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.6 Deliveryman app",
+      "capability": "Order history",
+      "parity": "M",
+      "approach": "With proof records and earnings per job",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.6 Deliveryman app",
+      "capability": "Activity status (online/offline)",
+      "parity": "M",
+      "approach": "Plus shift-start liveness checks and zone selection",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.6 Deliveryman app",
+      "capability": "Conversation with customer and restaurant",
+      "parity": "M",
+      "approach": "Masked numbers; in-app messaging logged",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.6 Deliveryman app",
+      "capability": "Profile settings and app configuration",
+      "parity": "M",
+      "approach": "Including payout method with name-match verification",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.6 Deliveryman app",
+      "capability": "Incentives",
+      "parity": "M",
+      "approach": "Budget-capped, forecast-driven, fairness-monitored",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.6 Deliveryman app",
+      "capability": "Biometric login",
+      "parity": "S",
+      "approach": "Device binding plus biometric unlock",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.6 Deliveryman app",
+      "capability": "Delete account",
+      "parity": "M",
+      "approach": "Full data subject rights handling",
+      "status": "DOMAIN",
+      "evidence": "Account deletion flow (identity/accounts.ts)"
+    },
+    {
+      "section": "B.6 Deliveryman app",
+      "capability": "Cash in hand view",
+      "parity": "M",
+      "approach": "Per currency with caps and deposit SLA countdown",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.6 Deliveryman app",
+      "capability": "Offline-tolerant job flow",
+      "parity": "NEW",
+      "approach": "Not in the benchmark. Queued actions and on-device verification (§11.6)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.6 Deliveryman app",
+      "capability": "Fleet partner linkage",
+      "parity": "NEW",
+      "approach": "Not in the benchmark. Fleet accounts and earnings split",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.7 Platform, technical and integration",
+      "capability": "Payment gateways (Stripe, PayPal, Razorpay, Paytm, 2Checkout, Flutterwave, bKash, Liqpay, PayTabs and others)",
+      "parity": "M",
+      "approach": "Payment Orchestration: one internal model, many certified connectors, health-based routing and fallback (§20)",
+      "status": "DOMAIN",
+      "evidence": "Payment Orchestration + certification; BitriPay, KODA, sandbox connectors"
+    },
+    {
+      "section": "B.7 Platform, technical and integration",
+      "capability": "Cash on delivery and manual/offline payment",
+      "parity": "M",
+      "approach": "Cashless by default; COD only by approved, dated market exception (§28.6)",
+      "status": "DOMAIN",
+      "evidence": "CASH_ON_DELIVERY method, COD policy and settlement journal"
+    },
+    {
+      "section": "B.7 Platform, technical and integration",
+      "capability": "COD converted to digital payment after completion",
+      "parity": "S",
+      "approach": "Supported through the same orchestration layer",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.7 Platform, technical and integration",
+      "capability": "SMS gateways and SMS OTP",
+      "parity": "M",
+      "approach": "Per-market messaging adapters with sender registration compliance",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.7 Platform, technical and integration",
+      "capability": "Firebase notifications and webhooks",
+      "parity": "M",
+      "approach": "Event backbone with schema registry; webhooks signed and idempotent",
+      "status": "DOMAIN",
+      "evidence": "Signed, verified provider webhooks (connectors)"
+    },
+    {
+      "section": "B.7 Platform, technical and integration",
+      "capability": "Amazon S3 / cloud storage",
+      "parity": "M",
+      "approach": "Regional object storage per data plane",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.7 Platform, technical and integration",
+      "capability": "Caching and performance optimisation",
+      "parity": "M",
+      "approach": "Explicit SLOs and error budgets (§27.2)",
+      "status": "DOMAIN",
+      "evidence": "SLO error budgets and release freeze (platform/slo.ts)"
+    },
+    {
+      "section": "B.7 Platform, technical and integration",
+      "capability": "Multi-language with RTL and auto-translate",
+      "parity": "M",
+      "approach": "Human review for legal and payment text",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.7 Platform, technical and integration",
+      "capability": "ERP compatibility",
+      "parity": "C",
+      "approach": "Open API and events; integrations by connector, not bespoke coupling",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "B.7 Platform, technical and integration",
+      "capability": "Single currency per installation",
+      "parity": "D",
+      "approach": "Replaced: multi-currency within a market and across borders",
+      "status": "REPLACED",
+      "evidence": "Replaced: native multi-currency"
+    },
+    {
+      "section": "B.7 Platform, technical and integration",
+      "capability": "One installation per country",
+      "parity": "D",
+      "approach": "Replaced: one platform, many markets by configuration (§7)",
+      "status": "REPLACED",
+      "evidence": "Replaced: Country Profile publishing"
+    },
+    {
+      "section": "B.7 Platform, technical and integration",
+      "capability": "Admin as web only",
+      "parity": "D",
+      "approach": "Replaced: native Admin app for phone-first remote operation (§28.3)",
+      "status": "NOT_STARTED"
+    }
+  ],
+  "mergedRegister": [
+    {
+      "section": "C.1 Consumer discovery and ordering",
+      "capability": "Unified search across food, grocery and retail in one bar",
+      "seenOn": "UE DD",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — one search across every merchant type in the market",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.1 Consumer discovery and ordering",
+      "capability": "Cuisine, dish and category browsing with carousels",
+      "seenOn": "SF UE DD DL JE",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.1 Consumer discovery and ordering",
+      "capability": "Personalised home feed from browsing and order behaviour",
+      "seenOn": "SF UE DD DL JE",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT, with the no-personalised-pricing rule (§24.5)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.1 Consumer discovery and ordering",
+      "capability": "Filters: dietary, allergen, price, rating, delivery time, offers",
+      "seenOn": "UE DD DL JE",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — generalised dietary and religious tags, not a veg/non-veg flag",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.1 Consumer discovery and ordering",
+      "capability": "Guest checkout without registration",
+      "seenOn": "SF DD JE",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — account created at completion",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.1 Consumer discovery and ordering",
+      "capability": "Group ordering with per-person carts",
+      "seenOn": "UE DD DL JE",
+      "decision": "ADOPT",
+      "marketGated": true,
+      "note": "ADOPT (M) — high value where sharing a meal is the norm",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.1 Consumer discovery and ordering",
+      "capability": "Scheduled orders in time slots",
+      "seenOn": "SF UE DD DL JE",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — capacity-aware slots rather than fixed windows (§13.1)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.1 Consumer discovery and ordering",
+      "capability": "Live order tracking with map and ETA",
+      "seenOn": "SF UE DD DL JE",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — learned ETAs (§24.3)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.1 Consumer discovery and ordering",
+      "capability": "Reorder, favourites, wishlists, lists",
+      "seenOn": "SF UE DD DL JE",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — across markets and channels",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.1 Consumer discovery and ordering",
+      "capability": "Contactless and \"leave at my door\"",
+      "seenOn": "UE DD DL JE",
+      "decision": "ADOPT",
+      "marketGated": true,
+      "note": "ADOPT (M) — only with photo proof (§11.5)",
+      "status": "DOMAIN",
+      "evidence": "Contactless only when chosen, with photo (ordering)"
+    },
+    {
+      "section": "C.1 Consumer discovery and ordering",
+      "capability": "Delivery instructions and access notes at checkout",
+      "seenOn": "UE DD DL JE",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — structured, with landmark and voice note for informal addressing",
+      "status": "PARTIAL",
+      "evidence": "Structured allergen flags; notes advisory (ordering)"
+    },
+    {
+      "section": "C.1 Consumer discovery and ordering",
+      "capability": "Gifting and sending an order to someone else",
+      "seenOn": "UE DD",
+      "decision": "ADAPT",
+      "marketGated": false,
+      "note": "ADAPT — becomes cross-border Send a Meal Home, the core differentiator (§13)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.1 Consumer discovery and ordering",
+      "capability": "Pickup, collection and takeaway",
+      "seenOn": "SF UE DD DL JE",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.1 Consumer discovery and ordering",
+      "capability": "Dine-in and tableside order and pay",
+      "seenOn": "UE DD",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — QR table ordering in the self-service hub (§12.5)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.1 Consumer discovery and ordering",
+      "capability": "Curbside and drive-through collection",
+      "seenOn": "DD",
+      "decision": "ADOPT",
+      "marketGated": true,
+      "note": "ADOPT (M) — bay capture at arrival (§13.4)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.1 Consumer discovery and ordering",
+      "capability": "In-car ordering and voice assistants",
+      "seenOn": "JE UE",
+      "decision": "DEFER",
+      "marketGated": false,
+      "note": "DEFER",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.1 Consumer discovery and ordering",
+      "capability": "Multi-store cart in one order",
+      "seenOn": "DL",
+      "decision": "DEFER",
+      "marketGated": false,
+      "note": "DEFER — operationally expensive before liquidity",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.2 Reviews, ratings and reputation",
+      "capability": "Separate quality and delivery ratings",
+      "seenOn": "JE",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — the single best idea in the category (§14.2)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.2 Reviews, ratings and reputation",
+      "capability": "Median over a long window rather than a mean",
+      "seenOn": "JE",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — resists outliers",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.2 Reviews, ratings and reputation",
+      "capability": "Minimum rated orders before a score is shown",
+      "seenOn": "DL",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — 10 orders",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.2 Reviews, ratings and reputation",
+      "capability": "Rolling window of recent ratings",
+      "seenOn": "UE DD DL",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — 400 orders or 12 months",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.2 Reviews, ratings and reputation",
+      "capability": "Verified-order-only reviews",
+      "seenOn": "DD JE",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — no submission path without an order",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.2 Reviews, ratings and reputation",
+      "capability": "Photo reviews, sometimes compensated",
+      "seenOn": "UE",
+      "decision": "ADOPT",
+      "marketGated": true,
+      "note": "ADOPT (M) — compensation unrelated to the score given (§14.10)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.2 Reviews, ratings and reputation",
+      "capability": "Item-level thumbs and most-liked items",
+      "seenOn": "UE DD",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.2 Reviews, ratings and reputation",
+      "capability": "Merchant replies to reviews",
+      "seenOn": "SF UE DD DL",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — moderated, 30 days, voucher optional, public or private per market",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.2 Reviews, ratings and reputation",
+      "capability": "Templated or automatic replies",
+      "seenOn": "UE",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — only where the merchant explicitly enables it",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.2 Reviews, ratings and reputation",
+      "capability": "AI review summarisation for merchants and customers",
+      "seenOn": "UE",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.2 Reviews, ratings and reputation",
+      "capability": "Two-way courier rating by customers and merchants",
+      "seenOn": "UE DD",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — merchants rate riders, riders rate merchants",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.2 Reviews, ratings and reputation",
+      "capability": "Ratings protection excluding causes outside the rated party's control",
+      "seenOn": "UE DD",
+      "decision": "ADOPT and extend",
+      "marketGated": false,
+      "note": "ADOPT and extend — attribution rules replace blanket moderation (§14.5)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.2 Reviews, ratings and reputation",
+      "capability": "Removing reviews that focus on delivery",
+      "seenOn": "DD DL",
+      "decision": "REJECT",
+      "marketGated": false,
+      "note": "REJECT — the right answer is to attribute the complaint to the rider, not delete it",
+      "status": "REJECTED"
+    },
+    {
+      "section": "C.2 Reviews, ratings and reputation",
+      "capability": "Public per-rider star rating",
+      "seenOn": "UE DD",
+      "decision": "REJECT",
+      "marketGated": true,
+      "note": "REJECT by default (M) — follows Deliveroo's restraint; a labour-relations and fairness risk",
+      "status": "REJECTED"
+    },
+    {
+      "section": "C.2 Reviews, ratings and reputation",
+      "capability": "Acceptance rate as a courier performance metric",
+      "seenOn": "DD (no minimum) DL (explicitly not used)",
+      "decision": "REJECT",
+      "marketGated": false,
+      "note": "REJECT — never affects pay, ranking or standing (§14.5)",
+      "status": "REJECTED"
+    },
+    {
+      "section": "C.2 Reviews, ratings and reputation",
+      "capability": "Earned quality badges from sustained performance",
+      "seenOn": "UE DD",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — published criteria, never purchasable",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.2 Reviews, ratings and reputation",
+      "capability": "Rating as a gate for access to marketing tools",
+      "seenOn": "DL",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — promotion should not amplify a bad experience",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.2 Reviews, ratings and reputation",
+      "capability": "Official food hygiene rating displayed on listings",
+      "seenOn": "DL JE",
+      "decision": "ADOPT",
+      "marketGated": true,
+      "note": "ADOPT (M) — wherever a market publishes one",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.2 Reviews, ratings and reputation",
+      "capability": "Written reviews kept private from the public",
+      "seenOn": "JE",
+      "decision": "ADAPT",
+      "marketGated": false,
+      "note": "ADAPT — public by default, private configurable per market",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.3 Subscriptions, loyalty and retention",
+      "capability": "Consumer subscription with free or reduced delivery",
+      "seenOn": "UE DD DL",
+      "decision": "ADAPT",
+      "marketGated": false,
+      "note": "ADAPT — meal subscriptions funded by self, diaspora or employer, using the likelemba model, rather than a fee-waiver membership",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.3 Subscriptions, loyalty and retention",
+      "capability": "Credit-back rewards on subscription spend",
+      "seenOn": "UE DD",
+      "decision": "DEFER",
+      "marketGated": false,
+      "note": "DEFER",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.3 Subscriptions, loyalty and retention",
+      "capability": "Family or household sharing of a subscription",
+      "seenOn": "DD",
+      "decision": "DEFER",
+      "marketGated": false,
+      "note": "DEFER",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.3 Subscriptions, loyalty and retention",
+      "capability": "Wallet with top-up and partial payment",
+      "seenOn": "SF",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — one wallet per currency (§19)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.3 Subscriptions, loyalty and retention",
+      "capability": "Loyalty points and conversion to wallet credit",
+      "seenOn": "SF",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — points valued per country, earned and spent across all channels",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.3 Subscriptions, loyalty and retention",
+      "capability": "Merchant-run loyalty and stamp cards",
+      "seenOn": "DD JE",
+      "decision": "ADOPT",
+      "marketGated": true,
+      "note": "ADOPT (M)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.3 Subscriptions, loyalty and retention",
+      "capability": "Referral with rewards for both sides",
+      "seenOn": "SF UE DD DL JE",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — staged vesting and clawback (§30.9)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.3 Subscriptions, loyalty and retention",
+      "capability": "Gift cards and corporate gift cards",
+      "seenOn": "UE DD DL JE",
+      "decision": "DEFER",
+      "marketGated": true,
+      "note": "DEFER (M)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.3 Subscriptions, loyalty and retention",
+      "capability": "Win-back and lapsed-customer campaigns",
+      "seenOn": "UE DD DL JE",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — Growth agent within budget caps",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.4 Payments, fees and pricing",
+      "capability": "Card, wallet and digital payment methods",
+      "seenOn": "SF UE DD DL JE",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT via Payment Orchestration (§20)",
+      "status": "DOMAIN",
+      "evidence": "Payment Orchestration, BitriPay/KODA connectors"
+    },
+    {
+      "section": "C.4 Payments, fees and pricing",
+      "capability": "Cash on delivery",
+      "seenOn": "SF DL JE",
+      "decision": "ADAPT",
+      "marketGated": false,
+      "note": "ADAPT — cashless by default; COD only by dated market exception (§29.6)",
+      "status": "PARTIAL",
+      "evidence": "COD method and policy; CEO-dated exception not yet modelled (§29.6)"
+    },
+    {
+      "section": "C.4 Payments, fees and pricing",
+      "capability": "Mobile money and local rails",
+      "seenOn": "SF",
+      "decision": "ADOPT and extend",
+      "marketGated": false,
+      "note": "ADOPT and extend — mobile money first, many providers per market",
+      "status": "DOMAIN",
+      "evidence": "BitriPay mobile money push, KODA verification"
+    },
+    {
+      "section": "C.4 Payments, fees and pricing",
+      "capability": "Split payment across methods",
+      "seenOn": "SF DD",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — and across currencies where permitted",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.4 Payments, fees and pricing",
+      "capability": "Service fee charged to the customer",
+      "seenOn": "UE DD DL JE",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — compulsory 10%, fully disclosed (§18.2)",
+      "status": "DOMAIN",
+      "evidence": "10% service charge (pricing)"
+    },
+    {
+      "section": "C.4 Payments, fees and pricing",
+      "capability": "Commission charged to the merchant",
+      "seenOn": "SF UE DD DL JE",
+      "decision": "REJECT",
+      "marketGated": false,
+      "note": "REJECT — 0% on every channel, the core commercial differentiator (§18.1)",
+      "status": "REPLACED",
+      "evidence": "0% commission enforced (pricing)"
+    },
+    {
+      "section": "C.4 Payments, fees and pricing",
+      "capability": "Small-order fee",
+      "seenOn": "UE DD DL JE",
+      "decision": "DEFER",
+      "marketGated": true,
+      "note": "DEFER (M)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.4 Payments, fees and pricing",
+      "capability": "Distance-based and zone-based delivery pricing",
+      "seenOn": "SF UE DD DL JE",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — the ladder in §18.3",
+      "status": "PARTIAL",
+      "evidence": "Distance ladder; zones not built"
+    },
+    {
+      "section": "C.4 Payments, fees and pricing",
+      "capability": "Surge or busy pricing",
+      "seenOn": "SF UE DD",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — delivery fee only, rider takes 70% of the uplift (§18.5)",
+      "status": "DOMAIN",
+      "evidence": "Zone-level capped surge (pricing)"
+    },
+    {
+      "section": "C.4 Payments, fees and pricing",
+      "capability": "Expanded-range fee for distant orders",
+      "seenOn": "DD",
+      "decision": "ADAPT",
+      "marketGated": false,
+      "note": "ADAPT — becomes the 30% band step beyond 7 km (§18.3)",
+      "status": "DOMAIN",
+      "evidence": "30% band steps beyond 7 km (pricing)"
+    },
+    {
+      "section": "C.4 Payments, fees and pricing",
+      "capability": "Free delivery above an order threshold",
+      "seenOn": "SF UE DD DL JE",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — merchant-funded, rider still paid in full",
+      "status": "PARTIAL",
+      "evidence": "Merchant-funded delivery promotion; threshold rule not built"
+    },
+    {
+      "section": "C.4 Payments, fees and pricing",
+      "capability": "Tips, 100% to the courier",
+      "seenOn": "UE DD DL JE",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — at checkout and after delivery",
+      "status": "DOMAIN",
+      "evidence": "Tips to rider_payable (pricing)"
+    },
+    {
+      "section": "C.4 Payments, fees and pricing",
+      "capability": "Post-delivery tipping window",
+      "seenOn": "DD DL",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — Just Eat permits checkout only; the longer window is better for riders",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.4 Payments, fees and pricing",
+      "capability": "Transparent fee breakdown before payment",
+      "seenOn": "UE DD JE",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — and all-in display where a market requires it (§18.2)",
+      "status": "DOMAIN",
+      "evidence": "Named price lines and all-in display (pricing)"
+    },
+    {
+      "section": "C.4 Payments, fees and pricing",
+      "capability": "Refunds to original method or wallet",
+      "seenOn": "SF UE DD DL JE",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — agent-resolved within caps",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.5 Merchant tools",
+      "capability": "Merchant portal and mobile manager app",
+      "seenOn": "SF UE DD DL JE",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — one app with owner, manager, kitchen and POS modes",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.5 Merchant tools",
+      "capability": "Menu management with categories, variants and modifiers",
+      "seenOn": "SF UE DD DL JE",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.5 Merchant tools",
+      "capability": "Bulk menu and catalogue import",
+      "seenOn": "SF UE DD DL JE",
+      "decision": "ADOPT and extend",
+      "marketGated": false,
+      "note": "ADOPT and extend — template-free import, feeds, barcodes, PDF menus (§12.11)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.5 Merchant tools",
+      "capability": "Item availability and quick unavailable toggle",
+      "seenOn": "SF UE DD DL JE",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.5 Merchant tools",
+      "capability": "Prep-time control and busy mode",
+      "seenOn": "UE DD DL JE",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — plus learned prep times feeding ETA",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.5 Merchant tools",
+      "capability": "Opening hours, holiday hours, bulk open and close",
+      "seenOn": "SF UE DD DL JE",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.5 Merchant tools",
+      "capability": "Multi-site and enterprise management",
+      "seenOn": "UE DD DL JE",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — restaurant groups and branches",
+      "status": "PARTIAL",
+      "evidence": "Business accounts with branches and branch-limited members"
+    },
+    {
+      "section": "C.5 Merchant tools",
+      "capability": "Analytics, reporting and customer insight",
+      "seenOn": "SF UE DD DL JE",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — channel as a dimension, one reconciliation",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.5 Merchant tools",
+      "capability": "Built-in POS for walk-in orders",
+      "seenOn": "SF DD",
+      "decision": "ADOPT and extend",
+      "marketGated": false,
+      "note": "ADOPT and extend — full offline-capable POS (§12.4)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.5 Merchant tools",
+      "capability": "Own-website ordering and storefront builder",
+      "seenOn": "DD JE UE",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — free branded ordering page, which is also the backlink engine (§31.5)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.5 Merchant tools",
+      "capability": "POS and back-of-house integrations",
+      "seenOn": "UE DD DL JE",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — adapter framework rather than bespoke coupling",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.5 Merchant tools",
+      "capability": "Order management tablet and printer support",
+      "seenOn": "SF UE DD DL JE",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — standard Android, no proprietary hardware (§12.12)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.5 Merchant tools",
+      "capability": "AI menu descriptions, translation and photo enhancement",
+      "seenOn": "UE DD JE",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — owner approval required",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.5 Merchant tools",
+      "capability": "Professional photography service",
+      "seenOn": "DD",
+      "decision": "DEFER",
+      "marketGated": false,
+      "note": "DEFER — AI photo coaching instead, since there is no field team",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.5 Merchant tools",
+      "capability": "Customer feedback dashboard with reply tools",
+      "seenOn": "UE DD DL JE",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT (§14.7)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.5 Merchant tools",
+      "capability": "Merchant messaging to customers after a problem",
+      "seenOn": "UE",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — in-product, logged",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.5 Merchant tools",
+      "capability": "Reservations and table management",
+      "seenOn": "DD",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — the booking engine in §13",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.5 Merchant tools",
+      "capability": "Error charges levied on merchants for mistakes",
+      "seenOn": "DD",
+      "decision": "ADAPT",
+      "marketGated": false,
+      "note": "ADAPT — recovery only where evidence supports it (§11.9)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.5 Merchant tools",
+      "capability": "AI-generated menu imagery",
+      "seenOn": "DL (banned from Oct 2026)",
+      "decision": "REJECT",
+      "marketGated": false,
+      "note": "REJECT — follows Deliveroo in prohibiting it; real food photos only",
+      "status": "REJECTED"
+    },
+    {
+      "section": "C.6 Courier and rider",
+      "capability": "Self-serve onboarding with background and document checks",
+      "seenOn": "UE DD DL JE",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — fully remote, with liveness (§29.8)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.6 Courier and rider",
+      "capability": "Offer and job acceptance with timeout",
+      "seenOn": "SF UE DD DL JE",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — expected earnings shown before accepting",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.6 Courier and rider",
+      "capability": "Batched and stacked orders",
+      "seenOn": "UE DD DL JE",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — one drop shown at a time (§11.10)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.6 Courier and rider",
+      "capability": "Earnings modes: per offer or per active hour",
+      "seenOn": "DD",
+      "decision": "DEFER",
+      "marketGated": true,
+      "note": "DEFER (M) — the 70% share is simpler to explain at launch",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.6 Courier and rider",
+      "capability": "Instant or same-day payout",
+      "seenOn": "UE DD",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — the strongest rider acquisition lever in Tunakula's markets",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.6 Courier and rider",
+      "capability": "Incentives: quests, challenges, boosts, peak pay",
+      "seenOn": "UE DD DL JE",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — budget-capped, forecast-driven",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.6 Courier and rider",
+      "capability": "Shift booking and session planning",
+      "seenOn": "SF DL JE",
+      "decision": "ADOPT",
+      "marketGated": true,
+      "note": "ADOPT (M)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.6 Courier and rider",
+      "capability": "Heatmaps showing where demand is",
+      "seenOn": "UE",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — Rider Coach agent",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.6 Courier and rider",
+      "capability": "Safety toolkit, emergency button, trip sharing",
+      "seenOn": "UE DD",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — plus in-app incident and safety buttons",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.6 Courier and rider",
+      "capability": "Phone number anonymisation",
+      "seenOn": "UE DD DL",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.6 Courier and rider",
+      "capability": "Delivery PIN, photo and signature proof",
+      "seenOn": "UE DD DL JE",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — OTP plus photo plus GPS (§11.5)",
+      "status": "DOMAIN",
+      "evidence": "Recipient code, photo, geofence (ordering)"
+    },
+    {
+      "section": "C.6 Courier and rider",
+      "capability": "Employed courier model alongside self-employed",
+      "seenOn": "JE (Scoober)",
+      "decision": "ADAPT",
+      "marketGated": false,
+      "note": "ADAPT — labour model adapter per market, plus fleet partners (§7.3)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.6 Courier and rider",
+      "capability": "Fleet partner accounts",
+      "seenOn": "—",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — not seen on the benchmarks; essential for moto-taxi markets",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.6 Courier and rider",
+      "capability": "Cash-in-hand tracking and overflow limits",
+      "seenOn": "SF",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — per currency, with deposit SLAs",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.6 Courier and rider",
+      "capability": "Rider equipment supply",
+      "seenOn": "DL JE",
+      "decision": "DEFER",
+      "marketGated": false,
+      "note": "DEFER — published local supplier kit instead (§12.12)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.6 Courier and rider",
+      "capability": "Contract violations and lateness deactivation",
+      "seenOn": "DD",
+      "decision": "ADAPT",
+      "marketGated": false,
+      "note": "ADAPT — coaching and appeals first; deactivation only for safety or integrity",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.7 Logistics and fulfilment",
+      "capability": "Algorithmic dispatch and assignment",
+      "seenOn": "SF UE DD DL JE",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — learned acceptance propensity and ETAs",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.7 Logistics and fulfilment",
+      "capability": "Restaurant-first or courier-first confirmation",
+      "seenOn": "SF",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — plus agent-optimised choice per order (§10.2)",
+      "status": "DOMAIN",
+      "evidence": "RIDER_FIRST / AGENT_OPTIMISED (ordering)"
+    },
+    {
+      "section": "C.7 Logistics and fulfilment",
+      "capability": "Zone and radius management",
+      "seenOn": "SF UE DD DL JE",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — 10 km with 45-minute expansion (§18.6)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.7 Logistics and fulfilment",
+      "capability": "Marketplace plus platform-delivery hybrid",
+      "seenOn": "JE",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — restaurant-own-delivery supported alongside platform riders",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.7 Logistics and fulfilment",
+      "capability": "White-label delivery as a service to third parties",
+      "seenOn": "UE DD DL",
+      "decision": "DEFER",
+      "marketGated": false,
+      "note": "DEFER — a strong later revenue line once rider density exists",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.7 Logistics and fulfilment",
+      "capability": "Dark stores and owned inventory",
+      "seenOn": "DD DL",
+      "decision": "REJECT",
+      "marketGated": false,
+      "note": "REJECT — asset-heavy and contrary to the zero-footprint model (§29.8)",
+      "status": "REJECTED"
+    },
+    {
+      "section": "C.7 Logistics and fulfilment",
+      "capability": "Dark kitchens and virtual brands",
+      "seenOn": "UE DD DL",
+      "decision": "DEFER",
+      "marketGated": true,
+      "note": "DEFER (M)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.7 Logistics and fulfilment",
+      "capability": "Autonomous vehicles, drones and sidewalk robots",
+      "seenOn": "UE DD JE",
+      "decision": "REJECT",
+      "marketGated": false,
+      "note": "REJECT for now — irrelevant to Tunakula's launch markets",
+      "status": "REJECTED"
+    },
+    {
+      "section": "C.7 Logistics and fulfilment",
+      "capability": "Large orders and catering",
+      "seenOn": "UE DD DL JE",
+      "decision": "ADOPT",
+      "marketGated": true,
+      "note": "ADOPT (M) — fits the B2B employer product",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.7 Logistics and fulfilment",
+      "capability": "Returns and reverse logistics",
+      "seenOn": "DD",
+      "decision": "DEFER",
+      "marketGated": false,
+      "note": "DEFER",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.7 Logistics and fulfilment",
+      "capability": "Premium or priority delivery option",
+      "seenOn": "UE DD",
+      "decision": "DEFER",
+      "marketGated": true,
+      "note": "DEFER (M)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.8 Verticals beyond restaurants",
+      "capability": "Grocery and convenience",
+      "seenOn": "UE DD DL JE",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — the catalogue model supports it from day one (§12.10)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.8 Verticals beyond restaurants",
+      "capability": "Substitution preferences, per item or per basket",
+      "seenOn": "UE DD DL JE",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — customer-approved only, never silent (§11.7)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.8 Verticals beyond restaurants",
+      "capability": "Variable-weight items with authorise-then-capture",
+      "seenOn": "UE DD DL",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — declared tolerance and automatic refunds (§13.5)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.8 Verticals beyond restaurants",
+      "capability": "Barcode scanning and in-store picking app",
+      "seenOn": "UE DD DL JE",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — picking mode in the Restaurant app (§13.4)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.8 Verticals beyond restaurants",
+      "capability": "Age-restricted goods with ID check at handover",
+      "seenOn": "UE DD DL JE",
+      "decision": "ADOPT",
+      "marketGated": true,
+      "note": "ADOPT (M) — per market rules (§11.7)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.8 Verticals beyond restaurants",
+      "capability": "Pharmacy and prescription delivery",
+      "seenOn": "UE DD JE",
+      "decision": "DEFER",
+      "marketGated": true,
+      "note": "DEFER (M) — heavy regulatory load",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.8 Verticals beyond restaurants",
+      "capability": "Retail, flowers, pet and general merchandise",
+      "seenOn": "UE DD",
+      "decision": "DEFER",
+      "marketGated": false,
+      "note": "DEFER — architecture allows it",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.8 Verticals beyond restaurants",
+      "capability": "Shop-for-me from any store, including unlisted ones",
+      "seenOn": "UE",
+      "decision": "DEFER",
+      "marketGated": false,
+      "note": "DEFER — interesting for low-coverage markets",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.8 Verticals beyond restaurants",
+      "capability": "Food benefit and voucher scheme payments",
+      "seenOn": "DD (SNAP) JE (meal cards)",
+      "decision": "ADOPT",
+      "marketGated": true,
+      "note": "ADOPT (M) — employer allowances and local meal-voucher schemes",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.8 Verticals beyond restaurants",
+      "capability": "Retailer loyalty card integration",
+      "seenOn": "DL",
+      "decision": "DEFER",
+      "marketGated": true,
+      "note": "DEFER (M)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.9 Advertising and growth",
+      "capability": "Sponsored listings and placement",
+      "seenOn": "SF UE DD DL JE",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — auction-based with a relevance floor and clear labelling",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.9 Advertising and growth",
+      "capability": "Sponsored items and dish promotion",
+      "seenOn": "UE DD JE",
+      "decision": "DEFER",
+      "marketGated": false,
+      "note": "DEFER",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.9 Advertising and growth",
+      "capability": "Pay-per-order rather than per click",
+      "seenOn": "DD",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — aligns merchant spend with outcome",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.9 Advertising and growth",
+      "capability": "Self-serve ads manager with reporting",
+      "seenOn": "UE DD DL",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.9 Advertising and growth",
+      "capability": "Offers, multibuy and percentage discounts",
+      "seenOn": "SF UE DD DL JE",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — per-currency values, budget caps",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.9 Advertising and growth",
+      "capability": "Platform-funded promotional campaigns",
+      "seenOn": "UE DD",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — zone and stage budgets (§30.9)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.9 Advertising and growth",
+      "capability": "Retail media and non-endemic brand advertising",
+      "seenOn": "UE DD DL JE",
+      "decision": "DEFER",
+      "marketGated": false,
+      "note": "DEFER — a meaningful later revenue line",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.9 Advertising and growth",
+      "capability": "Offsite and programmatic advertising",
+      "seenOn": "DD DL",
+      "decision": "DEFER",
+      "marketGated": false,
+      "note": "DEFER",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.9 Advertising and growth",
+      "capability": "Post-checkout and order-tracking page ads",
+      "seenOn": "UE DL JE",
+      "decision": "DEFER",
+      "marketGated": false,
+      "note": "DEFER",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.9 Advertising and growth",
+      "capability": "CRM, push and lifecycle messaging",
+      "seenOn": "SF UE DD DL JE",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — consent and suppression enforced (§30.10)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.9 Advertising and growth",
+      "capability": "Healthy-food advertising restrictions",
+      "seenOn": "DL (UK HFSS)",
+      "decision": "ADOPT",
+      "marketGated": true,
+      "note": "ADOPT (M) — per market advertising rules",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.10 Enterprise and B2B",
+      "capability": "Corporate accounts with budgets and policy controls",
+      "seenOn": "UE DD DL JE",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — one sale brings many users with predictable demand",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.10 Enterprise and B2B",
+      "capability": "Meal allowances per employee with day, time and category limits",
+      "seenOn": "UE DD DL JE",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.10 Enterprise and B2B",
+      "capability": "Team and group ordering for offices",
+      "seenOn": "UE DD DL JE",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.10 Enterprise and B2B",
+      "capability": "Office catering",
+      "seenOn": "UE DD DL JE",
+      "decision": "DEFER",
+      "marketGated": true,
+      "note": "DEFER (M)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.10 Enterprise and B2B",
+      "capability": "Consolidated invoicing and expense integrations",
+      "seenOn": "UE DD DL JE",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — invoicing at launch, expense integrations later",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.10 Enterprise and B2B",
+      "capability": "Employee privacy by design in corporate reporting",
+      "seenOn": "JE",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — employer sees spend, not individual orders",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.10 Enterprise and B2B",
+      "capability": "Physical or virtual corporate payment card",
+      "seenOn": "JE",
+      "decision": "DEFER",
+      "marketGated": false,
+      "note": "DEFER",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.10 Enterprise and B2B",
+      "capability": "Vouchers redeemable without a subscription",
+      "seenOn": "UE DL",
+      "decision": "ADOPT",
+      "marketGated": true,
+      "note": "ADOPT (M)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.11 APIs and integrations",
+      "capability": "Menu and catalogue API",
+      "seenOn": "SF UE DD DL JE",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — API-first by principle (§2.3)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.11 APIs and integrations",
+      "capability": "Order injection and workflow API",
+      "seenOn": "UE DD DL JE",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.11 APIs and integrations",
+      "capability": "Store and site management API",
+      "seenOn": "UE DD DL",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.11 APIs and integrations",
+      "capability": "Reporting API",
+      "seenOn": "UE DD",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.11 APIs and integrations",
+      "capability": "Webhooks with signature verification and replay handling",
+      "seenOn": "UE DD DL",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT",
+      "status": "DOMAIN",
+      "evidence": "HMAC + Ed25519 verification, dedupe by event id (connectors)"
+    },
+    {
+      "section": "C.11 APIs and integrations",
+      "capability": "Picking API for grocery",
+      "seenOn": "DL",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.11 APIs and integrations",
+      "capability": "White-label delivery API",
+      "seenOn": "UE DD DL",
+      "decision": "DEFER",
+      "marketGated": false,
+      "note": "DEFER",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.11 APIs and integrations",
+      "capability": "Middleware bridge to many POS systems",
+      "seenOn": "JE (Flyt, 80+ systems)",
+      "decision": "ADAPT",
+      "marketGated": false,
+      "note": "ADAPT — adapter framework; integrations by connector",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.11 APIs and integrations",
+      "capability": "Partner integration certification programme",
+      "seenOn": "DD",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — the certification model in §20.7",
+      "status": "DOMAIN",
+      "evidence": "Connector certification suite (§20.7)"
+    },
+    {
+      "section": "C.11 APIs and integrations",
+      "capability": "Sign-in with the platform as an identity provider",
+      "seenOn": "DD",
+      "decision": "DEFER",
+      "marketGated": false,
+      "note": "DEFER",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.11 APIs and integrations",
+      "capability": "Published API status page and performance standards",
+      "seenOn": "DL",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT",
+      "status": "NOT_STARTED"
+    }
+  ]
+}
