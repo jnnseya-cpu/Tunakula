@@ -2439,6 +2439,281 @@
       "marketGated": false,
       "note": "ADOPT",
       "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.12 AI and automation",
+      "capability": "Conversational ordering assistant in-app",
+      "seenOn": "UE DD JE",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — Concierge agent (§23.2)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.12 AI and automation",
+      "capability": "Voice ordering and phone AI",
+      "seenOn": "DD JE",
+      "decision": "ADOPT",
+      "marketGated": true,
+      "note": "ADOPT (M) — high value where literacy or data cost is a barrier",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.12 AI and automation",
+      "capability": "Ordering through a messaging app",
+      "seenOn": "JE (WhatsApp)",
+      "decision": "ADOPT and lead",
+      "marketGated": false,
+      "note": "ADOPT and lead — WhatsApp as a full ordering channel, not an add-on",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.12 AI and automation",
+      "capability": "AI review summarisation",
+      "seenOn": "UE",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT (§14.8)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.12 AI and automation",
+      "capability": "AI menu content, descriptions and translation",
+      "seenOn": "UE DD JE",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — owner approved",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.12 AI and automation",
+      "capability": "AI substitution and replacement suggestions",
+      "seenOn": "UE DD",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — customer approval still required",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.12 AI and automation",
+      "capability": "AI inventory and demand prediction",
+      "seenOn": "UE DD",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT (§24.3)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.12 AI and automation",
+      "capability": "AI campaign, targeting and discount tooling",
+      "seenOn": "DD UE",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — budget-capped Growth agent",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.12 AI and automation",
+      "capability": "AI assistant for merchants",
+      "seenOn": "DD UE",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — Restaurant Success agent",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.12 AI and automation",
+      "capability": "AI-assisted onboarding",
+      "seenOn": "DD",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — central to zero-footprint onboarding (§29.8)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.12 AI and automation",
+      "capability": "Unified behavioural memory across services",
+      "seenOn": "DD",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — the behaviour learning system (§24)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.12 AI and automation",
+      "capability": "Agentic commerce connectors for external AI assistants",
+      "seenOn": "DD",
+      "decision": "DEFER",
+      "marketGated": false,
+      "note": "DEFER — tracks the answer-engine strategy (§31.11)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.13 Trust, safety and compliance",
+      "capability": "Identity verification and continuing background checks",
+      "seenOn": "UE DD DL JE",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — continuous re-verification (§29.8)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.13 Trust, safety and compliance",
+      "capability": "Allergen declaration and warnings before ordering",
+      "seenOn": "DL JE",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — structured and enforced (§11.7)",
+      "status": "PARTIAL",
+      "evidence": "Allergen acknowledgement gate at packing (ordering); no pre-order display"
+    },
+    {
+      "section": "C.13 Trust, safety and compliance",
+      "capability": "Food hygiene rating display",
+      "seenOn": "DL JE",
+      "decision": "ADOPT",
+      "marketGated": true,
+      "note": "ADOPT (M)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.13 Trust, safety and compliance",
+      "capability": "Product recall handling",
+      "seenOn": "DL",
+      "decision": "ADOPT",
+      "marketGated": true,
+      "note": "ADOPT (M)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.13 Trust, safety and compliance",
+      "capability": "Age verification at handover with ID photo proof",
+      "seenOn": "UE DD DL JE",
+      "decision": "ADOPT",
+      "marketGated": true,
+      "note": "ADOPT (M)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.13 Trust, safety and compliance",
+      "capability": "Customer self-exclusion from alcohol delivery",
+      "seenOn": "DD",
+      "decision": "ADOPT",
+      "marketGated": true,
+      "note": "ADOPT (M) — a genuinely responsible feature",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.13 Trust, safety and compliance",
+      "capability": "Fraud detection on accounts, promotions and payments",
+      "seenOn": "SF UE DD DL JE",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — Sentinel agent (§23.2)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.13 Trust, safety and compliance",
+      "capability": "Account sharing detection",
+      "seenOn": "UE",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — device binding and liveness",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.13 Trust, safety and compliance",
+      "capability": "Dispute resolution with evidence",
+      "seenOn": "UE DD DL JE",
+      "decision": "ADOPT and extend",
+      "marketGated": false,
+      "note": "ADOPT and extend — automatic evidence bundle (§11.9)",
+      "status": "PARTIAL",
+      "evidence": "Automatic evidence bundle (ordering/evidence.ts); no dispute flow"
+    },
+    {
+      "section": "C.13 Trust, safety and compliance",
+      "capability": "Published ranking transparency",
+      "seenOn": "JE",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — and extend to rider allocation and pay method",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.13 Trust, safety and compliance",
+      "capability": "Algorithmic transparency disclosures to couriers",
+      "seenOn": "DL JE",
+      "decision": "ADOPT",
+      "marketGated": true,
+      "note": "ADOPT (M) — required where platform-work rules apply",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.13 Trust, safety and compliance",
+      "capability": "Independent dispute body for couriers",
+      "seenOn": "DL (CEDR)",
+      "decision": "DEFER",
+      "marketGated": true,
+      "note": "DEFER (M)",
+      "status": "NOT_STARTED"
+    },
+    {
+      "section": "C.13 Trust, safety and compliance",
+      "capability": "Fee transparency overhaul",
+      "seenOn": "DD",
+      "decision": "ADOPT from the start",
+      "marketGated": false,
+      "note": "ADOPT from the start — all-in pricing where required (§18.2)",
+      "status": "DOMAIN",
+      "evidence": "Named price lines and all-in display (pricing)"
+    },
+    {
+      "section": "C.13 Trust, safety and compliance",
+      "capability": "Data portability and export",
+      "seenOn": "JE DL",
+      "decision": "ADOPT",
+      "marketGated": false,
+      "note": "ADOPT — merchants and customers export their own data",
+      "status": "NOT_STARTED"
+    }
+  ],
+  "rejections": [
+    {
+      "rejected": "Merchant commission",
+      "reason": "The customer service charge funds the platform instead; this is the commercial wedge (§18.1)"
+    },
+    {
+      "rejected": "Deleting reviews that mention delivery",
+      "reason": "Attribute the complaint to the rider instead; deleting it hides a real failure"
+    },
+    {
+      "rejected": "Public per-rider star ratings",
+      "reason": "Fairness and labour-status risk outweigh the marginal customer benefit"
+    },
+    {
+      "rejected": "Acceptance rate as a performance metric",
+      "reason": "Unfair, and evidence of control that weighs against self-employed status"
+    },
+    {
+      "rejected": "Dark stores and owned inventory",
+      "reason": "Asset-heavy, contrary to the zero-footprint operating model"
+    },
+    {
+      "rejected": "Autonomous delivery",
+      "reason": "No relevance to the launch markets for the foreseeable future"
+    },
+    {
+      "rejected": "AI-generated food imagery",
+      "reason": "Misleads customers about what they will receive"
+    },
+    {
+      "rejected": "Obscure admin URLs as a security measure",
+      "reason": "Replaced by scoped identity, MFA and device binding"
+    },
+    {
+      "rejected": "One installation or one currency per country",
+      "reason": "Replaced by a single multi-market, multi-currency platform (§7, §19)"
     }
   ]
 }

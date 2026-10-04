@@ -161,7 +161,7 @@ Generated from PRD Appendix B; statuses are maintained in `register.json` (CMP-0
 
 # Merged capability register (Appendix C)
 
-**146 capabilities** — decisions: ADAPT: 9, ADOPT: 101, ADOPT and extend: 4, DEFER: 25, REJECT: 7; status: DOMAIN: 12, NOT_STARTED: 122, PARTIAL: 5, REJECTED: 6, REPLACED: 1
+**172 capabilities** — decisions: ADAPT: 9, ADOPT: 122, ADOPT and extend: 5, ADOPT and lead: 1, ADOPT from the start: 1, DEFER: 27, REJECT: 7; status: DOMAIN: 13, NOT_STARTED: 145, PARTIAL: 7, REJECTED: 6, REPLACED: 1
 
 | Section | Capability | Seen on | Decision | Market-gated | Status | Evidence |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -311,3 +311,43 @@ Generated from PRD Appendix B; statuses are maintained in `register.json` (CMP-0
 | C.11 | Partner integration certification programme | DD | ADOPT |  | DOMAIN | Connector certification suite (§20.7) |
 | C.11 | Sign-in with the platform as an identity provider | DD | DEFER |  | NOT_STARTED |  |
 | C.11 | Published API status page and performance standards | DL | ADOPT |  | NOT_STARTED |  |
+| C.12 | Conversational ordering assistant in-app | UE DD JE | ADOPT |  | NOT_STARTED |  |
+| C.12 | Voice ordering and phone AI | DD JE | ADOPT | yes | NOT_STARTED |  |
+| C.12 | Ordering through a messaging app | JE (WhatsApp) | ADOPT and lead |  | NOT_STARTED |  |
+| C.12 | AI review summarisation | UE | ADOPT |  | NOT_STARTED |  |
+| C.12 | AI menu content, descriptions and translation | UE DD JE | ADOPT |  | NOT_STARTED |  |
+| C.12 | AI substitution and replacement suggestions | UE DD | ADOPT |  | NOT_STARTED |  |
+| C.12 | AI inventory and demand prediction | UE DD | ADOPT |  | NOT_STARTED |  |
+| C.12 | AI campaign, targeting and discount tooling | DD UE | ADOPT |  | NOT_STARTED |  |
+| C.12 | AI assistant for merchants | DD UE | ADOPT |  | NOT_STARTED |  |
+| C.12 | AI-assisted onboarding | DD | ADOPT |  | NOT_STARTED |  |
+| C.12 | Unified behavioural memory across services | DD | ADOPT |  | NOT_STARTED |  |
+| C.12 | Agentic commerce connectors for external AI assistants | DD | DEFER |  | NOT_STARTED |  |
+| C.13 | Identity verification and continuing background checks | UE DD DL JE | ADOPT |  | NOT_STARTED |  |
+| C.13 | Allergen declaration and warnings before ordering | DL JE | ADOPT |  | PARTIAL | Allergen acknowledgement gate at packing (ordering); no pre-order display |
+| C.13 | Food hygiene rating display | DL JE | ADOPT | yes | NOT_STARTED |  |
+| C.13 | Product recall handling | DL | ADOPT | yes | NOT_STARTED |  |
+| C.13 | Age verification at handover with ID photo proof | UE DD DL JE | ADOPT | yes | NOT_STARTED |  |
+| C.13 | Customer self-exclusion from alcohol delivery | DD | ADOPT | yes | NOT_STARTED |  |
+| C.13 | Fraud detection on accounts, promotions and payments | SF UE DD DL JE | ADOPT |  | NOT_STARTED |  |
+| C.13 | Account sharing detection | UE | ADOPT |  | NOT_STARTED |  |
+| C.13 | Dispute resolution with evidence | UE DD DL JE | ADOPT and extend |  | PARTIAL | Automatic evidence bundle (ordering/evidence.ts); no dispute flow |
+| C.13 | Published ranking transparency | JE | ADOPT |  | NOT_STARTED |  |
+| C.13 | Algorithmic transparency disclosures to couriers | DL JE | ADOPT | yes | NOT_STARTED |  |
+| C.13 | Independent dispute body for couriers | DL (CEDR) | DEFER | yes | NOT_STARTED |  |
+| C.13 | Fee transparency overhaul | DD | ADOPT from the start |  | DOMAIN | Named price lines and all-in display (pricing) |
+| C.13 | Data portability and export | JE DL | ADOPT |  | NOT_STARTED |  |
+
+## Deliberately rejected (C.15)
+
+| Rejected | Reason |
+| --- | --- |
+| Merchant commission | The customer service charge funds the platform instead; this is the commercial wedge (§18.1) |
+| Deleting reviews that mention delivery | Attribute the complaint to the rider instead; deleting it hides a real failure |
+| Public per-rider star ratings | Fairness and labour-status risk outweigh the marginal customer benefit |
+| Acceptance rate as a performance metric | Unfair, and evidence of control that weighs against self-employed status |
+| Dark stores and owned inventory | Asset-heavy, contrary to the zero-footprint operating model |
+| Autonomous delivery | No relevance to the launch markets for the foreseeable future |
+| AI-generated food imagery | Misleads customers about what they will receive |
+| Obscure admin URLs as a security measure | Replaced by scoped identity, MFA and device binding |
+| One installation or one currency per country | Replaced by a single multi-market, multi-currency platform (§7, §19) |
