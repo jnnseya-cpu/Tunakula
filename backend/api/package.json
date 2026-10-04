@@ -28,6 +28,7 @@
   "scripts": {
     "start": "tsx --tsconfig tsconfig.json src/http/main.ts",
     "migrate": "node src/db/migrate-cli.ts",
-    "bootstrap-admin": "node src/db/bootstrap-cli.ts"
+    "bootstrap-admin": "node src/db/bootstrap-cli.ts",
+    "seed:demo": "tsx --tsconfig tsconfig.json src/db/seed-demo.ts"
   }
 }

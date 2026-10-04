@@ -10,7 +10,7 @@ import { join, relative } from "node:path";
 const root = new URL("..", import.meta.url).pathname;
 const MASTER = "shared/brand/tunakula-logo.jpg";
 /** Copies that must exist. Any other file named tunakula-logo.* anywhere is checked too. */
-const REQUIRED = ["frontend/customer/public/brand/tunakula-logo.jpg", "frontend/customer/app/icon.jpg"];
+const REQUIRED = ["frontend/customer/public/brand/tunakula-logo.jpg", "frontend/customer/app/icon.jpg", "frontend/admin/public/brand/tunakula-logo.jpg", "frontend/admin/app/icon.jpg"];
 const SKIP = new Set(["node_modules", ".git", ".next", "out", "screenshots", ".preview"]);
 
 const sha = (p: string) => createHash("sha256").update(readFileSync(join(root, p))).digest("hex");

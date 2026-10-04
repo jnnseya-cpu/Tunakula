@@ -456,6 +456,24 @@ describe("§10–§11 custody chain end to end (RIDER_FIRST)", () => {
     assert.equal((await call("GET", `/v1/orders/${orderId}`, { token: customer.token, country: "GB" })).status, 404);
   });
 
+  test("takeaway: the branch hands over at the counter with the code; no rider is involved", async () => {
+    const body = { branch_id: branchId, items: [{ item_id: itemId, quantity: 1 }], order_type: "TAKEAWAY" };
+    const q = await call("POST", "/v1/carts/quote", { country: "CD", body });
+    assert.equal(q.body.delivery, undefined);
+    const placed = await call("POST", "/v1/orders", { token: customer.token, country: "CD", body: { ...body, payment_mode: "PREPAID", expected_total: q.body.total } });
+    assert.equal(placed.status, 201, JSON.stringify(placed.body));
+    const id = placed.body.order_id;
+    await call("POST", "/v1/payments/intents", { token: customer.token, country: "CD", body: { order_id: id, method_type: "MOBILE_MONEY_PUSH", payer: { msisdn: "+243810000001" } } });
+    assert.equal((await transition(kitchen, id, { type: "ACCEPT" })).body.state, "ACCEPTED", "rider-first applies only to rider orders");
+    await transition(kitchen, id, { type: "START_PREPARING" });
+    await transition(kitchen, id, { type: "PACK", confirmedLineIds: ["l1"], packageCount: 1, allergenAcknowledged: true });
+    await transition(kitchen, id, { type: "MARK_READY", packages: [{ labelId: "T-1", sealId: "TS-1" }], packPhotoRef: "photo://pack" });
+    assert.equal((await transition(rider, id, { type: "DELIVER", verification: { method: "CODE", code: placed.body.recipient_code }, sealIntact: true })).status, 403, "riders do not hand over takeaway");
+    const done = await transition(kitchen, id, { type: "DELIVER", verification: { method: "CODE", code: placed.body.recipient_code }, sealIntact: true });
+    assert.equal(done.status, 200, JSON.stringify(done.body));
+    assert.equal(done.body.state, "DELIVERED");
+  });
+
   test("a customer may cancel their own order before acceptance, not someone else's", async () => {
     const { orderId } = await placePrepaid();
     await call("POST", "/v1/payments/intents", { token: customer.token, country: "CD", body: { order_id: orderId, method_type: "MOBILE_MONEY_PUSH", payer: { msisdn: "+243810000001" } } });
@@ -582,7 +600,7 @@ describe("admin console API", () => {
     const stage = (s: string) => r.body.funnel.find((f: { stage: string }) => f.stage === s).orders;
     assert.ok(stage("PLACED") >= stage("DELIVERED") && stage("DELIVERED") >= 1);
     assert.ok(r.body.heatmap.length >= 1);
-    assert.ok(r.body.top_dishes.some((d: { name: string }) => d.name === "Chicken moambe"));
+    assert.ok(r.body.top_dishes.some((d: { name: string }) => d.name === "Poulet à la moambe"));
     assert.ok(r.body.riders.some((x: { rider_id: string }) => x.rider_id === rider.userId));
     assert.equal(r.body.delivery_minutes.buckets.length, 6);
     assert.equal(r.body.finance, null, "a country admin does not hold ledger:read");

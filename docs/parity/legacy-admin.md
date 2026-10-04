@@ -90,3 +90,87 @@ Status: **Built** = in the new platform with tests · **API** = backend built, c
   Libanaise, Indienne, Swahili, Luba, Kongo, Ngala, Kinoise (10 restaurants, the largest).
 - New platform: cuisines are a catalogue taxonomy per market and language, used for search and the
   "What are you craving?" rail.
+
+## Business settings (configuration des entreprises)
+
+Tabs: business settings, priority setup, orders, refund settings, restaurant, rider, customers, language,
+landing page, disbursement.
+
+| Legacy setting | New platform |
+| --- | --- |
+| Maintenance mode for selected systems at a chosen date and time | Specified: per market and per surface (ordering, merchant, rider), scheduled, audited; status page shows it |
+| Company name, email, phone, country, address, map pin | Country Profile `experience` and the legal notice; contact inbox info@tunakula.com |
+| Logo (3:1) and favicon (1:1) | Brand logos (ADR 0012): the supplied logo, unaltered, guarded byte-for-byte |
+| Time zone, 12/24-hour time | Country Profile `country.timezones`; time format follows the locale |
+| Currency, symbol position, decimals | Currency Registry (ISO 4217 minor units) and locale formatting; never a free choice per screen |
+| Copyright and cookie text | Website legal pages (16 policies) |
+| Default commission %, delivery-fee commission % | 0% merchant commission (fixed by policy); platform keeps 30% of the delivery fee (`rider_share_bps` 7000) |
+| Free delivery above an amount; free delivery distance (km) | Specified: Country Profile pricing thresholds (legacy promise: free above $200) |
+| Veg / non-veg option | Item tags (Vegan, Vegetarian, Halal) and allergens |
+| Commission model / subscription model | Business models in the Country Profile (`operations.business_models`); merchant plans specified |
+| Include tax in amount | Specified: tax provider port; all-in display already supported by the pricing engine |
+| Admin order notification (type) | Notification channels per role |
+| Processing fee (name + amount) | The 10% service charge, shown as its own line (`service_charge_bps`) |
+| Partial payment (rest by cash, digital or both) | Specified: wallet + one other method per order |
+| Guest checkout | Phone sign-in is one step; guest checkout is a decision for the owner |
+| Campaign picker | Promotions module |
+
+## Priority setup (configuration de la priorité)
+
+The legacy panel sets the sort order of every customer-app list, each "default" or "custom condition":
+category list, cuisine list, popular food nearby, popular restaurants, new restaurants, restaurant lists
+(all, by category, by cuisine), food campaigns, best-reviewed food, category foods, search results.
+
+New platform: rankings come from A23 Merit and Visibility — standing computed from published inputs
+(distance, delivery reliability, ratings with minimum sample, recency), explained to merchants, never
+for sale. Each surface has a default ranking and owner-approvable weights (A23 runs weights at L1).
+Paid placement exists only in slots labelled "Sponsored" (ads, §12).
+
+## Order settings (ordres)
+
+| Legacy setting | New platform |
+| --- | --- |
+| Order delivery verification (on/off) | Always on: recipient code and custody gates (§11); never switchable off |
+| Order types: home delivery, takeaway, dine-in | Built: DELIVERY, TAKEAWAY (counter handover fixed 2026-10-04), DINE_IN; per market in the Country Profile |
+| Instant order, repeat order, subscription order, scheduled delivery, custom date order | SCHEDULED built as an order type; repeat ("order again") and subscriptions specified |
+| Restaurant can cancel / rider can cancel | Policy per market: restaurants REJECT before acceptance; riders FAIL_DELIVERY with evidence or hand back for reassignment; customers cancel before acceptance |
+| Order confirmation model: restaurant or rider | Built: `operations.confirmation_model` RESTAURANT_FIRST / RIDER_FIRST / AGENT_OPTIMISED per market |
+| Scheduled delivery time interval (minutes); how many days ahead customers may order | Specified: Country Profile fields for slot length and booking window |
+| Cancellation reasons per user type (customer, restaurant, rider, admin), per language; users cannot cancel unless a reason exists | Specified: managed reason catalogue per market and actor, with translations; the API's `reasonCode` must be one of them. Legacy examples: customer — service issue, found a better offer, ordered by mistake, change of plans, unforeseen event, payment problem, app problem, rider issues, restaurant issues, changed mind; rider — theft, road closures, traffic, reassignment, technical failure, safety concerns, multiple orders, illness, accident or emergency |
+
+## Refund settings (remboursement)
+
+| Legacy setting | New platform |
+| --- | --- |
+| Refund request mode on/off; customers cannot request a refund unless a reason exists | Built: REFUND_REQUESTED → REFUNDED states. Specified: managed refund-reason catalogue per market (default + FR/EN), same mechanism as cancellation reasons; reason required |
+| Legacy reasons: wrong order, damaged order, missing items | Seeded as the starting catalogue (FR/EN), each with active/inactive status |
+
+## Restaurant settings (restaurant)
+
+| Legacy setting | New platform |
+| --- | --- |
+| Restaurant can cancel an order | Market policy: REJECT before acceptance only; after acceptance a cancel goes through support with a reason |
+| Restaurant self-registration | Merchant onboarding with KYB review; never live without compliance approval |
+| Restaurant can reply to reviews | Specified: one public reply per review, moderated |
+| Extra packaging charge | Specified: per-branch packaging fee, shown as its own line on the receipt |
+| Cash-in-hand overflow; maximum cash held; minimum amount to pay | Specified: COD exposure limits per merchant in the Country Profile, enforced from the ledger (cash held = COD collected − remitted) |
+
+## Rider settings (livreur)
+
+| Legacy setting | New platform |
+| --- | --- |
+| Tips for riders | Specified: tip line passed 100% to the rider via the ledger |
+| Show earnings in app | Rider app shows ledger-backed earnings, always on |
+| Rider self-registration | Rider onboarding with ID and vehicle checks before the RIDER role is granted |
+| Maximum concurrent orders | Specified: dispatch limit per market (`dispatch.max_active_jobs`) |
+| Rider can cancel | Hand back for reassignment or FAIL_DELIVERY with evidence; never a silent cancel |
+| Maximum cash delivery; cash-in-hand overflow; minimum remittance | Specified: per-rider COD limits from the ledger; over the limit, dispatch offers prepaid jobs only |
+| Photo to complete delivery | Built: custody evidence at handover (photo/code), required per market |
+
+## Customer settings (clients)
+
+| Legacy setting | New platform |
+| --- | --- |
+| Wallet: earn and spend, refund to wallet, add funds | Specified: customer wallet as ledger accounts; refund to wallet or original method; top-up via BitriPay |
+| Loyalty points: points per 1 USD, % earned per order, minimum to convert | Specified: loyalty as a ledger liability with a published earn rate and expiry; values are owner inputs |
+| Referral: reward to the sharer (USD); first-order discount for the new user (% or amount, validity in days/months/years) | Specified: referral programme in Promotions; legacy promise of $5 recorded as an owner input to confirm |

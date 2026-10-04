@@ -12,7 +12,7 @@ import type { Action } from "../modules/identity/roles.ts";
 import { createJournal, type LedgerEntry } from "../modules/money/journal.ts";
 import { evidenceBundle } from "../modules/ordering/evidence.ts";
 import { OrderRuleError, replay, type OrderCommand } from "../modules/ordering/order-aggregate.ts";
-import type { Actor, OrderLine, OrderSnapshot, OrderType } from "../modules/ordering/order-types.ts";
+import { RIDER_ORDER_TYPES, type Actor, type OrderLine, type OrderSnapshot, type OrderType } from "../modules/ordering/order-types.ts";
 import { priceOrder, PricingError, type PriceBreakdown } from "../modules/pricing/pricing.ts";
 import { getBranch, menuOf, type BranchRow } from "../persistence/catalogue.ts";
 import { postJournal } from "../persistence/ledger.ts";
@@ -77,6 +77,7 @@ export class CommerceService {
   async #quote(sql: Sql, country: string, input: QuoteInput): Promise<Quote> {
     const profile = this.profile(country);
     const ccy = profile.money.settlement_currency;
+    const lang = profile.country.default_locale.slice(0, 2);
     if (!input.items?.length) throw badRequest("EMPTY_CART", "Add at least one item");
     const branch = await getBranch(sql, input.branchId);
     if (!branch) throw notFound("Branch");
@@ -89,14 +90,14 @@ export class CommerceService {
       if (!Number.isInteger(quantity) || quantity < 1 || quantity > MAX_QUANTITY) throw badRequest("QUANTITY_INVALID", "Quantities are whole numbers from 1 to 99");
       const item = menu.get(itemId);
       if (!item) throw unprocessable("ITEM_NOT_ON_MENU", `Item ${itemId} is not on ${branch.name}'s menu`);
-      if (!item.available) throw unprocessable("ITEM_UNAVAILABLE", `${nameOf(item.names)} is not available right now`, { itemId });
+      if (!item.available) throw unprocessable("ITEM_UNAVAILABLE", `${nameOf(item.names, lang)} is not available right now`, { itemId });
       const price = item.prices[ccy];
       // MR-2: a missing price would be converted by quote; until FX quoting is wired, refuse rather than guess.
-      if (price === undefined) throw unprocessable("PRICE_MISSING", `${nameOf(item.names)} has no ${ccy} price`, { itemId });
+      if (price === undefined) throw unprocessable("PRICE_MISSING", `${nameOf(item.names, lang)} has no ${ccy} price`, { itemId });
       const unit = Money.ofMinor(BigInt(price), ccy);
       const total = unit.multiply(BigInt(quantity));
       goods = goods.add(total);
-      lines.push({ itemId, name: nameOf(item.names), quantity, unit: unit.toJSON(), total: total.toJSON(), allergens: item.allergens });
+      lines.push({ itemId, name: nameOf(item.names, lang), quantity, unit: unit.toJSON(), total: total.toJSON(), allergens: item.allergens });
     }
 
     let distanceMeters: number | undefined;
@@ -216,7 +217,9 @@ export class CommerceService {
       const { order, resource } = await this.#load(sql, orderId);
       // Customers may cancel their own order (the aggregate allows it only before acceptance); staff need order:manage.
       const ownCancel = command.type === "CANCEL" && order.snapshot.customerId === principal.userId;
-      const action: Action = ownCancel ? "order:read" : ACTION_FOR[command.type];
+      // Orders without a rider (takeaway, dine-in) are handed over at the counter by the branch, not delivered by a rider.
+      const counterHandover = command.type === "DELIVER" && !RIDER_ORDER_TYPES.includes(order.snapshot.type);
+      const action: Action = ownCancel ? "order:read" : counterHandover ? "order:handover" : ACTION_FOR[command.type];
       const amount = command.type === "REFUND" ? order.snapshot.total : undefined;
       const role = require(principal, action, resource, { activeCountry: country, profile, ...(amount ? { amount } : {}) });
       const actor: Actor = { kind: actorKind(role), id: principal.userId };
@@ -340,8 +343,9 @@ function actorKind(role: string): Actor["kind"] {
   return "SUPPORT";
 }
 
-function nameOf(names: Record<string, string>): string {
-  return names["en"] ?? names["fr"] ?? Object.values(names)[0] ?? "Item";
+/** The item's name in the market's default language, then English, then any. */
+function nameOf(names: Record<string, string>, lang = "en"): string {
+  return names[lang] ?? names["en"] ?? names["fr"] ?? Object.values(names)[0] ?? "Item";
 }
 
 export function serialiseQuote(q: Quote) {
