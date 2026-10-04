@@ -9,3 +9,4 @@ frontend/*/.next/
 frontend/*/out/
 *.tsbuildinfo
 next-env.d.ts
+frontend/*/.preview/

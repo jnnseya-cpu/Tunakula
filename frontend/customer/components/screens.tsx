@@ -20,14 +20,14 @@ export function MapSketch() {
           <path d="M200 60 L270 200" />
           <path d="M20 210 L300 196" />
         </g>
-        <text x="8" y="66" fontSize="7" fill="#8a7d6e">Bd du 30 Juin</text>
-        <text x="182" y="146" fontSize="7" fill="#8a7d6e">Av. Kasa-Vubu</text>
-        <path d="M64 96 C 90 100, 112 118, 128 140 S 168 160, 214 150" stroke="#b3401e" strokeWidth="3.5" fill="none" strokeDasharray="1 0" />
-        <circle cx="64" cy="96" r="7" fill="#17130f" />
+        <text x="8" y="66" fontSize="7" fill="#7a8197">Bd du 30 Juin</text>
+        <text x="182" y="146" fontSize="7" fill="#7a8197">Av. Kasa-Vubu</text>
+        <path d="M64 96 C 90 100, 112 118, 128 140 S 168 160, 214 150" stroke="#eb771a" strokeWidth="3.5" fill="none" strokeDasharray="1 0" />
+        <circle cx="64" cy="96" r="7" fill="#141b33" />
         <circle cx="64" cy="96" r="2.6" fill="#fbf8f3" />
-        <circle cx="128" cy="140" r="9" fill="#b3401e" stroke="#fbf8f3" strokeWidth="3" />
-        <path d="M214 150 l0 -18" stroke="#0e5c52" strokeWidth="2" />
-        <circle cx="214" cy="128" r="8" fill="#0e5c52" />
+        <circle cx="128" cy="140" r="9" fill="#eb771a" stroke="#fbf8f3" strokeWidth="3" />
+        <path d="M214 150 l0 -18" stroke="#1f305d" strokeWidth="2" />
+        <circle cx="214" cy="128" r="8" fill="#1f305d" />
         <circle cx="214" cy="128" r="3" fill="#fbf8f3" />
       </svg>
     </div>
@@ -91,21 +91,21 @@ export function PayScreen() {
         <div className="row" style={{ fontWeight: 700, fontSize: 16 }}><span>Total</span><span className="price">39 400 FC</span></div>
         <div className="row s"><span></span><span>≈ $13.82 at 2 850 FC · rate held 5 min</span></div>
       </div>
-      <div style={{ marginTop: 14, fontWeight: 650, fontSize: 12, letterSpacing: "0.06em", color: "#74685b" }}>PAY WITH</div>
+      <div style={{ marginTop: 14, fontWeight: 650, fontSize: 12, letterSpacing: "0.06em", color: "#5f6987" }}>PAY WITH</div>
       {[
         ["M-Pesa", "+243 81 ••• 4410", true],
         ["Orange Money", "", false],
         ["Airtel Money", "", false],
       ].map(([name, sub, on]) => (
-        <div className="card" key={name as string} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "11px 14px", borderColor: on ? "#17130f" : undefined }}>
+        <div className="card" key={name as string} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "11px 14px", borderColor: on ? "#141b33" : undefined }}>
           <div>
             <div style={{ fontWeight: 600 }}>{name}</div>
             {sub ? <div className="s">{sub}</div> : null}
           </div>
-          <span style={{ width: 16, height: 16, borderRadius: "50%", border: on ? "5px solid #17130f" : "1.5px solid #b9ad9e" }} />
+          <span style={{ width: 16, height: 16, borderRadius: "50%", border: on ? "5px solid #141b33" : "1.5px solid #b9ad9e" }} />
         </div>
       ))}
-      <div className="cta terracotta">Pay 39 400 FC</div>
+      <div className="cta brand">Pay 39 400 FC</div>
       <div className="s" style={{ textAlign: "center", marginTop: 8 }}>You will approve on your phone</div>
     </div>
   );
@@ -116,11 +116,11 @@ export function JobOfferScreen() {
     <div className="scr">
       <div className="row" style={{ marginTop: 4 }}>
         <div className="t">New delivery</div>
-        <span className="pill" style={{ background: "#f6e3dc", color: "#8a2f12" }}>0:24</span>
+        <span className="pill" style={{ background: "#ffe9b8", color: "#7a3304" }}>0:24</span>
       </div>
       <div className="card">
         <div className="s">You earn</div>
-        <div style={{ fontFamily: "var(--serif)", fontSize: 44, lineHeight: 1 }}>$2.10</div>
+        <div style={{ fontFamily: "var(--display)", fontSize: 44, lineHeight: 1 }}>$2.10</div>
         <div className="s" style={{ marginTop: 6 }}>70% of the $3.00 delivery fee · paid today to M-Pesa</div>
       </div>
       <div className="card">
@@ -129,7 +129,7 @@ export function JobOfferScreen() {
           <div className="st"><span className="dot now" /><div><div style={{ fontWeight: 600 }}>Drop off</div><div className="s">Rond-point Victoire, blue gate</div></div><span className="s">3.0 km</span></div>
         </div>
       </div>
-      <div className="card" style={{ fontSize: 12.5, color: "#3d342c" }}>
+      <div className="card" style={{ fontSize: 12.5, color: "#2e3b63" }}>
         Declining never affects your standing or the jobs you are offered.
       </div>
       <div className="cta">Accept</div>
@@ -160,10 +160,10 @@ export function PosScreen() {
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 12 }}>
         {["Cash", "M-Pesa", "Orange", "Split"].map((m, i) => (
-          <div key={m} className="card" style={{ margin: 0, textAlign: "center", fontWeight: 600, borderColor: i === 1 ? "#17130f" : undefined }}>{m}</div>
+          <div key={m} className="card" style={{ margin: 0, textAlign: "center", fontWeight: 600, borderColor: i === 1 ? "#141b33" : undefined }}>{m}</div>
         ))}
       </div>
-      <div className="cta terracotta">Charge 36 000 FC</div>
+      <div className="cta brand">Charge 36 000 FC</div>
       <div className="s" style={{ textAlign: "center", marginTop: 8 }}>Works offline · syncs when back online</div>
     </div>
   );
@@ -173,7 +173,7 @@ export function Receipt() {
   return (
     <div className="receipt" aria-label="Printed receipt with both logos">
       <div className="logos">
-        <span className="tk">Tunakula<span style={{ color: "var(--terracotta)" }}>.</span></span>
+        <img className="tk" src="/brand/tunakula-logo.jpg" alt="Tunakula" width={64} height={64} />
         <span className="biz">MP</span>
       </div>
       <div style={{ textAlign: "center", marginBottom: 10 }}>

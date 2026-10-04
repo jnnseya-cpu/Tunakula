@@ -3,7 +3,7 @@ import Link from "next/link";
 import { CONTACT_EMAIL } from "../lib/site";
 
 const LINKS = [
-  { href: "/", label: "Order" },
+  { href: "/order/", label: "Order food" },
   { href: "/how-it-works/", label: "How it works" },
   { href: "/send-home/", label: "Send a meal home" },
   { href: "/restaurants/", label: "For restaurants" },
@@ -11,7 +11,7 @@ const LINKS = [
 ];
 
 const FOOTER: [string, [string, string][]][] = [
-  ["Order", [["Kinshasa", "/kinshasa/"], ["How it works", "/how-it-works/"], ["Send a meal home", "/send-home/"], ["How pricing works", "/legal/pricing/"]]],
+  ["Order", [["Order food", "/order/"], ["Kinshasa", "/kinshasa/"], ["How it works", "/how-it-works/"], ["Send a meal home", "/send-home/"], ["How pricing works", "/legal/pricing/"]]],
   ["Partners", [["Restaurants & shops", "/restaurants/"], ["Riders & fleets", "/riders/"], ["Merchant terms", "/legal/merchant-terms/"], ["Rider terms", "/legal/rider-terms/"]]],
   ["Trust", [["Reviews & moderation", "/legal/reviews/"], ["Ranking & fairness", "/legal/ranking/"], ["Allergens & food safety", "/legal/food-safety/"], ["Accessibility", "/legal/accessibility/"]]],
   ["Company", [["About", "/about/"], ["Terms of use", "/legal/terms/"], ["Privacy", "/legal/privacy/"], ["All policies", "/legal/"]]],
@@ -20,8 +20,8 @@ const FOOTER: [string, [string, string][]][] = [
 export function Wordmark() {
   return (
     <Link href="/" className="wordmark" aria-label="Tunakula home">
-      <span className="w">Tunakula</span>
-      <span className="dot" aria-hidden />
+      {/* The logo exactly as supplied (shared/brand/tunakula-logo.jpg; tools/guard-brand.ts checks every copy). */}
+      <img src="/brand/tunakula-logo.jpg" alt="Tunakula — Get to eat" width={68} height={68} />
     </Link>
   );
 }
@@ -43,8 +43,8 @@ export function SiteNav({ current }: { current: string }) {
           <span className="langs" aria-label="Languages">
             <b>EN</b> FR LN SW
           </span>
-          <Link className="btn" href="/">
-            Open the app
+          <Link className="btn accent" href="/order/">
+            Order now
           </Link>
         </div>
       </div>
@@ -60,7 +60,7 @@ export function SiteFooter() {
           <div>
             <Wordmark />
             <p className="small" style={{ marginTop: 14, maxWidth: "26em" }}>
-              Tunakula — <i>on mange ensemble.</i> A Groupe Nseya company. Payments are collected and settled by licensed partners; Tunakula never holds your money.
+              Tunakula — <i>get to eat.</i> A Groupe Nseya company. Payments are collected and settled by licensed partners; Tunakula never holds your money.
             </p>
           </div>
           {FOOTER.map(([title, links]) => (

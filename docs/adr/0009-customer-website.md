@@ -1,6 +1,6 @@
 # ADR 0009 — Customer website: Next.js (current major), editorial design system, real product imagery
 
-- Status: Accepted
+- Status: Accepted (palette, type and logo superseded by ADR 0012)
 - Date: 2026-10-04
 
 ## Context

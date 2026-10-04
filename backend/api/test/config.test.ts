@@ -123,10 +123,19 @@ test("brand themes change at runtime without republishing the country (§17.1)",
   r.publish("ceo", "GB", r.saveDraft("a", realProfile("gb")).version);
   const before = r.config("GB").brand.themeVersion;
   const recoloured: Brand = structuredClone(TUNAKULA_BRAND) as Brand;
-  (recoloured.themes[0]!.light.colors as Record<string, string>)["primary"] = "#8A2F12";
+  (recoloured.themes[0]!.light.colors as Record<string, string>)["primary"] = "#FFC94D";
   r.upsertBrand(recoloured);
   assert.notEqual(r.config("GB").brand.themeVersion, before);
-  assert.equal(r.config("GB").brand.light.colors.primary, "#8A2F12");
+  assert.equal(r.config("GB").brand.light.colors.primary, "#FFC94D");
+});
+
+test("the Tunakula theme is the logo's palette: yellow with navy text, navy with white", () => {
+  const light = TUNAKULA_BRAND.themes[0]!.light.colors;
+  assert.equal(light.primary, "#FAD20E");
+  assert.equal(light.onPrimary, "#1F305D");
+  assert.equal(light.secondary, "#1F305D");
+  assert.ok(contrastRatio("#EB771A", "#FFFFFF") < 4.5, "white on the logo orange fails AA, so orange is not a text background");
+  assert.deepEqual(validateBrand(TUNAKULA_BRAND), []);
 });
 
 test("themes must meet WCAG AA contrast; teal #1BA996 needs dark text", () => {

@@ -17,7 +17,7 @@
     "typecheck:shared": "tsc --noEmit -p shared/tsconfig.json",
     "typecheck:backend": "tsc --noEmit -p backend/tsconfig.json && tsc --noEmit -p backend/api/tsconfig.json",
     "typecheck:frontend": "tsc --noEmit -p frontend/customer/tsconfig.json",
-    "guard": "node tools/guard-core.ts && node tools/guard-boundaries.ts",
+    "guard": "node tools/guard-core.ts && node tools/guard-boundaries.ts && node tools/guard-brand.ts",
     "test": "npm run test:shared && npm run test:backend",
     "test:shared": "node --test \"shared/*/test/**/*.test.ts\"",
     "test:backend": "node --test \"backend/api/test/**/*.test.ts\" \"backend/adapters/*/*/test/**/*.test.ts\"",

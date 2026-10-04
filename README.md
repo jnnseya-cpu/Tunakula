@@ -44,7 +44,7 @@ depend only on shared; shared depends on neither** (ADR 0011).
 
 | Path | What it is | PRD |
 | --- | --- | --- |
-| `frontend/customer` | www.tunakula.com: Next.js static site — landing, Send a Meal Home, restaurants, riders, Kinshasa, how it works, about, 16 policies; contact info@tunakula.com | §2.1, ADR 0009 |
+| `frontend/customer` | www.tunakula.com: Next.js static site — food-first landing, browse and search, merchant storefronts (restaurants, malewa, bakery, grocery) with a working basket, Send a Meal Home, partners, riders, Kinshasa, how it works, about, 16 policies; contact info@tunakula.com | §2.1, ADR 0009, ADR 0012 |
 
 ### Repository tooling
 
@@ -52,6 +52,7 @@ depend only on shared; shared depends on neither** (ADR 0011).
 | --- | --- | --- |
 | `tools/guard-core.ts` | Blocks market-specific branches in core code and floats in money paths | §7.3, §32.2 |
 | `tools/guard-boundaries.ts` | Blocks any dependency or import from frontend to backend, backend to frontend, or shared to either | ADR 0011 |
+| `tools/guard-brand.ts` | Keeps every copy of the Tunakula logo byte-identical to `shared/brand/tunakula-logo.jpg` | ADR 0012 |
 
 ## Getting started
 

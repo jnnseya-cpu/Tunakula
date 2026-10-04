@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
-import "@fontsource/instrument-serif/400.css";
-import "@fontsource/instrument-serif/400-italic.css";
+import "@fontsource/anton/400.css";
 import "@fontsource-variable/inter";
 import "./globals.css";
 import { SITE_URL } from "../lib/site";

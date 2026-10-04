@@ -42,7 +42,7 @@ export default function Kinshasa() {
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 40 }}>
             {DISTRICTS.map(([district, communes]) => (
               <div key={district}>
-                <div className="kitchen" style={{ fontFamily: "var(--serif)", fontSize: 30, borderBottom: "1px solid var(--ink)", paddingBottom: 10 }}>{district}</div>
+                <div className="kitchen" style={{ fontFamily: "var(--display)", fontSize: 30, borderBottom: "1px solid var(--ink)", paddingBottom: 10 }}>{district}</div>
                 <ul className="communes" style={{ columns: 1 }}>
                   {communes.map((c) => (<li key={c}>{c}<span>{district === "Tshangu" && c === "Maluku" ? "on request" : "open"}</span></li>))}
                 </ul>
@@ -66,7 +66,7 @@ export default function Kinshasa() {
               <div className="col" key={i}>
                 {col.map(([name, what]) => (
                   <div key={name} style={{ padding: "14px 0", borderBottom: "1px solid var(--rule)" }}>
-                    <div style={{ fontFamily: "var(--serif)", fontSize: 26 }}>{name}</div>
+                    <div style={{ fontFamily: "var(--display)", fontSize: 26 }}>{name}</div>
                     <p style={{ color: "var(--ink-2)", marginTop: 4 }}>{what}</p>
                   </div>
                 ))}

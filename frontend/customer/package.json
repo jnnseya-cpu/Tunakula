@@ -2,7 +2,7 @@
   "name": "@tunakula/web-customer",
   "version": "0.1.0",
   "private": true,
-  "description": "Tunakula customer website (Next.js, PRD \u00a72.1): landing, Send a Meal Home, partners, riders, city pages.",
+  "description": "Tunakula customer website (Next.js, PRD \u00a72.1): landing, ordering, storefronts, Send a Meal Home, partners, riders, city pages.",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -16,11 +16,11 @@
     "playwright-core": "1.56"
   },
   "dependencies": {
+    "@fontsource-variable/inter": "^5.2.5",
+    "@fontsource/anton": "^5.3.0",
+    "@tunakula/ts-contracts": "*",
     "next": "^16.3.8",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0",
-    "@fontsource/instrument-serif": "^5.2.5",
-    "@fontsource-variable/inter": "^5.2.5",
-    "@tunakula/ts-contracts": "*"
+    "react-dom": "^19.2.0"
   }
 }

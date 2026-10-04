@@ -161,8 +161,10 @@ export const GROUP_INTERNAL_BRAND: Brand = {
 };
 
 /**
- * Customer-facing Tunakula brand. PLACEHOLDER tokens: the real design system and
- * brand tokens are a Phase 0 deliverable (§34). They only need to pass validation.
+ * Customer-facing Tunakula brand. Colours are sampled from the Tunakula logo
+ * (shared/brand/tunakula-logo.jpg): navy #1F305D, yellow #FAD20E, orange #EB771A.
+ * Yellow carries navy text (8.7:1, as in the logo's lettering); orange is never a
+ * background for text (white on orange is 2.9:1), so it is not a colour role here.
  */
 export const TUNAKULA_BRAND: Brand = {
   id: "tunakula",
@@ -175,14 +177,14 @@ export const TUNAKULA_BRAND: Brand = {
       id: "tunakula-default",
       light: {
         colors: {
-          primary: "#B3401E",
-          onPrimary: "#FFFFFF",
-          secondary: "#1BA996",
-          onSecondary: "#0B1F1C",
+          primary: "#FAD20E",
+          onPrimary: "#1F305D",
+          secondary: "#1F305D",
+          onSecondary: "#FFFFFF",
           background: "#FFFFFF",
-          onBackground: "#1C1B1A",
-          surface: "#FAF6F2",
-          onSurface: "#1C1B1A",
+          onBackground: "#141B33",
+          surface: "#FFF9EC",
+          onSurface: "#141B33",
           error: "#B3261E",
           onError: "#FFFFFF",
         },
@@ -191,14 +193,14 @@ export const TUNAKULA_BRAND: Brand = {
       },
       dark: {
         colors: {
-          primary: "#FFB59C",
-          onPrimary: "#3A0B00",
-          secondary: "#7FD8CA",
-          onSecondary: "#0B1F1C",
-          background: "#141210",
-          onBackground: "#EDE6E1",
-          surface: "#1E1B18",
-          onSurface: "#EDE6E1",
+          primary: "#FAD20E",
+          onPrimary: "#1F305D",
+          secondary: "#FFB066",
+          onSecondary: "#0E1630",
+          background: "#0E1630",
+          onBackground: "#F1F3FA",
+          surface: "#1F305D",
+          onSurface: "#FFF8E1",
           error: "#F2B8B5",
           onError: "#601410",
         },
@@ -207,5 +209,5 @@ export const TUNAKULA_BRAND: Brand = {
       },
     },
   ],
-  copy: { tagline: { fr: "Tunakula — on mange ensemble", en: "Tunakula — let's eat together" } },
+  copy: { tagline: { en: "Get to eat", fr: "Tunakula — on mange ensemble" } },
 };
