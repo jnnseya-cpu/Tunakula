@@ -111,28 +111,31 @@ const typography = { fontFamily: "Inter", baseSizePx: 16, scale: 1.25 };
 const radius = { small: 4, medium: 8, large: 16 };
 
 /**
- * Groupe Nseya internal brand for the Admin app and web console (§17.1).
- * Teal #1BA996 fails AA with white text (≈2.9:1), so text on teal is near-black.
+ * Brand for the Admin app and web console (§17.1). Owner decision 2026-10-04: the admin console
+ * wears the Tunakula brand too: the same logo (shared/brand/tunakula-logo.jpg, used as supplied)
+ * and the logo's palette. A data-dense console uses navy as its primary, with white text (12.8:1),
+ * and yellow with navy text for highlights (8.7:1); orange never carries text (white on it is 2.9:1).
+ * The constant keeps its name: it is still the group's internal brand, separate from the customer one.
  */
 export const GROUP_INTERNAL_BRAND: Brand = {
-  id: "nseya-group",
-  name: "Groupe Nseya",
+  id: "tunakula-admin",
+  name: "Tunakula Admin",
   appName: "Tunakula Admin",
-  logos: { light: "asset://brand/nseya-group/logo-light", dark: "asset://brand/nseya-group/logo-dark", print: "asset://brand/nseya-group/logo-print" },
+  logos: { light: "asset://brand/tunakula/logo-light", dark: "asset://brand/tunakula/logo-dark", print: "asset://brand/tunakula/logo-print" },
   storeListing: { title: "Tunakula Admin", shortDescription: "Operations for Tunakula country and group teams" },
   themes: [
     {
-      id: "nseya-teal",
+      id: "tunakula-admin",
       light: {
         colors: {
-          primary: "#1BA996",
-          onPrimary: "#0B1F1C",
-          secondary: "#0E5C52",
-          onSecondary: "#FFFFFF",
+          primary: "#1F305D",
+          onPrimary: "#FFFFFF",
+          secondary: "#FAD20E",
+          onSecondary: "#1F305D",
           background: "#FFFFFF",
-          onBackground: "#111827",
-          surface: "#F3F6F6",
-          onSurface: "#111827",
+          onBackground: "#141B33",
+          surface: "#F4F6FB",
+          onSurface: "#141B33",
           error: "#B3261E",
           onError: "#FFFFFF",
         },
@@ -141,14 +144,14 @@ export const GROUP_INTERNAL_BRAND: Brand = {
       },
       dark: {
         colors: {
-          primary: "#1BA996",
-          onPrimary: "#0B1F1C",
-          secondary: "#7FD8CA",
-          onSecondary: "#0B1F1C",
-          background: "#0F1716",
-          onBackground: "#E6EFEE",
-          surface: "#17211F",
-          onSurface: "#E6EFEE",
+          primary: "#FAD20E",
+          onPrimary: "#1F305D",
+          secondary: "#FFB066",
+          onSecondary: "#0E1630",
+          background: "#0E1630",
+          onBackground: "#F1F3FA",
+          surface: "#1F305D",
+          onSurface: "#FFF8E1",
           error: "#F2B8B5",
           onError: "#601410",
         },

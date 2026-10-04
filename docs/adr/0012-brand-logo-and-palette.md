@@ -26,8 +26,9 @@ wordmark and a terracotta/teal palette; the API served placeholder theme tokens.
 - **Runtime theme for the apps** (`TUNAKULA_BRAND`): primary yellow / on-primary navy, secondary navy /
   on-secondary white; dark mode on a deep navy background. The theme passes the existing validator, and a
   test pins the palette to the logo's colours. English tagline: "Get to eat".
-- **Not changed**: the Groupe Nseya internal brand for the admin console (ADR 0006, PRD §17.1), and each
-  merchant's own colours on their storefront.
+- **Admin console too** (owner decision, same day): `GROUP_INTERNAL_BRAND` now carries the Tunakula logo
+  and palette (navy primary with white text, yellow with navy for highlights, the same deep navy dark
+  mode); the Groupe Nseya teal theme is retired. Each merchant keeps its own colours on its storefront.
 
 ## Consequences
 - Printed documents use the logo through the brand's print asset; thermal printers render it in greyscale.

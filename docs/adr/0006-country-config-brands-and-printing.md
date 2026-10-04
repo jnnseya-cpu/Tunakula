@@ -22,9 +22,9 @@ versioning, diff and fast rollback; §28.10 defines the go-live readiness review
 - **Brands**: tokens for colour roles with paired on-colours, radius and typography, in light and dark;
   validated for WCAG 2.2 AA (4.5:1) and a 14 px minimum body size. Themes carry a content hash so apps
   refetch only on change; brand updates take effect without republishing the country.
-- **Group teal #1BA996** reaches only ~2.9:1 with white text (below AA even for large text), so the
-  internal theme pairs teal with near-black text. The customer-facing Tunakula tokens are **placeholders**
-  until the Phase 0 design system delivers the real ones.
+- **Both brands use the Tunakula logo and palette** (owner decision 2026-10-04, ADR 0012). The customer
+  theme leads with yellow on navy text; the admin console leads with navy and white text, yellow for
+  highlights. The earlier Groupe Nseya teal internal theme is retired.
 - **Printing**: every printable document (receipt, order label, invoice, kitchen ticket, collection slip,
   booking confirmation, till report, payout statement) is composed through `composePrintDocument`, which
   places the market brand's monochrome print logo and the issuing business's logo (its profile picture).

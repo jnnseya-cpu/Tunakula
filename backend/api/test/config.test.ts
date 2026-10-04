@@ -138,14 +138,21 @@ test("the Tunakula theme is the logo's palette: yellow with navy text, navy with
   assert.deepEqual(validateBrand(TUNAKULA_BRAND), []);
 });
 
-test("themes must meet WCAG AA contrast; teal #1BA996 needs dark text", () => {
-  assert.ok(contrastRatio("#1BA996", "#FFFFFF") < 3, "white on teal fails even large-text AA");
-  assert.ok(contrastRatio("#1BA996", "#0B1F1C") >= 4.5);
+test("the admin console wears the Tunakula brand: same logo, navy with white, yellow with navy", () => {
+  const light = GROUP_INTERNAL_BRAND.themes[0]!.light.colors;
+  assert.equal(light.primary, "#1F305D");
+  assert.equal(light.onPrimary, "#FFFFFF");
+  assert.equal(light.secondary, "#FAD20E");
+  assert.equal(light.onSecondary, "#1F305D");
+  assert.deepEqual(GROUP_INTERNAL_BRAND.logos, TUNAKULA_BRAND.logos);
+});
+
+test("themes must meet WCAG AA contrast; white on the logo orange is refused", () => {
   assert.deepEqual(validateBrand(GROUP_INTERNAL_BRAND), []);
   assert.deepEqual(validateBrand(TUNAKULA_BRAND), []);
   const bad: Brand = structuredClone(GROUP_INTERNAL_BRAND) as Brand;
-  (bad.themes[0]!.light.colors as Record<string, string>)["onPrimary"] = "#FFFFFF";
-  assert.match(validateBrand(bad)[0]?.message ?? "", /contrast 2\.\d+:1; WCAG AA needs 4.5:1/);
+  (bad.themes[0]!.light.colors as Record<string, string>)["primary"] = "#EB771A";
+  assert.match(validateBrand(bad)[0]?.message ?? "", /#FFFFFF on #EB771A has contrast 2\.\d+:1; WCAG AA needs 4.5:1/);
   assert.throws(() => registry().upsertBrand(bad), ConfigPublishError);
   assert.equal(contrastRatio("#000000", "#FFFFFF"), 21);
 });
