@@ -731,3 +731,44 @@ describe("database invariants", () => {
     assert.deepEqual(r, { ok: true });
   });
 });
+
+describe("distance in km and delivery time on every storefront", () => {
+  test("nearby storefronts carry road distance, an ETA range and the delivery fee", async () => {
+    const r = await call("GET", `/v1/branches/nearby?lat=${DROP.lat}&lng=${DROP.lng}`, { country: "CD" });
+    assert.equal(r.status, 200);
+    const b = r.body.data.find((x: { id: string }) => x.id === branchId);
+    assert.ok(b, "the branch is listed");
+    assert.match(b.distance_km, /^\d+\.\d$/);
+    assert.ok(Number(b.distance_km) > 1 && Number(b.distance_km) < 3, `about 1.9 km by road, got ${b.distance_km}`);
+    assert.equal(b.eta.high - b.eta.low, 10);
+    assert.equal(b.eta.low % 5, 0);
+    assert.ok(b.eta.minutes >= b.eta.low && b.eta.minutes < b.eta.high);
+    assert.equal(b.eta.minutes, b.eta.pickup_minutes + b.eta.travel_minutes + 2);
+    assert.equal(b.eta.basis, "estimate", "no map key and too few deliveries to learn from");
+    assert.equal(b.delivery_fee.currency, "USD");
+    assert.match(b.delivery_fee.amount_minor, /^\d+$/);
+    assert.equal(r.body.routing, "straight-line-estimate");
+  });
+
+  test("the same estimate for one storefront; far-away storefronts are not listed", async () => {
+    const one = await call("GET", `/v1/branches/${branchId}/eta?lat=${DROP.lat}&lng=${DROP.lng}`, { country: "CD" });
+    assert.equal(one.status, 200);
+    assert.equal(one.body.id, branchId);
+    const far = await call("GET", "/v1/branches/nearby?lat=-11.66&lng=27.48&radius_km=10", { country: "CD" });
+    assert.equal(far.body.data.length, 0, "Lubumbashi is 1,500 km away");
+  });
+
+  test("a missing or impossible position is refused", async () => {
+    const r = await call("GET", "/v1/branches/nearby?lat=abc&lng=15.3", { country: "CD" });
+    assert.equal(r.status, 400);
+    assert.equal(r.body.code, "LOCATION_INVALID");
+    const r2 = await call("GET", "/v1/branches/nearby?lat=95&lng=15.3", { country: "CD" });
+    assert.equal(r2.status, 400);
+  });
+
+  test("§9.5: the Kinshasa storefront does not exist from the GB market", async () => {
+    const r = await call("GET", `/v1/branches/nearby?lat=${DROP.lat}&lng=${DROP.lng}`, { country: "GB" });
+    assert.equal(r.status, 200);
+    assert.equal(r.body.data.length, 0);
+  });
+});

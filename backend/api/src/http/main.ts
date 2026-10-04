@@ -8,7 +8,10 @@
  *   TUNAKULA_DEV_OTP=1      log sign-in codes instead of sending them (development only; there is
  *                           no SMS/WhatsApp MessagingChannel adapter yet, so without it the API refuses to start)
  *   BITRIPAY_SECRET_KEY / BITRIPAY_WEBHOOK_SECRET, KODA_SECRET_KEY / KODA_WEBHOOK_SECRET
- *   TUNAKULA_CONSOLE_ORIGINS  comma-separated browser origins allowed to call the API (the admin console)
+ *   TUNAKULA_CONSOLE_ORIGINS  comma-separated browser origins allowed to call the API (the admin console, the website)
+ *   TUNAKULA_GOOGLE_ROUTES_KEY  Google Routes API key: road distance and live-traffic travel times
+ *   TUNAKULA_OSRM_URL       or a self-hosted OSRM server (road distance; congestion profile for time)
+ *                           With neither, distances are estimated from straight lines × 1.3.
  *   PORT (default 8080)
  */
 import { BitriPayConnector } from "@tunakula/payment-connector-bitripay";
@@ -22,6 +25,7 @@ import { GROUP_INTERNAL_BRAND, TUNAKULA_BRAND } from "../modules/config/brand.ts
 import { CountryConfigRegistry } from "../modules/config/config-registry.ts";
 import { createLogger } from "../platform/logger.ts";
 import { loadVersions } from "../persistence/config.ts";
+import { cachedRouting, googleRoutesRouting, osrmRouting, straightLineRouting, withFallback } from "../app/routing.ts";
 import { createApi } from "./app.ts";
 
 const env = (k: string) => process.env[k];
@@ -63,12 +67,22 @@ const registry = new CountryConfigRegistry({
 });
 registry.restore(await db.tx({}, loadVersions));
 
+// Map provider for distances and travel times; any outage falls back to the estimate, never to an error.
+const estimate = straightLineRouting();
+const onRoutingError = (error: unknown) => log.warn("routing provider failed; using estimate", { error });
+const routing = cachedRouting(
+  env("TUNAKULA_GOOGLE_ROUTES_KEY") ? withFallback(googleRoutesRouting({ apiKey: required("TUNAKULA_GOOGLE_ROUTES_KEY") }), estimate, onRoutingError)
+  : env("TUNAKULA_OSRM_URL") ? withFallback(osrmRouting({ baseUrl: required("TUNAKULA_OSRM_URL") }), estimate, onRoutingError)
+  : estimate,
+);
+
 const app = await createApi({
   db,
   registry,
   connectors,
   tokenSecret: required("TUNAKULA_TOKEN_SECRET"),
   otp,
+  routing,
   corsOrigins: (env("TUNAKULA_CONSOLE_ORIGINS") ?? "").split(",").map((o) => o.trim()).filter(Boolean),
   onError: (e) => log.error("unhandled", { error: e }),
 });

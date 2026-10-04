@@ -7,6 +7,7 @@ import type { AdminService } from "../app/admin.ts";
 import type { AuthService } from "../app/auth.ts";
 import type { CatalogueService } from "../app/catalogue.ts";
 import type { ConfigService } from "../app/config.ts";
+import type { EtaService } from "../app/eta.ts";
 import { serialiseQuote, type CommerceService, type PlaceOrderInput, type QuoteInput } from "../app/commerce.ts";
 import { badRequest, notFound } from "../app/errors.ts";
 import type { PaymentService } from "../app/payments.ts";
@@ -74,7 +75,22 @@ export class CatalogueController {
     @Inject(TOKENS.db) private readonly db: Db,
     @Inject(TOKENS.tokens) private readonly tokens: TokenService,
     @Inject(TOKENS.catalogue) private readonly catalogue: CatalogueService,
+    @Inject(TOKENS.eta) private readonly eta: EtaService,
   ) {}
+
+  /** Storefronts near a point, nearest first, each with road distance in km, delivery time and fee. */
+  @Get("branches/nearby")
+  nearby(@Req() req: FastifyRequest, @Query("lat") lat: string, @Query("lng") lng: string, @Query("radius_km") radius?: string, @Query("limit") limit?: string) {
+    return this.eta.nearby(country(req), { lat: Number(lat), lng: Number(lng) }, {
+      ...(radius ? { radiusKm: Number(radius) } : {}),
+      ...(limit ? { limit: Number(limit) } : {}),
+    });
+  }
+
+  @Get("branches/:id/eta")
+  branchEta(@Req() req: FastifyRequest, @Param("id") id: string, @Query("lat") lat: string, @Query("lng") lng: string) {
+    return this.eta.forBranch(country(req), id, { lat: Number(lat), lng: Number(lng) });
+  }
 
   @Get("branches/:id/menu")
   menu(@Req() req: FastifyRequest, @Param("id") id: string) {

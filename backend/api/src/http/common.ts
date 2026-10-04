@@ -15,6 +15,7 @@ export const TOKENS = {
   payments: "PAYMENT_SERVICE",
   registry: "REGISTRY",
   catalogue: "CATALOGUE_SERVICE",
+  eta: "ETA_SERVICE",
   config: "CONFIG_SERVICE",
   admin: "ADMIN_SERVICE",
   logger: "LOGGER",

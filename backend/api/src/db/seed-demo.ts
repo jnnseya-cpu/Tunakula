@@ -15,9 +15,11 @@ import pg from "pg";
 import { SandboxConnector } from "@tunakula/payment-connector-sandbox";
 import { syntheticProfileDocument } from "@tunakula/ts-contracts/testing";
 import { DevOtpOutbox } from "../app/auth.ts";
+import { localHour, modelSeconds } from "../app/routing.ts";
 import { createApi } from "../http/app.ts";
 import { GROUP_INTERNAL_BRAND, TUNAKULA_BRAND } from "../modules/config/brand.ts";
 import { CountryConfigRegistry, READINESS_AREAS } from "../modules/config/config-registry.ts";
+import { distanceMetres } from "../modules/ordering/order-aggregate.ts";
 import { loadVersions, saveVersions } from "../persistence/config.ts";
 import { addBinding, type NewBinding } from "../persistence/identity.ts";
 import { connect } from "./db.ts";
@@ -206,7 +208,10 @@ async function main() {
         continue;
       }
       await t(rider, 12 + prep, { type: "PICK_UP", scannedLabelIds: [`L-${orderId.slice(-6)}`], restaurantConfirmed: true, sealsIntact: true, location: { lat: b.lat, lng: b.lng } });
-      const travel = 8 + Math.floor(rand() * 25);
+      // Realistic ride: road distance at that hour's traffic, with day-to-day noise, plus parking and stairs.
+      const pickedAt = at(start, 12 + prep);
+      const road = distanceMetres({ lat: b.lat, lng: b.lng }, drop) * 1.3;
+      const travel = 2 + Math.round((modelSeconds(road, "MOTO", localHour(pickedAt, "Africa/Kinshasa")) / 60) * (0.85 + rand() * 0.5));
       const r = await t(rider, 12 + prep + travel, { type: "DELIVER", scannedLabelId: `L-${orderId.slice(-6)}`, location: drop, verification: { method: "CODE", code }, sealIntact: true });
       tally(r.status === 200 ? "delivered" : `deliver:${r.body.code}`);
     }
