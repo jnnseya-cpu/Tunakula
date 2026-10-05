@@ -1,0 +1,7 @@
+{
+  "rate": 2850,
+  "base": "USD",
+  "quote": "CDF",
+  "source": "fallback (run `npm run fx:update` to fetch a live free rate)",
+  "asOf": "2026-10-05"
+}

@@ -138,7 +138,7 @@ export default function Home() {
             {picks.map(({ merchant: m, item }) => (
               <Link key={`${m.slug}-${item.id}`} className="fav" href={`/r/${m.slug}/`} data-reveal>
                 <div className="fav-pic" style={{ background: m.tone.bg }}>
-                  <FoodImage slug={`${m.slug}-${item.id}`} recipe={item.recipe} alt={item.name} className="pic" />
+                  <FoodImage slug={item.id} recipe={item.recipe} alt={item.name} className="pic" />
                   <span className="fav-add" aria-hidden>+</span>
                 </div>
                 <h3>{item.name}</h3>

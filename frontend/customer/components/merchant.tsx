@@ -40,6 +40,7 @@ export function Logo({ m, size = 56 }: { m: Merchant; size?: number }) {
 }
 
 export function Stars({ m }: { m: Merchant }) {
+  if (m.ratings === 0) return <span className="stars is-new">Nouveau sur Tunakula</span>;
   return (
     <span className="stars">
       <span aria-hidden>★</span> <b className="num">{m.rating.toFixed(1)}</b> <span className="muted num">({m.ratings.toLocaleString("fr-FR").replace(/\s/g, " ")})</span>
@@ -55,7 +56,9 @@ export function MerchantCard({ m }: { m: Merchant }) {
       <div className="mcard-media">
         <Cover m={m} className="sm" />
         <span className="mcard-badges"><OpenBadge slug={m.slug} /></span>
-        <span className="mcard-rating"><span aria-hidden>★</span> <b className="num">{m.rating.toFixed(1)}</b></span>
+        {m.ratings > 0
+          ? <span className="mcard-rating"><span aria-hidden>★</span> <b className="num">{m.rating.toFixed(1)}</b></span>
+          : <span className="mcard-rating is-new">Nouveau</span>}
       </div>
       <div className="mcard-body">
         <Logo m={m} size={52} />

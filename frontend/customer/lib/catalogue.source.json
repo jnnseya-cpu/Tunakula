@@ -1,0 +1,1058 @@
+{
+  "_note": "Canonical storefront data imported from cd.tunakula.com on 2026-10-05. Prices are the restaurants' own US-dollar menus; scripts/build-catalogue.mjs converts them to CDF using scripts/fetch-fx.mjs. Do not hand-edit catalogue.ts.",
+  "importedAt": "2026-10-05",
+  "source": "https://cd.tunakula.com",
+  "merchants": [
+    {
+      "slug": "lagrace-cuisine",
+      "name": "Lagrâce Cuisine",
+      "kind": "Restaurant",
+      "cuisine": "Cuisine Kinoise, Cuisine Européenne",
+      "commune": "Gombe",
+      "landmark": "Avenue bourgmestre N4384 ,blvd 30 juin derrière waikiki gombe.kinshasha -rdcongo",
+      "hours": "07:00 – 20:00",
+      "rating": 5.0,
+      "ratings": 2,
+      "location": {
+        "lat": -4.309795,
+        "lng": 15.291984
+      },
+      "prep": 18,
+      "monogram": "LC",
+      "tone": {
+        "bg": "#7e2a10",
+        "fg": "#fbefe4",
+        "accent": "#e9a24a"
+      },
+      "cover": [
+        "poisson",
+        "fruits",
+        "brochettes"
+      ],
+      "about": "Restaurant",
+      "menu": [
+        {
+          "section": "Biloko Ya Mboka",
+          "items": [
+            {
+              "id": "lagrace-cuisine--2389",
+              "name": "Poisson fumé aux champignons",
+              "description": "",
+              "usd": 8.96,
+              "recipe": "poisson",
+              "tags": [],
+              "allergens": []
+            },
+            {
+              "id": "lagrace-cuisine--2384",
+              "name": "Liboke",
+              "description": "",
+              "usd": 1.0,
+              "recipe": "liboke",
+              "tags": [],
+              "allergens": []
+            }
+          ]
+        },
+        {
+          "section": "Légumes",
+          "items": [
+            {
+              "id": "lagrace-cuisine--2388",
+              "name": "Salade de haricot vert et thon",
+              "description": "",
+              "usd": 11.2,
+              "recipe": "poisson",
+              "tags": [],
+              "allergens": []
+            },
+            {
+              "id": "lagrace-cuisine--2387",
+              "name": "Salade de pomme de terre et ton",
+              "description": "",
+              "usd": 5.6,
+              "recipe": "fruits",
+              "tags": [],
+              "allergens": []
+            },
+            {
+              "id": "lagrace-cuisine--2383",
+              "name": "Salade de choix aux landons",
+              "description": "",
+              "usd": 6.72,
+              "recipe": "fruits",
+              "tags": [
+                "Popular"
+              ],
+              "allergens": []
+            }
+          ]
+        },
+        {
+          "section": "Shawarma",
+          "items": [
+            {
+              "id": "lagrace-cuisine--2386",
+              "name": "Wrap au poulet fromage",
+              "description": "",
+              "usd": 5.6,
+              "recipe": "brochettes",
+              "tags": [
+                "Popular"
+              ],
+              "allergens": []
+            },
+            {
+              "id": "lagrace-cuisine--318",
+              "name": "Mackloub Chawarma",
+              "description": "",
+              "usd": 5.6,
+              "recipe": "poisson",
+              "tags": [
+                "Popular"
+              ],
+              "allergens": []
+            }
+          ]
+        },
+        {
+          "section": "Congolaise",
+          "items": [
+            {
+              "id": "lagrace-cuisine--2385",
+              "name": "Haricot avec poisson fumé",
+              "description": "",
+              "usd": 4.48,
+              "recipe": "poisson",
+              "tags": [],
+              "allergens": []
+            },
+            {
+              "id": "lagrace-cuisine--306",
+              "name": "Ngulu à la congolaise",
+              "description": "",
+              "usd": 13.44,
+              "recipe": "poisson",
+              "tags": [],
+              "allergens": []
+            }
+          ]
+        },
+        {
+          "section": "Fruits",
+          "items": [
+            {
+              "id": "lagrace-cuisine--329",
+              "name": "Salade César",
+              "description": "",
+              "usd": 5.6,
+              "recipe": "fruits",
+              "tags": [],
+              "allergens": []
+            },
+            {
+              "id": "lagrace-cuisine--328",
+              "name": "Salade Mixte",
+              "description": "",
+              "usd": 11.2,
+              "recipe": "fruits",
+              "tags": [],
+              "allergens": []
+            }
+          ]
+        },
+        {
+          "section": "Hamburgers",
+          "items": [
+            {
+              "id": "lagrace-cuisine--327",
+              "name": "Croissant aux beurre et dinde",
+              "description": "",
+              "usd": 5.6,
+              "recipe": "pain",
+              "tags": [
+                "Popular"
+              ],
+              "allergens": []
+            },
+            {
+              "id": "lagrace-cuisine--326",
+              "name": "Charcuterie et Fromage",
+              "description": "",
+              "usd": 6.72,
+              "recipe": "pain",
+              "tags": [],
+              "allergens": []
+            },
+            {
+              "id": "lagrace-cuisine--324",
+              "name": "Croque Madame",
+              "description": "",
+              "usd": 5.6,
+              "recipe": "pain",
+              "tags": [],
+              "allergens": []
+            },
+            {
+              "id": "lagrace-cuisine--323",
+              "name": "Croque monsieur",
+              "description": "",
+              "usd": 5.6,
+              "recipe": "pain",
+              "tags": [
+                "Popular"
+              ],
+              "allergens": []
+            },
+            {
+              "id": "lagrace-cuisine--322",
+              "name": "Sandwich Fromage et Dinde",
+              "description": "",
+              "usd": 6.72,
+              "recipe": "pain",
+              "tags": [
+                "Popular"
+              ],
+              "allergens": []
+            },
+            {
+              "id": "lagrace-cuisine--321",
+              "name": "Sandwich Fromage",
+              "description": "",
+              "usd": 5.6,
+              "recipe": "pain",
+              "tags": [],
+              "allergens": []
+            },
+            {
+              "id": "lagrace-cuisine--320",
+              "name": "Sandwich Thon",
+              "description": "",
+              "usd": 5.6,
+              "recipe": "poisson",
+              "tags": [
+                "Popular"
+              ],
+              "allergens": []
+            },
+            {
+              "id": "lagrace-cuisine--319",
+              "name": "Club Sandwich",
+              "description": "",
+              "usd": 5.6,
+              "recipe": "pain",
+              "tags": [],
+              "allergens": []
+            }
+          ]
+        },
+        {
+          "section": "Frites",
+          "items": [
+            {
+              "id": "lagrace-cuisine--325",
+              "name": "Burger + Frites",
+              "description": "",
+              "usd": 5.6,
+              "recipe": "pain",
+              "tags": [],
+              "allergens": []
+            }
+          ]
+        },
+        {
+          "section": "Barbecue",
+          "items": [
+            {
+              "id": "lagrace-cuisine--317",
+              "name": "Brochette de Poulet",
+              "description": "",
+              "usd": 6.72,
+              "recipe": "brochettes",
+              "tags": [],
+              "allergens": []
+            },
+            {
+              "id": "lagrace-cuisine--308",
+              "name": "Saucisse fraiche",
+              "description": "",
+              "usd": 7.84,
+              "recipe": "poisson",
+              "tags": [],
+              "allergens": []
+            },
+            {
+              "id": "lagrace-cuisine--304",
+              "name": "Brochette de bœuf",
+              "description": "",
+              "usd": 11.2,
+              "recipe": "brochettes",
+              "tags": [
+                "Popular"
+              ],
+              "allergens": []
+            }
+          ]
+        },
+        {
+          "section": "Africain",
+          "items": [
+            {
+              "id": "lagrace-cuisine--316",
+              "name": "Cuisse de poulet désossé",
+              "description": "",
+              "usd": 5.6,
+              "recipe": "brochettes",
+              "tags": [
+                "Popular"
+              ],
+              "allergens": []
+            },
+            {
+              "id": "lagrace-cuisine--315",
+              "name": "Poulet entier rôtie au four",
+              "description": "",
+              "usd": 8.96,
+              "recipe": "brochettes",
+              "tags": [],
+              "allergens": []
+            },
+            {
+              "id": "lagrace-cuisine--314",
+              "name": "Poisson du chef (selon la disponibilité)",
+              "description": "",
+              "usd": 13.44,
+              "recipe": "poisson",
+              "tags": [],
+              "allergens": []
+            },
+            {
+              "id": "lagrace-cuisine--313",
+              "name": "Poisson salé aux choux et carotte",
+              "description": "",
+              "usd": 7.84,
+              "recipe": "poisson",
+              "tags": [],
+              "allergens": []
+            },
+            {
+              "id": "lagrace-cuisine--311",
+              "name": "Tranché de capitaine frit (pane)",
+              "description": "",
+              "usd": 11.2,
+              "recipe": "poisson",
+              "tags": [
+                "Popular"
+              ],
+              "allergens": []
+            },
+            {
+              "id": "lagrace-cuisine--309",
+              "name": "Queue de bœuf à la sauce tomate",
+              "description": "",
+              "usd": 8.96,
+              "recipe": "poisson",
+              "tags": [
+                "Popular"
+              ],
+              "allergens": []
+            },
+            {
+              "id": "lagrace-cuisine--305",
+              "name": "Triple de bœuf",
+              "description": "",
+              "usd": 12.32,
+              "recipe": "poisson",
+              "tags": [],
+              "allergens": []
+            },
+            {
+              "id": "lagrace-cuisine--303",
+              "name": "Ragout de bœuf",
+              "description": "",
+              "usd": 13.44,
+              "recipe": "poisson",
+              "tags": [
+                "Popular"
+              ],
+              "allergens": []
+            },
+            {
+              "id": "lagrace-cuisine--302",
+              "name": "Chèvre à la sauce chocolat",
+              "description": "",
+              "usd": 16.8,
+              "recipe": "poisson",
+              "tags": [],
+              "allergens": []
+            },
+            {
+              "id": "lagrace-cuisine--301",
+              "name": "Soupe vermicelle",
+              "description": "",
+              "usd": 6.72,
+              "recipe": "poisson",
+              "tags": [],
+              "allergens": []
+            },
+            {
+              "id": "lagrace-cuisine--300",
+              "name": "Soupe de poulet",
+              "description": "",
+              "usd": 11.2,
+              "recipe": "brochettes",
+              "tags": [],
+              "allergens": []
+            },
+            {
+              "id": "lagrace-cuisine--299",
+              "name": "Soupe de viandé",
+              "description": "",
+              "usd": 11.2,
+              "recipe": "poisson",
+              "tags": [],
+              "allergens": []
+            },
+            {
+              "id": "lagrace-cuisine--296",
+              "name": "Soupe aux légumes maison",
+              "description": "",
+              "usd": 5.6,
+              "recipe": "poisson",
+              "tags": [],
+              "allergens": []
+            },
+            {
+              "id": "lagrace-cuisine--293",
+              "name": "Cossa Cossa à l'ail",
+              "description": "",
+              "usd": 16.8,
+              "recipe": "poisson",
+              "tags": [],
+              "allergens": []
+            }
+          ]
+        },
+        {
+          "section": "Biloko Ya Kotumba",
+          "items": [
+            {
+              "id": "lagrace-cuisine--312",
+              "name": "Poisson fumé aux aubergines sauvage",
+              "description": "",
+              "usd": 6.72,
+              "recipe": "poisson",
+              "tags": [],
+              "allergens": []
+            }
+          ]
+        },
+        {
+          "section": "Mexicain",
+          "items": [
+            {
+              "id": "lagrace-cuisine--310",
+              "name": "Émincé de bœuf aux champignons",
+              "description": "",
+              "usd": 14.56,
+              "recipe": "poisson",
+              "tags": [
+                "Popular"
+              ],
+              "allergens": []
+            },
+            {
+              "id": "lagrace-cuisine--307",
+              "name": "Côtelette de porc",
+              "description": "",
+              "usd": 11.2,
+              "recipe": "brochettes",
+              "tags": [
+                "Popular"
+              ],
+              "allergens": []
+            }
+          ]
+        },
+        {
+          "section": "Emporter",
+          "items": [
+            {
+              "id": "lagrace-cuisine--298",
+              "name": "Rouleau de printemps aux légumes",
+              "description": "",
+              "usd": 6.72,
+              "recipe": "jus",
+              "tags": [],
+              "allergens": []
+            },
+            {
+              "id": "lagrace-cuisine--297",
+              "name": "Boulette de boeuf",
+              "description": "",
+              "usd": 8.96,
+              "recipe": "brochettes",
+              "tags": [],
+              "allergens": []
+            },
+            {
+              "id": "lagrace-cuisine--295",
+              "name": "Samoussa pomme de terre",
+              "description": "",
+              "usd": 6.72,
+              "recipe": "fruits",
+              "tags": [],
+              "allergens": []
+            },
+            {
+              "id": "lagrace-cuisine--294",
+              "name": "Samoussa viandé",
+              "description": "",
+              "usd": 6.72,
+              "recipe": "poisson",
+              "tags": [],
+              "allergens": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "slug": "bins-restaurant",
+      "name": "Bin's Restaurant",
+      "kind": "Restaurant",
+      "cuisine": "Cuisine Africaine",
+      "commune": "Kinshasa",
+      "landmark": "Cité mama mobutu, Av: de l'église, Villa 101, Mont-Ngafula",
+      "hours": "09:00 – 18:00",
+      "rating": 0.0,
+      "ratings": 0,
+      "location": {
+        "lat": -4.415038,
+        "lng": 15.246056
+      },
+      "prep": 18,
+      "monogram": "BR",
+      "tone": {
+        "bg": "#1f5a50",
+        "fg": "#eef6f2",
+        "accent": "#f2b84b"
+      },
+      "cover": [
+        "brochettes",
+        "poisson",
+        "riz"
+      ],
+      "about": "Restaurant Rooftop",
+      "menu": [
+        {
+          "section": "Barbecue",
+          "items": [
+            {
+              "id": "bins-restaurant--2382",
+              "name": "Brochette de bœuf",
+              "description": "Banane & Chikwange",
+              "usd": 11.2,
+              "recipe": "brochettes",
+              "tags": [],
+              "allergens": []
+            },
+            {
+              "id": "bins-restaurant--2381",
+              "name": "Brochette de Poulet",
+              "description": "Chikwange & Frites 🍟",
+              "usd": 8.96,
+              "recipe": "brochettes",
+              "tags": [],
+              "allergens": []
+            }
+          ]
+        },
+        {
+          "section": "Mexicain",
+          "items": [
+            {
+              "id": "bins-restaurant--2379",
+              "name": "Cotise de bœuf",
+              "description": "",
+              "usd": 10.1,
+              "recipe": "poisson",
+              "tags": [],
+              "allergens": []
+            },
+            {
+              "id": "bins-restaurant--2378",
+              "name": "Riz Cantonnais",
+              "description": "",
+              "usd": 11.7,
+              "recipe": "riz",
+              "tags": [
+                "Popular"
+              ],
+              "allergens": []
+            }
+          ]
+        },
+        {
+          "section": "Nigérian",
+          "items": [
+            {
+              "id": "bins-restaurant--2377",
+              "name": "Riz Djolof Au Poulet",
+              "description": "",
+              "usd": 11.2,
+              "recipe": "brochettes",
+              "tags": [],
+              "allergens": []
+            }
+          ]
+        },
+        {
+          "section": "Shawarma",
+          "items": [
+            {
+              "id": "bins-restaurant--2376",
+              "name": "Shawarma + Boisson",
+              "description": "",
+              "usd": 5.3,
+              "recipe": "jus",
+              "tags": [
+                "Popular"
+              ],
+              "allergens": []
+            }
+          ]
+        },
+        {
+          "section": "Patisserie",
+          "items": [
+            {
+              "id": "bins-restaurant--2375",
+              "name": "Crêpes au chocolat + Boissons",
+              "description": "",
+              "usd": 11.2,
+              "recipe": "jus",
+              "tags": [
+                "Popular"
+              ],
+              "allergens": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "slug": "nickyb-ets",
+      "name": "NickyB ETS",
+      "kind": "Restaurant",
+      "cuisine": "Cuisine Kinoise, Cuisine Ngala, Cuisine kongo, Cuisine Luba, Cuisine Swahili",
+      "commune": "Kasa-Vubu",
+      "landmark": "Djolu No 22 , Kasa-Vubu",
+      "hours": "09:00 – 23:00",
+      "rating": 0.0,
+      "ratings": 0,
+      "location": {
+        "lat": -4.343114,
+        "lng": 15.310016
+      },
+      "prep": 18,
+      "monogram": "NE",
+      "tone": {
+        "bg": "#27402a",
+        "fg": "#eef0e2",
+        "accent": "#d9b24a"
+      },
+      "cover": [
+        "beignets",
+        "poisson",
+        "riz"
+      ],
+      "about": "Cuisine Kinoise, Cuisine Ngala, Cuisine kongo, Cuisine Luba, Cuisine Swahili — Djolu No 22 , Kasa-Vubu.",
+      "menu": [
+        {
+          "section": "Accompa",
+          "items": [
+            {
+              "id": "nickyb-ets--1118",
+              "name": "Sachez Sucre",
+              "description": "Sachez Sucre",
+              "usd": 7.48,
+              "recipe": "beignets",
+              "tags": [],
+              "allergens": []
+            },
+            {
+              "id": "nickyb-ets--1116",
+              "name": "Riz 25kg",
+              "description": "Riz 25kg",
+              "usd": 33.44,
+              "recipe": "riz",
+              "tags": [],
+              "allergens": []
+            },
+            {
+              "id": "nickyb-ets--1115",
+              "name": "Semoule 25kg",
+              "description": "Semoule 25kg",
+              "usd": 32.78,
+              "recipe": "poisson",
+              "tags": [],
+              "allergens": []
+            },
+            {
+              "id": "nickyb-ets--1113",
+              "name": "FRITE FRAICHE CRUE",
+              "description": "Carton FRITE FRAICHE CRUE",
+              "usd": 36.74,
+              "recipe": "poisson",
+              "tags": [],
+              "allergens": []
+            }
+          ]
+        },
+        {
+          "section": "Milk",
+          "items": [
+            {
+              "id": "nickyb-ets--1117",
+              "name": "Lait Nido 900g",
+              "description": "Lait Nido 900g \r\nLait Nido 1800g",
+              "usd": 17.38,
+              "recipe": "poisson",
+              "tags": [],
+              "allergens": []
+            }
+          ]
+        },
+        {
+          "section": "Huile",
+          "items": [
+            {
+              "id": "nickyb-ets--1114",
+              "name": "Huile 5L",
+              "description": "Huile 5L",
+              "usd": 14.3,
+              "recipe": "poisson",
+              "tags": [],
+              "allergens": []
+            }
+          ]
+        },
+        {
+          "section": "Vivres Frais",
+          "items": [
+            {
+              "id": "nickyb-ets--1112",
+              "name": "Viande de Porc",
+              "description": "Carton Viande de Porc",
+              "usd": 50.82,
+              "recipe": "brochettes",
+              "tags": [
+                "Popular"
+              ],
+              "allergens": []
+            },
+            {
+              "id": "nickyb-ets--1111",
+              "name": "Croupions de Dinde",
+              "description": "Carton Croupions de Dinde",
+              "usd": 34.98,
+              "recipe": "poisson",
+              "tags": [],
+              "allergens": []
+            },
+            {
+              "id": "nickyb-ets--1110",
+              "name": "Poulet Nu Azur",
+              "description": "Carton Poulet Nu Azur",
+              "usd": 30.58,
+              "recipe": "brochettes",
+              "tags": [
+                "Popular"
+              ],
+              "allergens": []
+            },
+            {
+              "id": "nickyb-ets--1109",
+              "name": "Poulet Nu Calissa",
+              "description": "Carton Poulet Nu Calissa",
+              "usd": 32.78,
+              "recipe": "brochettes",
+              "tags": [],
+              "allergens": []
+            },
+            {
+              "id": "nickyb-ets--1108",
+              "name": "Wilki P11",
+              "description": "Carton Wilki P11",
+              "usd": 51.7,
+              "recipe": "poisson",
+              "tags": [
+                "Popular"
+              ],
+              "allergens": []
+            },
+            {
+              "id": "nickyb-ets--1107",
+              "name": "Wilki P10",
+              "description": "Carton Wilki P10",
+              "usd": 43.12,
+              "recipe": "poisson",
+              "tags": [],
+              "allergens": []
+            },
+            {
+              "id": "nickyb-ets--1106",
+              "name": "Poulet à Rotir",
+              "description": "Carton Poulet à Rotir",
+              "usd": 63.58,
+              "recipe": "brochettes",
+              "tags": [
+                "Popular"
+              ],
+              "allergens": []
+            },
+            {
+              "id": "nickyb-ets--1105",
+              "name": "Makoso",
+              "description": "Carton Makoso",
+              "usd": 23.32,
+              "recipe": "poisson",
+              "tags": [],
+              "allergens": []
+            },
+            {
+              "id": "nickyb-ets--1104",
+              "name": "Cotis de Porc (Mipanzi)",
+              "description": "Carton Cotis de Porc (Mipanzi)",
+              "usd": 53.68,
+              "recipe": "brochettes",
+              "tags": [
+                "Popular"
+              ],
+              "allergens": []
+            },
+            {
+              "id": "nickyb-ets--1103",
+              "name": "Gésier",
+              "description": "Carton Gésier",
+              "usd": 30.8,
+              "recipe": "poisson",
+              "tags": [],
+              "allergens": []
+            },
+            {
+              "id": "nickyb-ets--1102",
+              "name": "Cuisse à Bouillir",
+              "description": "Carton Cuisse à Bouillir",
+              "usd": 31.9,
+              "recipe": "poisson",
+              "tags": [
+                "Popular"
+              ],
+              "allergens": []
+            },
+            {
+              "id": "nickyb-ets--1101",
+              "name": "Cuisse à Rôtir",
+              "description": "Carton Cuisse à Rôtir",
+              "usd": 29.04,
+              "recipe": "poisson",
+              "tags": [],
+              "allergens": []
+            },
+            {
+              "id": "nickyb-ets--1100",
+              "name": "Mikila",
+              "description": "Carton Mikila",
+              "usd": 71.28,
+              "recipe": "poisson",
+              "tags": [
+                "Popular"
+              ],
+              "allergens": []
+            },
+            {
+              "id": "nickyb-ets--1099",
+              "name": "Tripe ( Mabumu)",
+              "description": "Carton Tripe",
+              "usd": 35.2,
+              "recipe": "poisson",
+              "tags": [],
+              "allergens": []
+            },
+            {
+              "id": "nickyb-ets--1098",
+              "name": "Foie",
+              "description": "Carton Foie",
+              "usd": 30.36,
+              "recipe": "poisson",
+              "tags": [],
+              "allergens": []
+            },
+            {
+              "id": "nickyb-ets--1097",
+              "name": "Makayabu",
+              "description": "Carton Makayabu",
+              "usd": 110.0,
+              "recipe": "poisson",
+              "tags": [],
+              "allergens": []
+            },
+            {
+              "id": "nickyb-ets--1096",
+              "name": "Poumon",
+              "description": "Carton Poumon",
+              "usd": 25.52,
+              "recipe": "poisson",
+              "tags": [
+                "Popular"
+              ],
+              "allergens": []
+            },
+            {
+              "id": "nickyb-ets--1095",
+              "name": "Rognon",
+              "description": "Carton Rognon",
+              "usd": 26.4,
+              "recipe": "poisson",
+              "tags": [],
+              "allergens": []
+            },
+            {
+              "id": "nickyb-ets--1092",
+              "name": "Mbanga Ngombe",
+              "description": "Carton Mbanga",
+              "usd": 33.44,
+              "recipe": "poisson",
+              "tags": [],
+              "allergens": []
+            },
+            {
+              "id": "nickyb-ets--1091",
+              "name": "Makayabu",
+              "description": "1Kg Makayabu",
+              "usd": 11.0,
+              "recipe": "poisson",
+              "tags": [
+                "Popular"
+              ],
+              "allergens": []
+            },
+            {
+              "id": "nickyb-ets--1090",
+              "name": "Carton Mungusu",
+              "description": "Carton Mungusu",
+              "usd": 34.54,
+              "recipe": "poisson",
+              "tags": [],
+              "allergens": []
+            },
+            {
+              "id": "nickyb-ets--1075",
+              "name": "Carton Malua",
+              "description": "Carton Malua",
+              "usd": 78.32,
+              "recipe": "poisson",
+              "tags": [],
+              "allergens": []
+            },
+            {
+              "id": "nickyb-ets--1074",
+              "name": "Carton Malangwa",
+              "description": "Carton Malangwa",
+              "usd": 28.6,
+              "recipe": "poisson",
+              "tags": [],
+              "allergens": []
+            },
+            {
+              "id": "nickyb-ets--1070",
+              "name": "Carton Tilapia",
+              "description": "Carton Tilapia",
+              "usd": 31.68,
+              "recipe": "poisson",
+              "tags": [],
+              "allergens": []
+            },
+            {
+              "id": "nickyb-ets--1068",
+              "name": "Rame poisson 20+",
+              "description": "Rame poisson 20+",
+              "usd": 30.8,
+              "recipe": "poisson",
+              "tags": [],
+              "allergens": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "slug": "tacos-land",
+      "name": "Tacos Land",
+      "kind": "Restaurant",
+      "cuisine": "Cuisine Européenne",
+      "commune": "Lingwala",
+      "landmark": "280, Avenue kalembe-Lembe  C.Lingwala, Réf: Maiison communale de lingwala",
+      "hours": "11:00 – 18:00",
+      "rating": 0.0,
+      "ratings": 0,
+      "location": {
+        "lat": -4.32607,
+        "lng": 15.296808
+      },
+      "prep": 18,
+      "monogram": "TL",
+      "tone": {
+        "bg": "#2a1d16",
+        "fg": "#f3e6d6",
+        "accent": "#e0643a"
+      },
+      "cover": [
+        "brochettes",
+        "pain",
+        "poisson"
+      ],
+      "about": "Fast-food",
+      "menu": [
+        {
+          "section": "Tacos",
+          "items": [
+            {
+              "id": "tacos-land--2371",
+              "name": "Tacos Viande + Poulet",
+              "description": "",
+              "usd": 10.19,
+              "recipe": "brochettes",
+              "tags": [
+                "Popular"
+              ],
+              "allergens": []
+            },
+            {
+              "id": "tacos-land--2369",
+              "name": "Tacos  Viandé",
+              "description": "",
+              "usd": 7.2,
+              "recipe": "pain",
+              "tags": [],
+              "allergens": []
+            },
+            {
+              "id": "tacos-land--2368",
+              "name": "Tacos Poulet",
+              "description": "",
+              "usd": 6.72,
+              "recipe": "brochettes",
+              "tags": [
+                "Popular"
+              ],
+              "allergens": []
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

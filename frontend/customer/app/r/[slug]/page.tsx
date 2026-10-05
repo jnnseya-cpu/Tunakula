@@ -74,7 +74,7 @@ export default async function Storefront({ params }: { params: Promise<{ slug: s
                       </div>
                     </div>
                     <div className="item-pic">
-                      <FoodImage slug={`${m.slug}-${it.id}`} recipe={it.recipe} alt={it.name} className="pic" />
+                      <FoodImage slug={it.id} recipe={it.recipe} alt={it.name} className="pic" />
                       <AddButton item={{ id: it.id, name: it.name, price: it.price }} />
                     </div>
                   </article>

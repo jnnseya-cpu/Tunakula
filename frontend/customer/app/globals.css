@@ -664,6 +664,8 @@ section.tight { padding: 44px 0; }
 .mcard-badges { position: absolute; left: 12px; top: 12px; display: flex; gap: 6px; }
 .mcard-rating { position: absolute; right: 12px; top: 12px; background: #fff; border-radius: 999px; padding: 3px 10px; font-size: 13px; box-shadow: var(--shadow-1); }
 .mcard-rating span { color: #e0a100; }
+.mcard-rating.is-new { color: #1f7a4d; font-weight: 600; }
+.stars.is-new { color: #1f7a4d; font-weight: 600; }
 .mcard-body { padding: 0 16px; margin-top: -26px; gap: 12px; align-items: flex-end; position: relative; }
 .mcard-body .mlogo { box-shadow: 0 0 0 4px #fff, var(--shadow-1); }
 .mcard-text { padding-bottom: 2px; min-width: 0; }

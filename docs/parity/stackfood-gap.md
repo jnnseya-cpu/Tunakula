@@ -10,7 +10,7 @@ Legend: **Built** works end to end · **Partial** the engine or a screen exists,
 
 | Feature | Status |
 | --- | --- |
-| Home: banners, categories, nearby restaurants, popular dishes | Partial: website only, sample data, not from the API |
+| Home: banners, categories, nearby restaurants, popular dishes | Partial: website shows the real Kinshasa restaurants (names, menus, logos, covers and dish photos imported from the legacy catalogue on 2026-10-05); still rendered from a built-in snapshot, not yet the live API |
 | Distance (km) and delivery time per restaurant | Built (API and website) |
 | Sign up / sign in by phone code | Built (SMS or WhatsApp code; delivery needs the messaging adapter) |
 | Search with filters (veg, rating, price, cuisine, distance) | Partial: text search and sort only |
@@ -81,3 +81,14 @@ Legend: **Built** works end to end · **Partial** the engine or a screen exists,
 Closing this means building about 120 screens across the customer, restaurant, rider and admin products.
 It also means about 40 API features, plus messaging, push notifications and map adapters.
 Each screen builds on the engine that already exists, so the work is wide rather than deep, and it parallelises well.
+
+## Real content imported from the legacy catalogue (2026-10-05)
+
+The four live Kinshasa restaurants on cd.tunakula.com (Lagrâce Cuisine, Bin's Restaurant, NickyB ETS, Tacos Land) — their names, addresses, cuisines, ratings, full menus (85 dishes with real prices), logos, covers and every dish photo — were read from the legacy public catalogue API and now drive the website's storefronts, replacing the earlier illustrative samples. Pipeline (all in `frontend/customer`):
+
+- `lib/catalogue.source.json` — canonical snapshot (prices kept in the restaurants' own USD).
+- `scripts/fetch-fx.mjs` (`npm run fx:update`) — fetches a live USD→CDF rate from free, no-key providers into `lib/fx-rate.json`; falls back to the committed rate when the network is restricted.
+- `scripts/build-catalogue.mjs` (`npm run catalogue:build`) — regenerates `lib/catalogue.ts`, converting USD→CDF at the fetched rate (rounded to 100 FC).
+- `public/photos/` — the imported images; `public/photos/SOURCES.tsv` records each file's source URL.
+
+The legacy `is_halal`/`veg` flags are blanket defaults (even pork was flagged halal), so they were dropped rather than shown as dietary claims.

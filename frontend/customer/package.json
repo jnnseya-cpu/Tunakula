@@ -2,13 +2,15 @@
   "name": "@tunakula/web-customer",
   "version": "0.1.0",
   "private": true,
-  "description": "Tunakula customer website (Next.js, PRD \u00a72.1): landing, ordering, storefronts, Send a Meal Home, partners, riders, city pages.",
+  "description": "Tunakula customer website (Next.js, PRD §2.1): landing, ordering, storefronts, Send a Meal Home, partners, riders, city pages.",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "screenshots": "node scripts/screenshots.mjs"
+    "screenshots": "node scripts/screenshots.mjs",
+    "fx:update": "node scripts/fetch-fx.mjs",
+    "catalogue:build": "node scripts/build-catalogue.mjs"
   },
   "devDependencies": {
     "@types/react": "^19",
