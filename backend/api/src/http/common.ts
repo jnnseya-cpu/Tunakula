@@ -17,6 +17,7 @@ export const TOKENS = {
   catalogue: "CATALOGUE_SERVICE",
   eta: "ETA_SERVICE",
   dispatch: "DISPATCH_SERVICE",
+  onboarding: "ONBOARDING_SERVICE",
   config: "CONFIG_SERVICE",
   admin: "ADMIN_SERVICE",
   logger: "LOGGER",

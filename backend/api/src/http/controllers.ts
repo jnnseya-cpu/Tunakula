@@ -9,6 +9,7 @@ import type { CatalogueService } from "../app/catalogue.ts";
 import type { ConfigService } from "../app/config.ts";
 import type { DispatchService } from "../app/dispatch.ts";
 import type { EtaService } from "../app/eta.ts";
+import type { OnboardingService } from "../app/onboarding.ts";
 import { serialiseQuote, type CommerceService, type PlaceOrderInput, type QuoteInput } from "../app/commerce.ts";
 import { badRequest, notFound } from "../app/errors.ts";
 import type { PaymentService } from "../app/payments.ts";
@@ -171,7 +172,7 @@ export class OrdersController {
     const c = country(req);
     const { order, timeline, branch } = await this.commerce.get(c, principal, id);
     const rider = order.riderId ? await this.dispatch.riderForCustomer(c, order.riderId, order.state, order.snapshot.dropLocation) : null;
-    return { ...orderView(order), branch, rider, timeline: timeline.map((t) => ({ state: t.state, at: new Date(t.at).toISOString() })) };
+    return { ...orderView(order), branch, rider, drop: order.snapshot.dropLocation ?? null, timeline: timeline.map((t) => ({ state: t.state, at: new Date(t.at).toISOString() })) };
   }
 
   @Get("me/orders")
@@ -291,6 +292,90 @@ export class RiderController {
   async decline(@Req() req: FastifyRequest, @Param("id") id: string, @Body() body: { reason?: string }) {
     const principal = await this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
     return this.dispatch.respond(principal, country(req), id, false, body?.reason);
+  }
+}
+
+/** Operations: the dispatch board, (re)assigning riders, cash hand-ins, refunds and rider applications. */
+@Controller("v1/ops")
+export class OpsController {
+  constructor(
+    @Inject(TOKENS.db) private readonly db: Db,
+    @Inject(TOKENS.tokens) private readonly tokens: TokenService,
+    @Inject(TOKENS.dispatch) private readonly dispatch: DispatchService,
+    @Inject(TOKENS.onboarding) private readonly onboarding: OnboardingService,
+  ) {}
+
+  #me(req: FastifyRequest) {
+    return this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+  }
+
+  @Get("dispatch")
+  async board(@Req() req: FastifyRequest) {
+    return this.dispatch.board(await this.#me(req), country(req));
+  }
+
+  @Post("orders/:id/assign")
+  @HttpCode(200)
+  async assign(@Req() req: FastifyRequest, @Param("id") id: string, @Body() body: { rider_id?: string; override?: boolean }) {
+    return this.dispatch.assign(await this.#me(req), country(req), id, body?.rider_id ?? "", body?.override === true);
+  }
+
+  @Post("riders/:id/cash-in")
+  @HttpCode(200)
+  async cashIn(@Req() req: FastifyRequest, @Param("id") id: string, @Body() body: { amount_minor?: string; note?: string }) {
+    return this.dispatch.cashIn(await this.#me(req), country(req), id, String(body?.amount_minor ?? ""), body?.note);
+  }
+
+  @Get("rider-applications")
+  async applications(@Req() req: FastifyRequest, @Query("status") status?: string) {
+    const s = ["PENDING", "APPROVED", "REJECTED", "ALL"].includes(status ?? "") ? (status as string) : "PENDING";
+    return this.onboarding.list(await this.#me(req), country(req), s);
+  }
+
+  @Post("rider-applications/:id/approve")
+  @HttpCode(200)
+  async approve(@Req() req: FastifyRequest, @Param("id") id: string, @Body() body: { note?: string }) {
+    return this.onboarding.decide(await this.#me(req), country(req), id, true, body?.note);
+  }
+
+  @Post("rider-applications/:id/reject")
+  @HttpCode(200)
+  async reject(@Req() req: FastifyRequest, @Param("id") id: string, @Body() body: { note?: string }) {
+    return this.onboarding.decide(await this.#me(req), country(req), id, false, body?.note);
+  }
+}
+
+/** Private images (identity documents, pack and proof photos) and rider applications. */
+@Controller("v1")
+export class OnboardingController {
+  constructor(
+    @Inject(TOKENS.db) private readonly db: Db,
+    @Inject(TOKENS.tokens) private readonly tokens: TokenService,
+    @Inject(TOKENS.onboarding) private readonly onboarding: OnboardingService,
+  ) {}
+
+  #me(req: FastifyRequest) {
+    return this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+  }
+
+  @Post("media")
+  async upload(@Req() req: FastifyRequest, @Body() body: { purpose: string; content_type: string; data_base64: string }) {
+    return this.onboarding.upload(await this.#me(req), country(req), body ?? ({} as never));
+  }
+
+  @Get("media/:id")
+  async media(@Req() req: FastifyRequest, @Param("id") id: string) {
+    return this.onboarding.read(await this.#me(req), country(req), id);
+  }
+
+  @Post("rider-applications")
+  async apply(@Req() req: FastifyRequest, @Body() body: Parameters<OnboardingService["apply"]>[2]) {
+    return this.onboarding.apply(await this.#me(req), country(req), body ?? ({} as never));
+  }
+
+  @Get("rider-applications/mine")
+  async mine(@Req() req: FastifyRequest) {
+    return this.onboarding.mine(await this.#me(req), country(req));
   }
 }
 

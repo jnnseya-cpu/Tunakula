@@ -19,7 +19,7 @@ Legend: **Built** works end to end · **Partial** the engine or a screen exists,
 | Cart and checkout: delivery, takeaway, dine-in, scheduled | Built for delivery and takeaway (live quote, directions, tip); dine-in and scheduled missing |
 | Pay: mobile money, card, cash, wallet, partial payment | Built: mobile money, card, cash on delivery; wallet and partial payment missing |
 | Coupons, cashback, campaigns | Missing |
-| Live order tracking with map and rider | Partial: live progress, door code, rider name, distance and arrival time; map tiles missing |
+| Live order tracking with map and rider | Built: live progress, door code, rider name, distance, arrival time and a map (kitchen, rider, door); street tiles need a map provider key |
 | Order history, reorder, cancel with reason, refund request | Built: history, order again, cancel; refund request missing |
 | Reviews and ratings | Missing |
 | Chat with restaurant and rider; push and SMS notifications | Missing |
@@ -51,8 +51,8 @@ Legend: **Built** works end to end · **Partial** the engine or a screen exists,
 | --- | --- |
 | Go online / offline, shifts | Built: online/offline with GPS (position shared only while online or carrying an order); shifts missing |
 | Job offers, accept, navigation, pick up, deliver with code and photo | Built: automatic nearest-rider offers (30 s, earnings shown first, no penalty for saying no), navigation links, bag check at pickup, code + GPS + photo at the door, failed-delivery report |
-| Earnings, wallet, cash in hand, remittance | Partial: today's earnings and cash in hand shown; withdrawals and cash hand-in recording missing |
-| Vehicles, documents, self-registration | Missing |
+| Earnings, wallet, cash in hand, remittance | Partial: earnings, cash in hand, cash hand-in at the hub (posted to the ledger); withdrawals missing |
+| Vehicles, documents, self-registration | Built: apply with ID, selfie and licence photos, automatic checks (age, ID format, duplicate ID, licence and plate), review and approval by operations |
 
 ## Admin
 
@@ -60,14 +60,14 @@ Legend: **Built** works end to end · **Partial** the engine or a screen exists,
 | --- | --- |
 | Dashboard with charts per role | Built |
 | Orders list, detail, cancel | Built |
-| Dispatch management (assign or reassign riders, live map) | Partial: automatic dispatch and kitchen timeouts built; ops screen to watch and reassign missing |
-| Refunds | Partial: API |
+| Dispatch management (assign or reassign riders, live map) | Built: automatic dispatch, kitchen timeouts, live dispatch screen with map, rider statuses, assign/reassign, refunds needing attention |
+| Refunds | Partial: automatic full refunds for paid orders that end before delivery, with retries; refunds after delivery missing |
 | Zones (polygons, fees per zone) | Missing |
 | Cuisines, categories, add-ons, foods, bulk import/export | Partial: per-restaurant menu only |
 | Restaurants: list, add, join requests, commission/plan | Partial: list and menu |
 | Promotions: campaigns, banners, coupons, cashback, push, ads | Missing |
 | Customers: list, wallet, loyalty, subscribers | Missing |
-| Deliverymen: list, vehicles, shifts, reviews, bonuses, join requests | Missing |
+| Deliverymen: list, vehicles, shifts, reviews, bonuses, join requests | Partial: rider list with status and cash, join requests with ID review; shifts, reviews and bonuses missing |
 | Employees and roles | Built |
 | Transactions: collect cash, withdrawals, disbursements | Partial: ledger and payments views |
 | Reports: transactions, orders, foods, restaurants, tax, expenses | Partial: dashboard charts only |

@@ -23,6 +23,55 @@ export class PaymentService {
     this.commerce = commerce;
   }
 
+  /**
+   * Automatic refunds: every paid order that ended before delivery (cancelled, rejected, delivery failed)
+   * gets its full amount back through the same provider, then moves to REFUNDED. The provider call is
+   * made outside any database transaction and is idempotent on `refund:<order>`, so a retry never pays
+   * twice. Failures are recorded and retried with back-off (1, 4, 9, 16 minutes; five attempts, then ops sees them).
+   */
+  async refundSweep(country: string, now: () => Date = () => new Date()): Promise<{ refunded: number; failed: number }> {
+    const due = await this.db.tx({ country }, (sql) => sql.query<{ order_id: string; state: string; intent_id: string; connector_id: string; provider_ref: string; amount_minor: string; currency: string; reason: string | null; attempts: number | null }>(
+      `SELECT o.order_id, o.state, i.id AS intent_id, i.connector_id, i.provider_ref, i.amount_minor::text, i.currency,
+              (SELECT e.payload->>'reasonCode' FROM ordering.order_event e WHERE e.order_id = o.order_id AND e.type = 'STATE_CHANGED' ORDER BY e.seq DESC LIMIT 1) AS reason,
+              r.attempts
+         FROM ordering.order_view o
+         JOIN payments.payment_intent i ON i.order_id = o.order_id AND i.status = 'SUCCEEDED'
+         LEFT JOIN payments.refund r ON r.order_id = o.order_id
+        WHERE o.state IN ('CANCELLED', 'REJECTED', 'DELIVERY_FAILED') AND o.payment_mode = 'PREPAID'
+          AND (r.id IS NULL OR (r.status = 'FAILED' AND r.attempts < 5 AND r.updated_at <= $1::timestamptz - make_interval(mins => r.attempts * r.attempts)))
+        LIMIT 50`,
+      [now()],
+    ));
+    let refunded = 0, failed = 0;
+    for (const d of due) {
+      const connector = this.connectors.get(d.connector_id);
+      let outcome: { ok: true; ref: string } | { ok: false; error: string };
+      if (!connector || !d.provider_ref) outcome = { ok: false, error: `Connector ${d.connector_id} unavailable` };
+      else {
+        try {
+          const r = await connector.refund(d.provider_ref, { minor: d.amount_minor, currency: d.currency }, `refund:${d.order_id}`);
+          outcome = { ok: true, ref: r.refundRef };
+        } catch (e) { outcome = { ok: false, error: e instanceof Error ? e.message.slice(0, 200) : "Refund failed" }; }
+      }
+      await this.db.tx({ country }, async (sql) => {
+        const reason = d.reason ?? d.state;
+        await sql.query(
+          `INSERT INTO payments.refund (country_iso2, order_id, intent_id, connector_id, amount_minor, currency, status, refund_ref, reason_code, failure, attempts, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 1, $11, $11)
+           ON CONFLICT (order_id) DO UPDATE SET status = EXCLUDED.status, refund_ref = EXCLUDED.refund_ref, failure = EXCLUDED.failure,
+             attempts = payments.refund.attempts + 1, updated_at = EXCLUDED.updated_at`,
+          [country, d.order_id, d.intent_id, d.connector_id, d.amount_minor, d.currency, outcome.ok ? "SUCCEEDED" : "FAILED", outcome.ok ? outcome.ref : null, reason, outcome.ok ? null : outcome.error, now()],
+        );
+        if (outcome.ok) {
+          await this.commerce.systemCommand(sql, country, d.order_id, `refund:${d.order_id}`, { type: "REFUND", reasonCode: `AUTO_${reason}`.slice(0, 60) }, "refunds");
+          await updateIntent(sql, d.intent_id, { status: "REFUNDED" });
+        }
+      });
+      if (outcome.ok) refunded++; else failed++;
+    }
+    return { refunded, failed };
+  }
+
   /** GET /v1/countries/{iso2}/payment-methods — eligible methods in profile order (§20.5). */
   methods(country: string, payerCountry: string, amount: { currency: string; minor: string }): PaymentMethodType[] {
     const profile = this.commerce.profile(country);

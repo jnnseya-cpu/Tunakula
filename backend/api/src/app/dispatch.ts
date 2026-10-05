@@ -9,10 +9,14 @@
 import { greatCircleMetres, ROAD_FACTOR } from "@tunakula/ts-contracts/eta-model";
 import type { Db, Sql } from "../db/db.ts";
 import { authorize, type Principal } from "../modules/identity/policy.ts";
+import type { Action } from "../modules/identity/roles.ts";
 import { RIDER_ORDER_TYPES } from "../modules/ordering/order-types.ts";
+import { createJournal } from "../modules/money/journal.ts";
+import { Money } from "@tunakula/ts-money";
 import { audit } from "../persistence/identity.ts";
+import { postJournal } from "../persistence/ledger.ts";
 import type { CommerceService } from "./commerce.ts";
-import { badRequest, conflict, forbidden, notFound } from "./errors.ts";
+import { badRequest, conflict, forbidden, notFound, unprocessable } from "./errors.ts";
 import { loadPrincipal } from "./principal.ts";
 
 /** How long a rider has to answer an offer. */
@@ -27,7 +31,19 @@ const NEEDS_RIDER = ["PLACED", "ACCEPTED", "PREPARING", "PACKED", "READY"];
 const RIDER_ACTIVE = ["PLACED", "ACCEPTED", "PREPARING", "PACKED", "READY", "PICKED_UP"];
 
 interface Point { lat: number; lng: number }
+const unprocessableRider = () => unprocessable("NOT_A_RIDER", "That person is not a rider");
 const road = (a: Point, b: Point) => Math.round(greatCircleMetres(a, b) * ROAD_FACTOR);
+
+/** Cash a rider holds: cash-on-delivery totals they delivered, minus what they handed in. */
+async function cashInHand(sql: Sql, riderId: string): Promise<{ cash: string; currency: string | null }> {
+  const [r] = await sql.query<{ collected: string | null; remitted: string | null; currency: string | null }>(
+    `SELECT (SELECT sum(total_minor) FROM ordering.order_view WHERE rider_id = $1::text AND state = 'DELIVERED' AND payment_mode = 'CASH_ON_DELIVERY')::text AS collected,
+            (SELECT sum(amount_minor) FROM dispatch.cash_remittance WHERE rider_id = $1::uuid)::text AS remitted,
+            (SELECT min(currency) FROM ordering.order_view WHERE rider_id = $1::text AND payment_mode = 'CASH_ON_DELIVERY') AS currency`,
+    [riderId],
+  );
+  return { cash: (BigInt(r?.collected ?? "0") - BigInt(r?.remitted ?? "0")).toString(), currency: r?.currency ?? null };
+}
 
 export class DispatchService {
   private readonly db: Db;
@@ -114,10 +130,7 @@ export class DispatchService {
             AND (o.updated_at AT TIME ZONE $2)::date = ($3::timestamptz AT TIME ZONE $2)::date`,
         [principal.userId, tz, this.now()],
       );
-      const cashAll = await sql.query<{ cash: string | null; currency: string | null }>(
-        "SELECT sum(total_minor)::text AS cash, min(currency) AS currency FROM ordering.order_view WHERE rider_id = $1 AND state = 'DELIVERED' AND payment_mode = 'CASH_ON_DELIVERY'",
-        [principal.userId],
-      );
+      const cashAll = [await cashInHand(sql, principal.userId)];
       const ccy = done[0]?.currency ?? cashAll[0]?.currency ?? this.#profile(country).money.settlement_currency;
       const offer = offers[0];
       return {
@@ -137,7 +150,7 @@ export class DispatchService {
           : null,
         active: await Promise.all(active.map((a) => detail(a.order_id))),
         today: { deliveries: Number(done[0]?.n ?? 0), earnings: { amount_minor: done[0]?.earn ?? "0", currency: ccy } },
-        // Not yet net of hand-ins: remittance is recorded by ops (cash collection screen, next module).
+        // Cash collected at doors minus what was handed in at the hub.
         cash_in_hand: { amount_minor: cashAll[0]?.cash ?? "0", currency: ccy },
       };
     });
@@ -271,6 +284,153 @@ export class DispatchService {
         offered++;
       }
       return { expired: expired.length, cancelled, offered };
+    });
+  }
+
+  // ───────────────────────── Operations (dispatch:manage) ─────────────────────────
+
+  /** Market-wide, or for any city where this market has kitchens (CITY_OPS). */
+  async #opsAllowed(principal: Principal, country: string, actions: readonly Action[]): Promise<boolean> {
+    const profile = this.#profile(country);
+    const cities = await this.db.tx({ country }, (sql) => sql.query<{ city: string }>("SELECT DISTINCT city FROM catalogue.branch WHERE city IS NOT NULL"));
+    const resources = [{ type: "order", country }, ...cities.map((c) => ({ type: "order", country, cityId: c.city }))];
+    return actions.some((a) => resources.some((r) => authorize(principal, a, r, { activeCountry: country, profile }).allowed));
+  }
+
+  async #requireOps(principal: Principal, country: string) {
+    if (!(await this.#opsAllowed(principal, country, ["dispatch:manage"]))) throw forbidden("The dispatch board is for operations staff");
+  }
+
+  /** GET /v1/ops/dispatch: every rider (online, busy, offline), every order that needs or has a rider, and kitchens running late. */
+  async board(principal: Principal, country: string) {
+    await this.#requireOps(principal, country);
+    const at = this.now();
+    const tz = this.#profile(country).country.timezones[0] ?? "UTC";
+    return this.db.tx({ country }, async (sql) => {
+      const communes = (await sql.query<{ commune: string }>("SELECT DISTINCT commune FROM catalogue.branch WHERE commune IS NOT NULL")).map((r) => r.commune);
+      const riders = await sql.query<{
+        id: string; name: string; phone: string | null; zones: string[]; online: boolean | null; lat: string | null; lng: string | null; vehicle: string | null; updated_at: Date | null; online_since: Date | null;
+      }>(
+        `SELECT u.id, u.display_name AS name, u.phone_e164 AS phone, array_agg(DISTINCT b.scope_id) AS zones,
+                p.online, p.lat::text, p.lng::text, p.vehicle, p.updated_at, p.online_since
+           FROM identity.role_binding b JOIN identity.app_user u ON u.id = b.user_id
+           LEFT JOIN dispatch.rider_presence p ON p.rider_id = u.id
+          WHERE b.role = 'RIDER' AND b.scope_type = 'ZONE' AND b.scope_id = ANY($1)
+          GROUP BY u.id, u.display_name, u.phone_e164, p.online, p.lat, p.lng, p.vehicle, p.updated_at, p.online_since
+          ORDER BY p.online DESC NULLS LAST, u.display_name`,
+        [communes],
+      );
+      const jobs = await sql.query<{
+        order_id: string; state: string; rider_id: string | null; created_at: Date; branch_name: string; blat: string; blng: string; drop: { lat: number; lng: number } | null;
+        placed_at: Date | null; total_minor: string; currency: string; payment_mode: string; tries: string; offer_rider: string | null; offer_expires: Date | null;
+      }>(
+        `SELECT o.order_id, o.state, o.rider_id, o.created_at, b.name AS branch_name, b.lat::text AS blat, b.lng::text AS blng,
+                d.payload->'snapshot'->'dropLocation' AS drop, o.total_minor::text, o.currency, o.payment_mode,
+                (SELECT max(e.at) FROM ordering.order_event e WHERE e.order_id = o.order_id AND e.type = 'STATE_CHANGED' AND e.payload->>'to' = 'PLACED') AS placed_at,
+                (SELECT count(*) FROM dispatch.offer f WHERE f.order_id = o.order_id) AS tries,
+                (SELECT f.rider_id::text FROM dispatch.offer f WHERE f.order_id = o.order_id AND f.status = 'OFFERED' LIMIT 1) AS offer_rider,
+                (SELECT f.expires_at FROM dispatch.offer f WHERE f.order_id = o.order_id AND f.status = 'OFFERED' LIMIT 1) AS offer_expires
+           FROM ordering.order_view o
+           JOIN catalogue.branch b ON b.id = o.branch_id
+           JOIN ordering.order_event d ON d.order_id = o.order_id AND d.type = 'ORDER_DRAFTED'
+          WHERE o.type = ANY($1) AND o.state = ANY($2)
+          ORDER BY o.created_at`,
+        [RIDER_ORDER_TYPES, RIDER_ACTIVE],
+      );
+      const nameOf = new Map(riders.map((r) => [r.id, r.name]));
+      const busy = new Map(jobs.filter((j) => j.rider_id).map((j) => [j.rider_id!, j]));
+      const offered = new Map(jobs.filter((j) => j.offer_rider).map((j) => [j.offer_rider!, j]));
+      const today = await sql.query<{ rider_id: string; n: string }>(
+        `SELECT rider_id, count(*) AS n FROM ordering.order_view WHERE state = 'DELIVERED' AND rider_id IS NOT NULL
+            AND (updated_at AT TIME ZONE $1)::date = ($2::timestamptz AT TIME ZONE $1)::date GROUP BY rider_id`,
+        [tz, at],
+      );
+      const deliveredToday = new Map(today.map((t) => [t.rider_id, Number(t.n)]));
+      const cash = new Map<string, string>();
+      for (const r of riders) cash.set(r.id, (await cashInHand(sql, r.id)).cash);
+      const ccy = this.#profile(country).money.settlement_currency;
+      const stuck = await sql.query<{ order_id: string; amount_minor: string; currency: string; failure: string | null; attempts: number }>(
+        "SELECT order_id, amount_minor::text, currency, failure, attempts FROM payments.refund WHERE status = 'FAILED' ORDER BY updated_at DESC LIMIT 50",
+      );
+      const minutes = (d: Date | null) => (d ? Math.max(0, Math.floor((at.getTime() - new Date(d).getTime()) / 60000)) : 0);
+      const fresh = (d: Date | null) => !!d && at.getTime() - new Date(d).getTime() <= PRESENCE_FRESH_MS;
+      return {
+        now: at.toISOString(),
+        kitchen_timeout_min: KITCHEN_TIMEOUT_MIN,
+        // Refunds the provider refused: retried automatically up to five times, then a person must act.
+        refunds_failing: stuck.map((r) => ({ order_id: r.order_id, ref: r.order_id.slice(-5).toUpperCase(), amount: { amount_minor: r.amount_minor, currency: r.currency }, failure: r.failure, attempts: r.attempts, given_up: r.attempts >= 5 })),
+        riders: riders.map((r) => {
+          const job = busy.get(r.id);
+          const offer = offered.get(r.id);
+          const online = !!r.online;
+          return {
+            id: r.id, name: r.name, phone: r.phone, zones: r.zones, vehicle: r.vehicle ?? "MOTO",
+            status: job ? "BUSY" : offer ? "OFFERED" : online && fresh(r.updated_at) ? "AVAILABLE" : online ? "SIGNAL_LOST" : "OFFLINE",
+            position: r.lat && r.lng ? { lat: Number(r.lat), lng: Number(r.lng) } : null,
+            last_seen: r.updated_at ? new Date(r.updated_at).toISOString() : null,
+            online_minutes: online && r.online_since ? minutes(r.online_since) : 0,
+            job: job ? { order_id: job.order_id, ref: job.order_id.slice(-5).toUpperCase(), state: job.state } : null,
+            delivered_today: deliveredToday.get(r.id) ?? 0,
+            cash_in_hand: { amount_minor: cash.get(r.id) ?? "0", currency: ccy },
+          };
+        }),
+        orders: jobs.map((j) => ({
+          order_id: j.order_id,
+          ref: j.order_id.slice(-5).toUpperCase(),
+          state: j.state,
+          pickup: { name: j.branch_name, lat: Number(j.blat), lng: Number(j.blng) },
+          drop: j.drop,
+          rider: j.rider_id ? { id: j.rider_id, name: nameOf.get(j.rider_id) ?? "Rider" } : null,
+          offer: j.offer_rider && j.offer_expires ? { rider_id: j.offer_rider, rider_name: nameOf.get(j.offer_rider) ?? "Rider", seconds_left: Math.max(0, Math.round((new Date(j.offer_expires).getTime() - at.getTime()) / 1000)) } : null,
+          tries: Number(j.tries),
+          waiting_min: minutes(j.placed_at ?? j.created_at),
+          kitchen_late: j.state === "PLACED" && minutes(j.placed_at) >= Math.floor(KITCHEN_TIMEOUT_MIN / 2),
+          cash: j.payment_mode === "CASH_ON_DELIVERY" ? { amount_minor: j.total_minor, currency: j.currency } : null,
+        })),
+      };
+    });
+  }
+
+  /** POST /v1/ops/orders/:id/assign — give (or move) an order to a specific rider; any live offer is withdrawn. */
+  async assign(principal: Principal, country: string, orderId: string, riderId: string, override = false) {
+    await this.#requireOps(principal, country);
+    if (!riderId) throw badRequest("RIDER_REQUIRED", "Choose a rider");
+    return this.db.tx({ country }, async (sql) => {
+      const target = await loadPrincipal(sql, riderId);
+      if (DispatchService.riderZones(target).length === 0) throw unprocessableRider();
+      const busy = await sql.query<{ n: string }>("SELECT count(*) AS n FROM ordering.order_view WHERE rider_id = $1 AND state = ANY($2) AND order_id <> $3", [riderId, RIDER_ACTIVE, orderId]);
+      if (Number(busy[0]?.n ?? 0) >= MAX_ACTIVE_JOBS && !override) throw conflict("RIDER_BUSY", "This rider is carrying another order; confirm to give them a second one");
+      const at = this.now();
+      await sql.query("UPDATE dispatch.offer SET status = 'WITHDRAWN', responded_at = $2 WHERE order_id = $1 AND status = 'OFFERED'", [orderId, at]);
+      const [prev] = await sql.query<{ rider_id: string | null }>("SELECT rider_id FROM ordering.order_view WHERE order_id = $1", [orderId]);
+      await this.commerce.systemCommand(sql, country, orderId, `ops-assign:${orderId}:${riderId}:${at.getTime()}`, { type: "ASSIGN_RIDER", riderId }, `ops:${principal.userId}`);
+      await audit(sql, { actor: principal.userId, action: prev?.rider_id ? "dispatch.reassigned" : "dispatch.assigned", target: `order:${orderId}`, country, detail: { from: prev?.rider_id ?? null, to: riderId } });
+      return { order_id: orderId, rider_id: riderId };
+    });
+  }
+
+  /** POST /v1/ops/riders/:id/cash-in — record cash a rider hands in at the hub (ledger: hub_cash ← cod_cash_in_transit). */
+  async cashIn(principal: Principal, country: string, riderId: string, amountMinor: string, note?: string) {
+    const profile = this.#profile(country);
+    if (!(await this.#opsAllowed(principal, country, ["dispatch:manage", "cod_reconciliation:manage"]))) throw forbidden("Recording cash hand-ins is for hub and finance staff");
+    if (!/^\d+$/.test(amountMinor ?? "") || BigInt(amountMinor) <= 0n) throw badRequest("AMOUNT_INVALID", "Send amount_minor as a positive whole number of minor units");
+    const ccy = profile.money.settlement_currency;
+    return this.db.tx({ country }, async (sql) => {
+      const held = BigInt((await cashInHand(sql, riderId)).cash);
+      if (BigInt(amountMinor) > held) throw conflict("MORE_THAN_HELD", `The rider holds ${held} minor units; record at most that`);
+      const at = this.now();
+      const key = `cash-in:${riderId}:${at.getTime()}`;
+      const amount = Money.ofMinor(BigInt(amountMinor), ccy);
+      await postJournal(sql, createJournal({
+        id: key, idempotencyKey: key, description: `Cash handed in by rider ${riderId.slice(-6)}`, postedAt: at,
+        entries: [{ account: "hub_cash", country, amount }, { account: "cod_cash_in_transit", country, amount: amount.negate() }],
+      }));
+      const [row] = await sql.query<{ id: string }>(
+        "INSERT INTO dispatch.cash_remittance (country_iso2, rider_id, amount_minor, currency, received_by, note, journal_key, at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id",
+        [country, riderId, amountMinor, ccy, principal.userId, note?.slice(0, 200) ?? null, key, at],
+      );
+      await audit(sql, { actor: principal.userId, action: "cash.received", target: `rider:${riderId}`, country, detail: { amount_minor: amountMinor, currency: ccy } });
+      return { id: row?.id, cash_in_hand: { amount_minor: (held - BigInt(amountMinor)).toString(), currency: ccy } };
     });
   }
 

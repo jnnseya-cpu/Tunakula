@@ -126,6 +126,8 @@ export class AdminService {
           audit: this.#can(principal, "audit:read", marketWide, profile),
           customers: vis.all,
           kitchen: prep.all || prep.branches.length > 0,
+          dispatch: this.#can(principal, "dispatch:manage", marketWide, profile) || vis.branches.some((b) => this.#can(principal, "dispatch:manage", this.#branchResource(country, b), profile)),
+          riders: this.#can(principal, "rider:manage", marketWide, profile) || vis.branches.some((b) => this.#can(principal, "rider:manage", this.#branchResource(country, b), profile)),
         };
       }
       return {

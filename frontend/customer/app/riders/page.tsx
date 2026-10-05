@@ -23,7 +23,7 @@ export default function Riders() {
               day. You see what a job pays before you take it — and turning one down never costs you the next.
             </p>
             <div className="cta-row" style={{ marginTop: 34 }}>
-              <Link className="btn accent" href="/riders/">Start riding</Link>
+              <Link className="btn accent" href="/riders/apply/">Apply to ride</Link>
               <Link className="btn light" href="/riders/">For fleet owners</Link>
             </div>
           </div>

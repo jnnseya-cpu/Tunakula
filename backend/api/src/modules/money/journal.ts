@@ -24,6 +24,8 @@ export const LEDGER_ACCOUNTS = [
   "loyalty_liability",
   "refunds",
   "cod_cash_in_transit",
+  // Cash riders have handed in at a hub, until it is banked.
+  "hub_cash",
   "rounding",
   "psp_clearing",
 ] as const;

@@ -6,13 +6,15 @@ import { api, ApiError, live, money, recallCode, setSession, STATE_LABEL, type M
 import { useSession } from "./account";
 import { localHour, modelSeconds } from "@tunakula/ts-contracts/eta-model";
 import { ClockIcon, PinIcon, useLocationCtx } from "./location";
+import { TileMap } from "./map";
 
 interface OrderView {
   order_id: string; state: string; type: string; total: MoneyWire; payment_mode: string; rider_id: string | null;
   lines: { name: string; quantity: number }[];
-  branch: { id: string; name: string; commune: string | null } | null;
+  branch: { id: string; name: string; commune: string | null; lat?: number; lng?: number } | null;
   timeline: { state: string; at: string }[];
   rider: { name: string; position?: { lat: number; lng: number; updated_at: string }; meters_to_you?: number } | null;
+  drop: { lat: number; lng: number } | null;
 }
 interface Row { order_id: string; state: string; type: string; total: MoneyWire; created_at: string; branch: { id: string; name: string; commune: string | null } }
 
@@ -97,6 +99,21 @@ export function Tracking() {
         ) : null}
         {o.state === "PENDING_PAYMENT" ? <p className="track-eta">Approve the mobile money request on your phone. This page updates by itself.</p> : null}
       </div>
+
+      {!TERMINAL.has(o.state) && o.branch?.lat !== undefined ? (
+        <TileMap
+          className="track-map"
+          height={240}
+          pins={[
+            { lat: o.branch.lat, lng: o.branch.lng!, kind: "kitchen", label: "🍲", title: o.branch.name },
+            ...(o.drop ? [{ lat: o.drop.lat, lng: o.drop.lng, kind: "drop" as const, label: "You", title: "Your door" }] : []),
+            ...(o.rider?.position ? [{ lat: o.rider.position.lat, lng: o.rider.position.lng, kind: "rider-busy" as const, label: o.rider.name.slice(0, 1), title: o.rider.name }] : []),
+          ]}
+          routes={o.drop ? [
+            ...(o.rider?.position && o.state === "PICKED_UP" ? [{ from: { lat: o.branch.lat, lng: o.branch.lng! }, to: o.rider.position, done: true }, { from: o.rider.position, to: o.drop }] : [{ from: { lat: o.branch.lat, lng: o.branch.lng! }, to: o.drop }]),
+          ] : []}
+        />
+      ) : null}
 
       {!failed ? (
         <ol className="stepper" aria-label="Progress">

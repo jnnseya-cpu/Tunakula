@@ -7,6 +7,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError, getSession, live, money, setSession, type MoneyWire } from "../lib/api";
+import { TileMap, type MapPin } from "./map";
 
 interface Job {
   order_id: string; ref: string; state: string; type: string; items: number; labels: string[];
@@ -25,6 +26,20 @@ type Pos = { lat: number; lng: number };
 
 const nav = (p: { lat: number; lng: number }) => `https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}&travelmode=two-wheeler`;
 const FAIL_REASONS: [string, string][] = [["NOBODY_PRESENT", "Nobody there"], ["ADDRESS_WRONG", "Wrong address"], ["REFUSED", "Customer refused"], ["UNSAFE", "Not safe"], ["WRONG_RECIPIENT", "Wrong person"]];
+
+function jobPins(job: Job, me: Pos | null): MapPin[] {
+  return [
+    { lat: job.pickup.lat, lng: job.pickup.lng, kind: "kitchen", label: "🍲", title: job.pickup.name },
+    ...(job.drop ? [{ lat: job.drop.lat, lng: job.drop.lng, kind: "drop" as const, label: "📍", title: job.drop.customer ?? "Customer" }] : []),
+    ...(me ? [{ lat: me.lat, lng: me.lng, kind: "me" as const, label: "Me", title: "You" }] : []),
+  ];
+}
+function jobRoutes(job: Job, me: Pos | null, toKitchen: boolean) {
+  const r = [] as { from: Pos; to: Pos; done?: boolean }[];
+  if (me && toKitchen) r.push({ from: me, to: job.pickup });
+  if (job.drop) r.push({ from: toKitchen ? job.pickup : me ?? job.pickup, to: job.drop });
+  return r;
+}
 
 function chime() {
   try {
@@ -133,7 +148,7 @@ export function RiderApp() {
   if (!live()) return <Frame><div className="r-card"><h1>Ride with Tunakula</h1><p>The rider app opens at launch.</p><Link className="r-btn" href="/riders/">How riding works</Link></div></Frame>;
   if (signedIn === null) return <Frame><div className="skeleton-line" /></Frame>;
   if (!signedIn) return <Frame><div className="r-card"><h1>Rider sign-in</h1><p>Use the phone number Tunakula registered for you.</p><Link className="r-btn go" href="/signin/?next=/rider/">Sign in with my phone</Link></div></Frame>;
-  if (notRider) return <Frame><div className="r-card"><h1>Not a rider yet</h1><p>This number is not registered as a rider. Your fleet or Tunakula operations adds you after the checks.</p><Link className="r-btn" href="/riders/">Become a rider</Link><button type="button" className="r-link" onClick={() => { setSession(null); window.location.reload(); }}>Use another number</button></div></Frame>;
+  if (notRider) return <Frame><div className="r-card"><h1>Not a rider yet</h1><p>This number is not registered as a rider. Your fleet or Tunakula operations adds you after the checks.</p><Link className="r-btn go" href="/riders/apply/">Apply to ride</Link><button type="button" className="r-link" onClick={() => { setSession(null); window.location.reload(); }}>Use another number</button></div></Frame>;
   if (!jobs) return <Frame><div className="skeleton-line" /></Frame>;
 
   const job = jobs.active[0];
@@ -149,6 +164,7 @@ export function RiderApp() {
           <div className="r-ring" style={{ ["--p" as string]: `${(left / 30) * 100}%` }}><b>{left}</b><small>s</small></div>
           <p className="r-label">You earn</p>
           <p className="r-earn">{money(offer.earnings)}</p>
+          <TileMap height={150} pins={jobPins(offer.job, pos)} routes={jobRoutes(offer.job, pos, true)} />
           <div className="r-legs">
             <div><span className="dot a" /><b>{offer.job.pickup.name}</b><small>{offer.pickup_km} km to the kitchen · {offer.job.pickup.commune ?? ""}</small></div>
             <div><span className="dot b" /><b>Customer</b><small>{offer.drop_km} km to deliver · {offer.job.items} item{offer.job.items > 1 ? "s" : ""}</small></div>
@@ -233,6 +249,7 @@ function ActiveJob({ job, pos, onDone }: { job: Job; pos: Pos | null; onDone: ()
         <span className="r-phase">{atKitchen ? "Go to the kitchen" : "Deliver to the customer"}</span>
         {job.earnings ? <span className="r-earn-sm">{money(job.earnings)}</span> : null}
       </div>
+      <TileMap height={210} pins={jobPins(job, pos)} routes={jobRoutes(job, pos, job.state !== "PICKED_UP")} />
       <ol className="r-steps">
         <li className={atKitchen ? "now" : "done"}>Pick up at {job.pickup.name}</li>
         <li className={atKitchen ? "" : "now"}>Deliver{job.drop?.customer ? ` to ${job.drop.customer}` : ""}</li>

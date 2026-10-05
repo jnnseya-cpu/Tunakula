@@ -17,6 +17,7 @@ import { createApi } from "../src/http/app.ts";
 import { TOKENS } from "../src/http/common.ts";
 import { DispatchService, KITCHEN_TIMEOUT_MIN } from "../src/app/dispatch.ts";
 import type { CommerceService } from "../src/app/commerce.ts";
+import type { PaymentService } from "../src/app/payments.ts";
 import { addBinding, verifyAuditChain, type NewBinding } from "../src/persistence/identity.ts";
 import { loadVersions, saveVersions } from "../src/persistence/config.ts";
 import { CountryConfigRegistry, GROUP_INTERNAL_BRAND, READINESS_AREAS, TUNAKULA_BRAND } from "../src/index.ts";
@@ -954,5 +955,158 @@ describe("dispatch and the rider app", () => {
     assert.ok(r.cancelled >= 1);
     const v = await call("GET", `/v1/orders/${p.orderId}`, { token: customer.token, country: "CD" });
     assert.equal(v.body.state, "CANCELLED");
+  });
+});
+
+describe("operations: dispatch board, reassigning, cash hand-ins, automatic refunds", () => {
+  const payments = () => api.get<PaymentService>(TOKENS.payments);
+
+  test("a paid order cancelled before delivery is refunded automatically, once", async () => {
+    const p = await placePrepaid();
+    await call("POST", "/v1/payments/intents", { token: customer.token, country: "CD", body: { order_id: p.orderId, method_type: "MOBILE_MONEY_PUSH", payer: { msisdn: "+243810000001" } } });
+    const cancel = await transition(customer, p.orderId, { type: "CANCEL", reasonCode: "CHANGED_MIND" });
+    assert.equal(cancel.status, 200);
+    const first = await payments().refundSweep("CD");
+    assert.ok(first.refunded >= 1);
+    const v = await call("GET", `/v1/orders/${p.orderId}`, { token: customer.token, country: "CD" });
+    assert.equal(v.body.state, "REFUNDED");
+    const [r] = await inspect("CD", "SELECT status, amount_minor::text, reason_code, refund_ref FROM payments.refund WHERE order_id = $1", [p.orderId]);
+    assert.equal(r.status, "SUCCEEDED");
+    assert.equal(r.amount_minor, p.total.amount_minor);
+    assert.ok(r.refund_ref);
+    const again = await payments().refundSweep("CD");
+    assert.equal(again.refunded, 0, "never refunded twice");
+  });
+
+  test("the dispatch board is for operations; it lists riders and orders", async () => {
+    const no = await call("GET", "/v1/ops/dispatch", { token: customer.token, country: "CD" });
+    assert.equal(no.status, 403);
+    const me = await call("GET", "/v1/me", { token: ops.token, country: "CD" });
+    assert.equal(me.body.capabilities.dispatch, true);
+    assert.equal(me.body.capabilities.riders, true);
+    const b = await call("GET", "/v1/ops/dispatch", { token: ops.token, country: "CD" });
+    assert.equal(b.status, 200);
+    const r = b.body.riders.find((x: { id: string }) => x.id === rider.userId);
+    assert.ok(r, "the rider is on the board");
+    assert.ok(["AVAILABLE", "OFFLINE", "BUSY", "OFFERED", "SIGNAL_LOST"].includes(r.status));
+    assert.match(r.cash_in_hand.amount_minor, /^-?\d+$/);
+  });
+
+  test("ops assigns a cash order to a rider; after delivery the rider holds the cash until it is handed in", async () => {
+    const q = await call("POST", "/v1/carts/quote", { country: "CD", body: cart() });
+    const placed = await call("POST", "/v1/orders", { token: customer.token, country: "CD", body: { ...cart(), payment_mode: "CASH_ON_DELIVERY", expected_total: q.body.total } });
+    assert.equal(placed.status, 201, JSON.stringify(placed.body));
+    const orderId = placed.body.order_id as string;
+    const before = (await call("GET", "/v1/rider/jobs", { token: rider.token, country: "CD" })).body.cash_in_hand.amount_minor;
+
+    const notOps = await call("POST", `/v1/ops/orders/${orderId}/assign`, { token: kitchen.token, country: "CD", body: { rider_id: rider.userId } });
+    assert.equal(notOps.status, 403);
+    const notRider = await call("POST", `/v1/ops/orders/${orderId}/assign`, { token: ops.token, country: "CD", body: { rider_id: customer.userId } });
+    assert.equal(notRider.body.code, "NOT_A_RIDER");
+    const a = await call("POST", `/v1/ops/orders/${orderId}/assign`, { token: ops.token, country: "CD", body: { rider_id: rider.userId } });
+    assert.equal(a.status, 200, JSON.stringify(a.body));
+
+    await transition(kitchen, orderId, { type: "ACCEPT" });
+    await transition(kitchen, orderId, { type: "START_PREPARING" });
+    const board = await call("GET", "/v1/kitchen/orders", { token: kitchen.token, country: "CD" });
+    const lines = board.body.orders.find((o: { order_id: string }) => o.order_id === orderId).lines.map((l: { id: string }) => l.id);
+    await transition(kitchen, orderId, { type: "PACK", confirmedLineIds: lines, packageCount: 1, allergenAcknowledged: true });
+    await transition(kitchen, orderId, { type: "MARK_READY", packages: [{ labelId: "L-CASH-1", sealId: "S-CASH-1" }], packPhotoRef: "sha256:test" });
+    await transition(rider, orderId, { type: "PICK_UP", scannedLabelIds: ["L-CASH-1"], restaurantConfirmed: true, sealsIntact: true, location: KINSHASA });
+    const done = await transition(rider, orderId, { type: "DELIVER", scannedLabelId: "L-CASH-1", location: DROP, verification: { method: "CODE", code: placed.body.recipient_code }, sealIntact: true });
+    assert.equal(done.status, 200, JSON.stringify(done.body));
+
+    const held = (await call("GET", "/v1/rider/jobs", { token: rider.token, country: "CD" })).body.cash_in_hand.amount_minor;
+    assert.equal(BigInt(held) - BigInt(before), BigInt(q.body.total.amount_minor), "the cash collected at the door is in hand");
+
+    const tooMuch = await call("POST", `/v1/ops/riders/${rider.userId}/cash-in`, { token: ops.token, country: "CD", body: { amount_minor: (BigInt(held) + 1n).toString() } });
+    assert.equal(tooMuch.body.code, "MORE_THAN_HELD");
+    const bad = await call("POST", `/v1/ops/riders/${rider.userId}/cash-in`, { token: ops.token, country: "CD", body: { amount_minor: "-5" } });
+    assert.equal(bad.status, 400);
+    const ok = await call("POST", `/v1/ops/riders/${rider.userId}/cash-in`, { token: ops.token, country: "CD", body: { amount_minor: held, note: "Gombe hub" } });
+    assert.equal(ok.status, 200, JSON.stringify(ok.body));
+    assert.equal(ok.body.cash_in_hand.amount_minor, "0");
+    assert.equal((await call("GET", "/v1/rider/jobs", { token: rider.token, country: "CD" })).body.cash_in_hand.amount_minor, "0");
+    const [hub] = await inspect("CD", "SELECT sum(amount_minor)::text AS s FROM money.ledger_entry WHERE account = 'hub_cash'");
+    assert.ok(BigInt(hub.s) >= BigInt(held), "the hand-in is in the books");
+    const [bal] = await inspect("CD", "SELECT currency, sum(amount_minor)::text AS s FROM money.ledger_entry GROUP BY currency");
+    assert.equal(bal.s, "0", "the ledger still balances");
+  });
+});
+
+describe("rider self-registration with ID checks", () => {
+  // Tiny but real image headers: the API checks magic bytes, not just the declared type.
+  const jpeg = (seed: number) => Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(64, seed), Buffer.from([0xff, 0xd9])]).toString("base64");
+  const upload = (who: { token: string }, purpose: string, seed: number) =>
+    call("POST", "/v1/media", { token: who.token, country: "CD", body: { purpose, content_type: "image/jpeg", data_base64: jpeg(seed) } });
+  let applicant: { token: string; userId: string };
+  let appId: string;
+
+  test("photos are checked for what they really are and stay private", async () => {
+    applicant = await signIn("+243810000090");
+    const fake = await call("POST", "/v1/media", { token: applicant.token, country: "CD", body: { purpose: "RIDER_ID", content_type: "image/jpeg", data_base64: Buffer.from("not an image").toString("base64") } });
+    assert.equal(fake.body.code, "IMAGE_MISMATCH");
+    const up = await upload(applicant, "RIDER_ID", 1);
+    assert.equal(up.status, 201);
+    assert.equal(up.body.sha256.length, 64);
+    assert.equal((await call("GET", `/v1/media/${up.body.id}`, { token: applicant.token, country: "CD" })).status, 200);
+    assert.equal((await call("GET", `/v1/media/${up.body.id}`, { token: customer.token, country: "CD" })).status, 404, "nobody else can open it");
+    assert.equal((await call("GET", `/v1/media/${up.body.id}`, { token: ops.token, country: "CD" })).status, 200, "rider reviewers can");
+  });
+
+  test("automatic checks: age, ID format, distinct photos, licence for motorbikes", async () => {
+    const id = (await upload(applicant, "RIDER_ID", 2)).body.id;
+    const selfie = (await upload(applicant, "RIDER_SELFIE", 3)).body.id;
+    const base = { full_name: "Jonas Kabeya", date_of_birth: "1996-04-12", zones: ["gombe"], vehicle: "BICYCLE", id_type: "VOTER_CARD", id_number: "1234 5678 90", id_photo: id, selfie };
+    const young = await call("POST", "/v1/rider-applications", { token: applicant.token, country: "CD", body: { ...base, date_of_birth: "2012-01-01" } });
+    assert.equal(young.body.code, "CHECKS_FAILED");
+    const badId = await call("POST", "/v1/rider-applications", { token: applicant.token, country: "CD", body: { ...base, id_number: "AB" } });
+    assert.equal(badId.body.code, "CHECKS_FAILED");
+    const moto = await call("POST", "/v1/rider-applications", { token: applicant.token, country: "CD", body: { ...base, vehicle: "MOTO" } });
+    assert.equal(moto.body.code, "CHECKS_FAILED", "a motorbike needs a licence photo and plate");
+    const notMine = await call("POST", "/v1/rider-applications", { token: customer.token, country: "CD", body: base });
+    assert.equal(notMine.body.code, "PHOTO_INVALID", "you cannot apply with someone else's documents");
+    const zone = await call("POST", "/v1/rider-applications", { token: applicant.token, country: "CD", body: { ...base, zones: ["paris"] } });
+    assert.equal(zone.body.code, "ZONES_INVALID");
+    const ok = await call("POST", "/v1/rider-applications", { token: applicant.token, country: "CD", body: base });
+    assert.equal(ok.status, 201, JSON.stringify(ok.body));
+    assert.equal(ok.body.status, "PENDING");
+    assert.ok(ok.body.checks.every((c: { ok: boolean }) => c.ok));
+    appId = ok.body.id;
+    const twice = await call("POST", "/v1/rider-applications", { token: applicant.token, country: "CD", body: base });
+    assert.equal(twice.body.code, "APPLICATION_OPEN");
+    const presence = await call("POST", "/v1/rider/presence", { token: applicant.token, country: "CD", body: { online: true, lat: KINSHASA.lat, lng: KINSHASA.lng } });
+    assert.equal(presence.status, 403, "not a rider until approved");
+  });
+
+  test("the same ID on a second person is flagged for a human, who must give a reason to approve", async () => {
+    const other = await signIn("+243810000091");
+    const id = (await call("POST", "/v1/media", { token: other.token, country: "CD", body: { purpose: "RIDER_ID", content_type: "image/jpeg", data_base64: jpeg(7) } })).body.id;
+    const selfie = (await call("POST", "/v1/media", { token: other.token, country: "CD", body: { purpose: "RIDER_SELFIE", content_type: "image/jpeg", data_base64: jpeg(8) } })).body.id;
+    const r = await call("POST", "/v1/rider-applications", { token: other.token, country: "CD", body: { full_name: "Paul Mbala", date_of_birth: "1990-02-02", zones: ["gombe"], vehicle: "FOOT", id_type: "VOTER_CARD", id_number: "1234567890", id_photo: id, selfie } });
+    assert.equal(r.status, 201);
+    assert.equal(r.body.checks.find((c: { code: string }) => c.code === "DUPLICATE_ID").ok, false);
+    const noNote = await call("POST", `/v1/ops/rider-applications/${r.body.id}/approve`, { token: ops.token, country: "CD", body: {} });
+    assert.equal(noNote.body.code, "NOTE_REQUIRED");
+    const noReason = await call("POST", `/v1/ops/rider-applications/${r.body.id}/reject`, { token: ops.token, country: "CD", body: {} });
+    assert.equal(noReason.body.code, "REASON_REQUIRED");
+    const rej = await call("POST", `/v1/ops/rider-applications/${r.body.id}/reject`, { token: ops.token, country: "CD", body: { note: "This voter card belongs to another applicant" } });
+    assert.equal(rej.body.status, "REJECTED");
+    const mine = await call("GET", "/v1/rider-applications/mine", { token: other.token, country: "CD" });
+    assert.equal(mine.body.data[0].decision_note, "This voter card belongs to another applicant");
+  });
+
+  test("approval makes the applicant a rider in the chosen communes; only reviewers decide", async () => {
+    const list = await call("GET", "/v1/ops/rider-applications", { token: ops.token, country: "CD" });
+    assert.ok(list.body.data.some((a: { id: string }) => a.id === appId));
+    assert.equal((await call("GET", "/v1/ops/rider-applications", { token: customer.token, country: "CD" })).status, 403);
+    assert.equal((await call("POST", `/v1/ops/rider-applications/${appId}/approve`, { token: kitchen.token, country: "CD", body: {} })).status, 403);
+    const ok = await call("POST", `/v1/ops/rider-applications/${appId}/approve`, { token: ops.token, country: "CD", body: {} });
+    assert.equal(ok.body.status, "APPROVED");
+    const again = await call("POST", `/v1/ops/rider-applications/${appId}/approve`, { token: ops.token, country: "CD", body: {} });
+    assert.equal(again.body.code, "ALREADY_DECIDED");
+    const online = await call("POST", "/v1/rider/presence", { token: applicant.token, country: "CD", body: { online: true, lat: KINSHASA.lat, lng: KINSHASA.lng } });
+    assert.equal(online.status, 200, "the new rider can go online");
+    assert.equal((await call("GET", "/v1/rider-applications/mine", { token: applicant.token, country: "CD" })).body.is_rider, true);
   });
 });
