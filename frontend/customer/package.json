@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "screenshots": "node scripts/screenshots.mjs",
     "fx:update": "node scripts/fetch-fx.mjs",
-    "catalogue:build": "node scripts/build-catalogue.mjs"
+    "catalogue:build": "node scripts/build-catalogue.mjs",
+    "import:legacy": "node scripts/import-legacy.mjs"
   },
   "devDependencies": {
     "@types/react": "^19",

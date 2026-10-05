@@ -86,7 +86,8 @@ Each screen builds on the engine that already exists, so the work is wide rather
 
 The four live Kinshasa restaurants on cd.tunakula.com (Lagrâce Cuisine, Bin's Restaurant, NickyB ETS, Tacos Land) — their names, addresses, cuisines, ratings, full menus (85 dishes with real prices), logos, covers and every dish photo — were read from the legacy public catalogue API and now drive the website's storefronts, replacing the earlier illustrative samples. Pipeline (all in `frontend/customer`):
 
-- `lib/catalogue.source.json` — canonical snapshot (prices kept in the restaurants' own USD).
+- `scripts/import-legacy.mjs` (`npm run import:legacy`) — pulls **every restaurant the catalogue API currently serves** (all zones), with full menus and photos, and regenerates the two files below. The API only publishes restaurants that are active, approved and in a served zone; ones pending approval, disabled or unzoned are withheld by the platform from every public endpoint, so they appear automatically the moment they are activated in admin — the same command then imports them all with no code change.
+- `lib/catalogue.source.json` — canonical snapshot the importer writes (prices kept in the restaurants' own USD).
 - `scripts/fetch-fx.mjs` (`npm run fx:update`) — fetches a live USD→CDF rate from free, no-key providers into `lib/fx-rate.json`; falls back to the committed rate when the network is restricted.
 - `scripts/build-catalogue.mjs` (`npm run catalogue:build`) — regenerates `lib/catalogue.ts`, converting USD→CDF at the fetched rate (rounded to 100 FC).
 - `public/photos/` — the imported images; `public/photos/SOURCES.tsv` records each file's source URL.

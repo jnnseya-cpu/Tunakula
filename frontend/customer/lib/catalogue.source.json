@@ -1,7 +1,7 @@
 {
-  "_note": "Canonical storefront data imported from cd.tunakula.com on 2026-10-05. Prices are the restaurants' own US-dollar menus; scripts/build-catalogue.mjs converts them to CDF using scripts/fetch-fx.mjs. Do not hand-edit catalogue.ts.",
+  "_note": "Canonical storefront data imported from the live Tunakula RDC catalogue by scripts/import-legacy.mjs. Prices are the restaurants' own US-dollar menus; scripts/build-catalogue.mjs converts them to CDF using scripts/fetch-fx.mjs. Do not hand-edit catalogue.ts.",
   "importedAt": "2026-10-05",
-  "source": "https://cd.tunakula.com",
+  "source": "https://cd.tunakula.com/api/v1",
   "merchants": [
     {
       "slug": "lagrace-cuisine",
@@ -15,7 +15,7 @@
       "commune": "Gombe",
       "landmark": "Avenue bourgmestre N4384 ,blvd 30 juin derrière waikiki gombe.kinshasha -rdcongo",
       "hours": "07:00 – 20:00",
-      "rating": 5.0,
+      "rating": 5,
       "ratings": 2,
       "location": {
         "lat": -4.309795,
@@ -52,7 +52,7 @@
               "id": "lagrace-cuisine--2384",
               "name": "Liboke",
               "description": "",
-              "usd": 1.0,
+              "usd": 1,
               "recipe": "liboke",
               "photo": "https://cd.tunakula.com/storage/app/public/product/2026-01-21-69710f6b05952.png",
               "tags": [],
@@ -574,10 +574,10 @@
       "name": "Bin's Restaurant",
       "kind": "Restaurant",
       "cuisine": "Cuisine Africaine",
-      "commune": "Kinshasa",
+      "commune": "Mont-Ngafula",
       "landmark": "Cité mama mobutu, Av: de l'église, Villa 101, Mont-Ngafula",
       "hours": "09:00 – 18:00",
-      "rating": 0.0,
+      "rating": 0,
       "ratings": 0,
       "location": {
         "lat": -4.415038,
@@ -701,6 +701,79 @@
       ]
     },
     {
+      "slug": "tacos-land",
+      "legacyId": 27,
+      "zone": 31,
+      "logoUrl": "https://cd.tunakula.com/storage/app/public/restaurant/2025-04-10-67f8322ddc945.png",
+      "coverUrl": "https://cd.tunakula.com/storage/app/public/restaurant/cover/2025-04-10-67f8322de00b0.png",
+      "name": "Tacos Land",
+      "kind": "Restaurant",
+      "cuisine": "Cuisine Européenne",
+      "commune": "Lingwala",
+      "landmark": "280, Avenue kalembe-Lembe  C.Lingwala, Réf: Maiison communale de lingwala",
+      "hours": "11:00 – 18:00",
+      "rating": 0,
+      "ratings": 0,
+      "location": {
+        "lat": -4.32607,
+        "lng": 15.296808
+      },
+      "prep": 18,
+      "monogram": "TL",
+      "tone": {
+        "bg": "#27402a",
+        "fg": "#eef0e2",
+        "accent": "#d9b24a"
+      },
+      "cover": [
+        "brochettes",
+        "pain",
+        "poisson"
+      ],
+      "about": "Fast-food",
+      "menu": [
+        {
+          "section": "Tacos",
+          "items": [
+            {
+              "id": "tacos-land--2371",
+              "name": "Tacos Viande + Poulet",
+              "description": "",
+              "usd": 10.19,
+              "recipe": "brochettes",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-04-11-67f8c02741c89.png",
+              "tags": [
+                "Popular"
+              ],
+              "allergens": []
+            },
+            {
+              "id": "tacos-land--2369",
+              "name": "Tacos  Viandé",
+              "description": "",
+              "usd": 7.2,
+              "recipe": "pain",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-04-11-67f8b7f3b8d4b.png",
+              "tags": [],
+              "allergens": []
+            },
+            {
+              "id": "tacos-land--2368",
+              "name": "Tacos Poulet",
+              "description": "",
+              "usd": 6.72,
+              "recipe": "brochettes",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-04-11-67f8b536bc1ae.png",
+              "tags": [
+                "Popular"
+              ],
+              "allergens": []
+            }
+          ]
+        }
+      ]
+    },
+    {
       "slug": "nickyb-ets",
       "legacyId": 25,
       "zone": 32,
@@ -712,7 +785,7 @@
       "commune": "Kasa-Vubu",
       "landmark": "Djolu No 22 , Kasa-Vubu",
       "hours": "09:00 – 23:00",
-      "rating": 0.0,
+      "rating": 0,
       "ratings": 0,
       "location": {
         "lat": -4.343114,
@@ -721,9 +794,9 @@
       "prep": 18,
       "monogram": "NE",
       "tone": {
-        "bg": "#27402a",
-        "fg": "#eef0e2",
-        "accent": "#d9b24a"
+        "bg": "#2a1d16",
+        "fg": "#f3e6d6",
+        "accent": "#e0643a"
       },
       "cover": [
         "beignets",
@@ -978,7 +1051,7 @@
               "id": "nickyb-ets--1097",
               "name": "Makayabu",
               "description": "Carton Makayabu",
-              "usd": 110.0,
+              "usd": 110,
               "recipe": "poisson",
               "photo": "https://cd.tunakula.com/storage/app/public/product/2025-03-12-67d1ba91b8fa3.png",
               "tags": [],
@@ -1020,7 +1093,7 @@
               "id": "nickyb-ets--1091",
               "name": "Makayabu",
               "description": "1Kg Makayabu",
-              "usd": 11.0,
+              "usd": 11,
               "recipe": "poisson",
               "photo": "https://cd.tunakula.com/storage/app/public/product/2025-03-12-67d1b2890d07b.png",
               "tags": [
@@ -1076,79 +1149,6 @@
               "recipe": "poisson",
               "photo": "https://cd.tunakula.com/storage/app/public/product/2025-03-12-67d19cca2a815.png",
               "tags": [],
-              "allergens": []
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "slug": "tacos-land",
-      "legacyId": 27,
-      "zone": 31,
-      "logoUrl": "https://cd.tunakula.com/storage/app/public/restaurant/2025-04-10-67f8322ddc945.png",
-      "coverUrl": "https://cd.tunakula.com/storage/app/public/restaurant/cover/2025-04-10-67f8322de00b0.png",
-      "name": "Tacos Land",
-      "kind": "Restaurant",
-      "cuisine": "Cuisine Européenne",
-      "commune": "Lingwala",
-      "landmark": "280, Avenue kalembe-Lembe  C.Lingwala, Réf: Maiison communale de lingwala",
-      "hours": "11:00 – 18:00",
-      "rating": 0.0,
-      "ratings": 0,
-      "location": {
-        "lat": -4.32607,
-        "lng": 15.296808
-      },
-      "prep": 18,
-      "monogram": "TL",
-      "tone": {
-        "bg": "#2a1d16",
-        "fg": "#f3e6d6",
-        "accent": "#e0643a"
-      },
-      "cover": [
-        "brochettes",
-        "pain",
-        "poisson"
-      ],
-      "about": "Fast-food",
-      "menu": [
-        {
-          "section": "Tacos",
-          "items": [
-            {
-              "id": "tacos-land--2371",
-              "name": "Tacos Viande + Poulet",
-              "description": "",
-              "usd": 10.19,
-              "recipe": "brochettes",
-              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-04-11-67f8c02741c89.png",
-              "tags": [
-                "Popular"
-              ],
-              "allergens": []
-            },
-            {
-              "id": "tacos-land--2369",
-              "name": "Tacos  Viandé",
-              "description": "",
-              "usd": 7.2,
-              "recipe": "pain",
-              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-04-11-67f8b7f3b8d4b.png",
-              "tags": [],
-              "allergens": []
-            },
-            {
-              "id": "tacos-land--2368",
-              "name": "Tacos Poulet",
-              "description": "",
-              "usd": 6.72,
-              "recipe": "brochettes",
-              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-04-11-67f8b536bc1ae.png",
-              "tags": [
-                "Popular"
-              ],
               "allergens": []
             }
           ]
