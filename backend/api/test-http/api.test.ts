@@ -14,6 +14,9 @@ import { DevOtpOutbox } from "../src/app/auth.ts";
 import { testDatabase } from "../src/db/testing.ts";
 import type { Db } from "../src/db/db.ts";
 import { createApi } from "../src/http/app.ts";
+import { TOKENS } from "../src/http/common.ts";
+import { DispatchService, KITCHEN_TIMEOUT_MIN } from "../src/app/dispatch.ts";
+import type { CommerceService } from "../src/app/commerce.ts";
 import { addBinding, verifyAuditChain, type NewBinding } from "../src/persistence/identity.ts";
 import { loadVersions, saveVersions } from "../src/persistence/config.ts";
 import { CountryConfigRegistry, GROUP_INTERNAL_BRAND, READINESS_AREAS, TUNAKULA_BRAND } from "../src/index.ts";
@@ -842,5 +845,114 @@ describe("kitchen board", () => {
     assert.equal((await call("POST", "/v1/carts/quote", { country: "CD", body: cart() })).status, 200);
     const bad = await call("POST", `/v1/kitchen/branches/${branchId}/status`, { token: restaurantOwner.token, country: "CD", body: { status: "CLOSED_FOREVER" } });
     assert.equal(bad.status, 400);
+  });
+});
+
+describe("dispatch and the rider app", () => {
+  const dispatcher = () => api.get<DispatchService>(TOKENS.dispatch);
+  const placePaid = async () => {
+    const p = await placePrepaid();
+    await call("POST", "/v1/payments/intents", { token: customer.token, country: "CD", body: { order_id: p.orderId, method_type: "MOBILE_MONEY_PUSH", payer: { msisdn: "+243810000001" } } });
+    return p;
+  };
+
+  test("only riders go online, and only with a position", async () => {
+    const notRider = await call("POST", "/v1/rider/presence", { token: customer.token, country: "CD", body: { online: true, lat: KINSHASA.lat, lng: KINSHASA.lng } });
+    assert.equal(notRider.status, 403);
+    const noPos = await call("POST", "/v1/rider/presence", { token: rider.token, country: "CD", body: { online: true } });
+    assert.equal(noPos.status, 400);
+    assert.equal(noPos.body.code, "LOCATION_REQUIRED");
+    const on = await call("POST", "/v1/rider/presence", { token: rider.token, country: "CD", body: { online: true, lat: KINSHASA.lat, lng: KINSHASA.lng } });
+    assert.equal(on.status, 200);
+    assert.equal(on.body.online, true);
+    assert.ok(on.body.online_since);
+  });
+
+  test("an order that needs a rider is offered to the nearest free rider, with distance and earnings up front", async () => {
+    // Earlier tests left orders waiting; settle them so this rider is free.
+    await db.tx({ country: "CD" }, (sql) => sql.query("UPDATE dispatch.offer SET status = 'WITHDRAWN' WHERE status = 'OFFERED'"));
+    const p = await placePaid();
+    let offer: any = null;
+    for (let i = 0; i < 12 && offer?.job?.order_id !== p.orderId; i++) {
+      await dispatcher().tick("CD");
+      offer = (await call("GET", "/v1/rider/jobs", { token: rider.token, country: "CD" })).body.offer;
+      if (offer && offer.job.order_id !== p.orderId) await call("POST", `/v1/rider/offers/${offer.id}/decline`, { token: rider.token, country: "CD", body: { reason: "test" } });
+    }
+    assert.equal(offer?.job.order_id, p.orderId, "the new order is offered");
+    assert.ok(offer.seconds_left > 0 && offer.seconds_left <= 30);
+    assert.match(offer.pickup_km, /^\d+\.\d$/);
+    assert.ok(Number(offer.drop_km) > 0);
+    assert.ok(BigInt(offer.earnings.amount_minor) > 0n, "the rider sees what they will earn");
+    assert.equal(offer.job.pickup.branch_id, branchId);
+    assert.ok(offer.job.drop.lat);
+    // The kitchen cannot accept a RIDER_FIRST order before a rider is secured.
+    const early = await transition(kitchen, p.orderId, { type: "ACCEPT" });
+    assert.equal(early.body.code, "RIDER_FIRST");
+
+    const someoneElse = await call("POST", `/v1/rider/offers/${offer.id}/accept`, { token: customer.token, country: "CD" });
+    assert.equal(someoneElse.status, 404, "an offer belongs to one rider");
+    const ok = await call("POST", `/v1/rider/offers/${offer.id}/accept`, { token: rider.token, country: "CD" });
+    assert.equal(ok.status, 200);
+    assert.equal(ok.body.status, "ACCEPTED");
+    const again = await call("POST", `/v1/rider/offers/${offer.id}/accept`, { token: rider.token, country: "CD" });
+    assert.equal(again.body.code, "OFFER_CLOSED");
+    const jobs = await call("GET", "/v1/rider/jobs", { token: rider.token, country: "CD" });
+    assert.ok(jobs.body.active.some((j: { order_id: string }) => j.order_id === p.orderId));
+    assert.equal(jobs.body.offer, null, "a busy rider gets no new offer");
+    assert.equal((await transition(kitchen, p.orderId, { type: "ACCEPT" })).status, 200, "now the kitchen can accept");
+
+    // The customer sees who is coming and, once picked up, how far away they are.
+    const view = await call("GET", `/v1/orders/${p.orderId}`, { token: customer.token, country: "CD" });
+    assert.ok(view.body.rider.name);
+    assert.ok(view.body.rider.position, "the rider's position is shared while the order is with them");
+  });
+
+  test("declined and expired offers move on; nobody is asked twice; going offline withdraws the offer", async () => {
+    // Free the rider by finishing their job the quick way (ops reassigns elsewhere is out of scope here).
+    const busy = (await call("GET", "/v1/rider/jobs", { token: rider.token, country: "CD" })).body.active;
+    for (const j of busy) await transition(ops, j.order_id, { type: "CANCEL", reasonCode: "TEST_CLEANUP" });
+    const p = await placePaid();
+    let offer: any = null;
+    for (let i = 0; i < 12 && offer?.job?.order_id !== p.orderId; i++) {
+      await dispatcher().tick("CD");
+      offer = (await call("GET", "/v1/rider/jobs", { token: rider.token, country: "CD" })).body.offer;
+      if (offer && offer.job.order_id !== p.orderId) await call("POST", `/v1/rider/offers/${offer.id}/decline`, { token: rider.token, country: "CD" });
+    }
+    assert.equal(offer?.job.order_id, p.orderId);
+    const no = await call("POST", `/v1/rider/offers/${offer.id}/decline`, { token: rider.token, country: "CD", body: { reason: "Too far" } });
+    assert.equal(no.body.status, "DECLINED");
+    await dispatcher().tick("CD");
+    const after = (await call("GET", "/v1/rider/jobs", { token: rider.token, country: "CD" })).body.offer;
+    assert.notEqual(after?.job.order_id, p.orderId, "a rider who said no is not asked again for the same order");
+
+    // Expiry: an offer past its time is closed by the next pass.
+    const p2 = await placePaid();
+    let o2: any = null;
+    for (let i = 0; i < 12 && o2?.job?.order_id !== p2.orderId; i++) {
+      await dispatcher().tick("CD");
+      o2 = (await call("GET", "/v1/rider/jobs", { token: rider.token, country: "CD" })).body.offer;
+      if (o2 && o2.job.order_id !== p2.orderId) await call("POST", `/v1/rider/offers/${o2.id}/decline`, { token: rider.token, country: "CD" });
+    }
+    await db.tx({ country: "CD" }, (sql) => sql.query("UPDATE dispatch.offer SET expires_at = now() - interval '1 second' WHERE id = $1", [o2.id]));
+    const late = await call("POST", `/v1/rider/offers/${o2.id}/accept`, { token: rider.token, country: "CD" });
+    assert.equal(late.body.code, "OFFER_EXPIRED");
+
+    // Offline: the rider gets nothing, and any open offer is withdrawn.
+    await call("POST", "/v1/rider/presence", { token: rider.token, country: "CD", body: { online: false } });
+    await dispatcher().tick("CD");
+    assert.equal((await call("GET", "/v1/rider/jobs", { token: rider.token, country: "CD" })).body.offer, null);
+    const jobs = await call("GET", "/v1/rider/jobs", { token: rider.token, country: "CD" });
+    assert.equal(jobs.body.presence.online, false);
+    assert.match(jobs.body.today.earnings.amount_minor, /^\d+$/);
+    assert.match(jobs.body.cash_in_hand.amount_minor, /^\d+$/);
+  });
+
+  test("an order no kitchen answers in time is cancelled for the customer", async () => {
+    const p = await placePaid();
+    const later = new DispatchService(db, api.get<CommerceService>(TOKENS.commerce), () => new Date(Date.now() + (KITCHEN_TIMEOUT_MIN + 1) * 60_000));
+    const r = await later.tick("CD");
+    assert.ok(r.cancelled >= 1);
+    const v = await call("GET", `/v1/orders/${p.orderId}`, { token: customer.token, country: "CD" });
+    assert.equal(v.body.state, "CANCELLED");
   });
 });

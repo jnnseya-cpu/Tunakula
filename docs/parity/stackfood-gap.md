@@ -19,7 +19,7 @@ Legend: **Built** works end to end · **Partial** the engine or a screen exists,
 | Cart and checkout: delivery, takeaway, dine-in, scheduled | Built for delivery and takeaway (live quote, directions, tip); dine-in and scheduled missing |
 | Pay: mobile money, card, cash, wallet, partial payment | Built: mobile money, card, cash on delivery; wallet and partial payment missing |
 | Coupons, cashback, campaigns | Missing |
-| Live order tracking with map and rider | Partial: live progress, door code, ETA; map and rider position missing |
+| Live order tracking with map and rider | Partial: live progress, door code, rider name, distance and arrival time; map tiles missing |
 | Order history, reorder, cancel with reason, refund request | Built: history, order again, cancel; refund request missing |
 | Reviews and ratings | Missing |
 | Chat with restaurant and rider; push and SMS notifications | Missing |
@@ -49,9 +49,9 @@ Legend: **Built** works end to end · **Partial** the engine or a screen exists,
 
 | Feature | Status |
 | --- | --- |
-| Go online / offline, shifts | Missing |
-| Job offers, accept, navigation, pick up, deliver with code and photo | Partial: API built, no app |
-| Earnings, wallet, cash in hand, remittance | Partial: ledger only |
+| Go online / offline, shifts | Built: online/offline with GPS (position shared only while online or carrying an order); shifts missing |
+| Job offers, accept, navigation, pick up, deliver with code and photo | Built: automatic nearest-rider offers (30 s, earnings shown first, no penalty for saying no), navigation links, bag check at pickup, code + GPS + photo at the door, failed-delivery report |
+| Earnings, wallet, cash in hand, remittance | Partial: today's earnings and cash in hand shown; withdrawals and cash hand-in recording missing |
 | Vehicles, documents, self-registration | Missing |
 
 ## Admin
@@ -60,7 +60,7 @@ Legend: **Built** works end to end · **Partial** the engine or a screen exists,
 | --- | --- |
 | Dashboard with charts per role | Built |
 | Orders list, detail, cancel | Built |
-| Dispatch management (assign or reassign riders, live map) | Missing |
+| Dispatch management (assign or reassign riders, live map) | Partial: automatic dispatch and kitchen timeouts built; ops screen to watch and reassign missing |
 | Refunds | Partial: API |
 | Zones (polygons, fees per zone) | Missing |
 | Cuisines, categories, add-ons, foods, bulk import/export | Partial: per-restaurant menu only |

@@ -118,6 +118,8 @@ export interface OrderSnapshot {
   /** SHA-256 hex of the recipient's one-time code; the code itself is never stored. */
   readonly recipientCodeHash: string;
   readonly dropLocation?: GeoPoint;
+  /** Directions for the rider ("blue gate opposite the pharmacy"). Free text: never allergen or payment data. */
+  readonly deliveryNote?: string;
   readonly geofenceRadiusM: number;
 }
 

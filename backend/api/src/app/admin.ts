@@ -605,7 +605,7 @@ export class AdminService {
           payment_mode: o.payment_mode,
           total: { amount_minor: o.total_minor, currency: o.currency },
           branch_id: o.branch_id,
-          customer: o.customer_name ? o.customer_name.split(/\s+/)[0] : null,
+          customer: o.customer_name && o.customer_name !== "Tunakula customer" ? o.customer_name.split(/\s+/)[0] : null,
           rider: o.rider_id ? { id: o.rider_id, name: o.rider_name ?? "Rider" } : null,
           lines: ((o.lines ?? []) as { id: string; name: string; quantity: number; options?: string[]; allergenFlags?: string[]; note?: string }[]).map((l) => ({
             id: l.id, name: l.name, quantity: l.quantity, options: l.options ?? [], allergens: l.allergenFlags ?? [], ...(l.note ? { note: l.note } : {}),

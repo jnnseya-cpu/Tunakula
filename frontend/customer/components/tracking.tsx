@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { api, ApiError, live, money, recallCode, setSession, STATE_LABEL, type MoneyWire } from "../lib/api";
 import { useSession } from "./account";
+import { localHour, modelSeconds } from "@tunakula/ts-contracts/eta-model";
 import { ClockIcon, PinIcon, useLocationCtx } from "./location";
 
 interface OrderView {
@@ -11,12 +12,15 @@ interface OrderView {
   lines: { name: string; quantity: number }[];
   branch: { id: string; name: string; commune: string | null } | null;
   timeline: { state: string; at: string }[];
+  rider: { name: string; position?: { lat: number; lng: number; updated_at: string }; meters_to_you?: number } | null;
 }
 interface Row { order_id: string; state: string; type: string; total: MoneyWire; created_at: string; branch: { id: string; name: string; commune: string | null } }
 
 const RIDER_STEPS = ["PLACED", "ACCEPTED", "PREPARING", "READY", "PICKED_UP", "DELIVERED"];
 const COUNTER_STEPS = ["PLACED", "ACCEPTED", "PREPARING", "READY", "DELIVERED"];
 const STEP_LABEL: Record<string, string> = { PLACED: "Order sent", ACCEPTED: "Accepted", PREPARING: "Cooking", READY: "Ready", PICKED_UP: "On the way", DELIVERED: "Delivered" };
+/** Minutes for the rider to reach the door: road distance at this hour's traffic, plus parking and stairs. */
+const riderMinutes = (meters: number) => Math.max(2, Math.round(modelSeconds(meters, "MOTO", localHour(new Date(), "Africa/Kinshasa")) / 60) + 2);
 const TERMINAL = new Set(["DELIVERED", "CANCELLED", "REJECTED", "REFUNDED", "EXPIRED", "DELIVERY_FAILED", "PAYMENT_FAILED"]);
 const time = (iso: string) => new Date(iso).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: "Africa/Kinshasa" });
 const day = (iso: string) => new Date(iso).toLocaleDateString("fr-FR", { day: "numeric", month: "short", timeZone: "Africa/Kinshasa" });
@@ -78,8 +82,18 @@ export function Tracking() {
       <div className={`track-hero ${failed ? "bad" : o.state === "DELIVERED" ? "done" : ""}`}>
         <p className="eyebrow light">{o.branch?.name}{o.branch?.commune ? ` · ${o.branch.commune}` : ""}</p>
         <h1>{STATE_LABEL[o.state] ?? o.state}</h1>
-        {!TERMINAL.has(o.state) && eta && o.type === "DELIVERY" ? (
+        {o.state === "PICKED_UP" && o.rider?.meters_to_you !== undefined ? (
+          <p className="track-eta"><ClockIcon /> Arriving in about <b>{riderMinutes(o.rider.meters_to_you)} min</b></p>
+        ) : !TERMINAL.has(o.state) && eta && o.type === "DELIVERY" ? (
           <p className="track-eta"><ClockIcon /> Arriving in about <b>{eta.eta.low}–{eta.eta.high} min</b> · <PinIcon /> {eta.distance_km} km away</p>
+        ) : null}
+        {o.rider && !TERMINAL.has(o.state) ? (
+          <p className="track-rider">
+            <span className="rider-avatar" aria-hidden>{o.rider.name.slice(0, 1)}</span>
+            {o.state === "PICKED_UP"
+              ? <>{o.rider.name} is on the way{o.rider.meters_to_you !== undefined ? <> · <b>{(o.rider.meters_to_you / 1000).toFixed(1)} km</b> from you</> : null}</>
+              : <>{o.rider.name} will bring your order</>}
+          </p>
         ) : null}
         {o.state === "PENDING_PAYMENT" ? <p className="track-eta">Approve the mobile money request on your phone. This page updates by itself.</p> : null}
       </div>

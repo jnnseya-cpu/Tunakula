@@ -182,6 +182,7 @@ export class CommerceService {
         contactlessRequested: input.contactless === true,
         recipientCodeHash: createHash("sha256").update(recipientCode).digest("hex"),
         ...(input.delivery ? { dropLocation: { lat: input.delivery.lat, lng: input.delivery.lng } } : {}),
+        ...(input.address?.landmark?.trim() ? { deliveryNote: input.address.landmark.trim().slice(0, 280) } : {}),
         geofenceRadiusM: GEOFENCE_M,
       };
       const actor: Actor = { kind: "CUSTOMER", id: principal.userId };
@@ -252,9 +253,9 @@ export class CommerceService {
   }
 
   /** Called by payments when the provider confirms or fails (system actor). */
-  async systemCommand(sql: Sql, country: string, orderId: string, commandId: string, command: OrderCommand) {
+  async systemCommand(sql: Sql, country: string, orderId: string, commandId: string, command: OrderCommand, system = "payments") {
     const { order } = await this.#load(sql, orderId);
-    return this.#run(sql, { country, brandId: order.snapshot.brandId }, orderId, { kind: "SYSTEM", id: "payments" }, commandId, command);
+    return this.#run(sql, { country, brandId: order.snapshot.brandId }, orderId, { kind: "SYSTEM", id: system }, commandId, command);
   }
 
   async #load(sql: Sql, orderId: string) {

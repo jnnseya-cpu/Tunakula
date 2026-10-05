@@ -9,6 +9,7 @@ import { AuthService, type OtpSender } from "../app/auth.ts";
 import { CatalogueService } from "../app/catalogue.ts";
 import { CommerceService } from "../app/commerce.ts";
 import { ConfigService } from "../app/config.ts";
+import { DispatchService } from "../app/dispatch.ts";
 import { EtaService } from "../app/eta.ts";
 import { PaymentService } from "../app/payments.ts";
 import { straightLineRouting, type RoutingProvider } from "../app/routing.ts";
@@ -17,7 +18,7 @@ import type { Db } from "../db/db.ts";
 import type { CountryConfigRegistry } from "../modules/config/config-registry.ts";
 import { PaymentRouter } from "../modules/payments/payment-router.ts";
 import { IdempotencyInterceptor, ProblemFilter, TOKENS } from "./common.ts";
-import { AdminConfigController, AdminController, AuthController, KitchenController, MeController, CatalogueController, OrdersController, PaymentsController, PlatformController, WebhooksController } from "./controllers.ts";
+import { AdminConfigController, AdminController, AuthController, KitchenController, MeController, RiderController, CatalogueController, OrdersController, PaymentsController, PlatformController, WebhooksController } from "./controllers.ts";
 
 export interface ApiDeps {
   readonly db: Db;
@@ -37,6 +38,7 @@ export async function createApi(deps: ApiDeps): Promise<NestFastifyApplication> 
   const tokens = new TokenService(deps.tokenSecret, { now });
   const routing = deps.routing ?? straightLineRouting();
   const commerce = new CommerceService(deps.db, deps.registry, routing, now);
+  const dispatch = new DispatchService(deps.db, commerce, now);
   const router = new PaymentRouter(deps.connectors, { now });
   const payments = new PaymentService(deps.db, router, new Map(deps.connectors.map((c) => [c.id, c])), commerce);
 
@@ -45,7 +47,7 @@ export async function createApi(deps: ApiDeps): Promise<NestFastifyApplication> 
     static register(): DynamicModule {
       return {
         module: ApiModule,
-        controllers: [AdminConfigController, AdminController, KitchenController, MeController, PlatformController, AuthController, CatalogueController, OrdersController, PaymentsController, WebhooksController],
+        controllers: [AdminConfigController, AdminController, KitchenController, RiderController, MeController, PlatformController, AuthController, CatalogueController, OrdersController, PaymentsController, WebhooksController],
         providers: [
           { provide: TOKENS.db, useValue: deps.db },
           { provide: TOKENS.registry, useValue: deps.registry },
@@ -54,6 +56,7 @@ export async function createApi(deps: ApiDeps): Promise<NestFastifyApplication> 
           { provide: TOKENS.commerce, useValue: commerce },
           { provide: TOKENS.payments, useValue: payments },
           { provide: TOKENS.catalogue, useValue: new CatalogueService(deps.db, deps.registry) },
+          { provide: TOKENS.dispatch, useValue: dispatch },
           { provide: TOKENS.eta, useValue: new EtaService(deps.db, deps.registry, routing, now) },
           { provide: TOKENS.config, useValue: new ConfigService(deps.db, deps.registry) },
           { provide: TOKENS.admin, useValue: new AdminService(deps.db, deps.registry, now) },

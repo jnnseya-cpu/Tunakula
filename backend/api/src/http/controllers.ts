@@ -7,6 +7,7 @@ import type { AdminService } from "../app/admin.ts";
 import type { AuthService } from "../app/auth.ts";
 import type { CatalogueService } from "../app/catalogue.ts";
 import type { ConfigService } from "../app/config.ts";
+import type { DispatchService } from "../app/dispatch.ts";
 import type { EtaService } from "../app/eta.ts";
 import { serialiseQuote, type CommerceService, type PlaceOrderInput, type QuoteInput } from "../app/commerce.ts";
 import { badRequest, notFound } from "../app/errors.ts";
@@ -138,6 +139,7 @@ export class OrdersController {
     @Inject(TOKENS.db) private readonly db: Db,
     @Inject(TOKENS.tokens) private readonly tokens: TokenService,
     @Inject(TOKENS.commerce) private readonly commerce: CommerceService,
+    @Inject(TOKENS.dispatch) private readonly dispatch: DispatchService,
   ) {}
 
   @Post("carts/quote")
@@ -158,6 +160,7 @@ export class OrdersController {
       ...(body.recipient ? { recipient: body.recipient } : {}),
       ...(body.gifted ? { gifted: true } : {}),
       ...(body.contactless ? { contactless: true } : {}),
+      ...(body.address?.landmark ? { address: { landmark: String(body.address.landmark) } } : {}),
     }, key);
     return { order_id: r.orderId, state: r.state, recipient_code: r.recipientCode, quote: serialiseQuote(r.quote) };
   }
@@ -165,8 +168,10 @@ export class OrdersController {
   @Get("orders/:id")
   async get(@Req() req: FastifyRequest, @Param("id") id: string) {
     const principal = await this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
-    const { order, timeline, branch } = await this.commerce.get(country(req), principal, id);
-    return { ...orderView(order), branch, timeline: timeline.map((t) => ({ state: t.state, at: new Date(t.at).toISOString() })) };
+    const c = country(req);
+    const { order, timeline, branch } = await this.commerce.get(c, principal, id);
+    const rider = order.riderId ? await this.dispatch.riderForCustomer(c, order.riderId, order.state, order.snapshot.dropLocation) : null;
+    return { ...orderView(order), branch, rider, timeline: timeline.map((t) => ({ state: t.state, at: new Date(t.at).toISOString() })) };
   }
 
   @Get("me/orders")
@@ -249,6 +254,43 @@ export class MeController {
     const principal = await this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
     const c = req.headers["x-country"];
     return this.admin.me(principal, typeof c === "string" && /^[A-Z]{2}$/.test(c) ? c : undefined);
+  }
+}
+
+/** The rider app: go online, see and answer offers, see jobs and earnings. Pickup and drop use POST /v1/orders/:id/transitions. */
+@Controller("v1/rider")
+export class RiderController {
+  constructor(
+    @Inject(TOKENS.db) private readonly db: Db,
+    @Inject(TOKENS.tokens) private readonly tokens: TokenService,
+    @Inject(TOKENS.dispatch) private readonly dispatch: DispatchService,
+  ) {}
+
+  @Post("presence")
+  @HttpCode(200)
+  async presence(@Req() req: FastifyRequest, @Body() body: { online?: boolean; lat?: number; lng?: number; vehicle?: string }) {
+    const principal = await this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+    return this.dispatch.presence(principal, country(req), { online: body?.online as boolean, ...(body?.lat !== undefined ? { lat: Number(body.lat) } : {}), ...(body?.lng !== undefined ? { lng: Number(body.lng) } : {}), ...(body?.vehicle ? { vehicle: body.vehicle } : {}) });
+  }
+
+  @Get("jobs")
+  async jobs(@Req() req: FastifyRequest) {
+    const principal = await this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+    return this.dispatch.jobs(principal, country(req));
+  }
+
+  @Post("offers/:id/accept")
+  @HttpCode(200)
+  async accept(@Req() req: FastifyRequest, @Param("id") id: string) {
+    const principal = await this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+    return this.dispatch.respond(principal, country(req), id, true);
+  }
+
+  @Post("offers/:id/decline")
+  @HttpCode(200)
+  async decline(@Req() req: FastifyRequest, @Param("id") id: string, @Body() body: { reason?: string }) {
+    const principal = await this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+    return this.dispatch.respond(principal, country(req), id, false, body?.reason);
   }
 }
 

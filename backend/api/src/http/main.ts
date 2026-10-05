@@ -12,6 +12,7 @@
  *   TUNAKULA_GOOGLE_ROUTES_KEY  Google Routes API key: road distance and live-traffic travel times
  *   TUNAKULA_OSRM_URL       or a self-hosted OSRM server (road distance; congestion profile for time)
  *                           With neither, distances are estimated from straight lines × 1.3.
+ *   TUNAKULA_DISPATCH_MS    dispatcher interval in ms (default 5000; 0 turns it off on this instance)
  *   PORT (default 8080)
  */
 import { BitriPayConnector } from "@tunakula/payment-connector-bitripay";
@@ -26,7 +27,9 @@ import { CountryConfigRegistry } from "../modules/config/config-registry.ts";
 import { createLogger } from "../platform/logger.ts";
 import { loadVersions } from "../persistence/config.ts";
 import { cachedRouting, googleRoutesRouting, osrmRouting, straightLineRouting, withFallback } from "../app/routing.ts";
+import type { DispatchService } from "../app/dispatch.ts";
 import { createApi } from "./app.ts";
+import { TOKENS } from "./common.ts";
 
 const env = (k: string) => process.env[k];
 const required = (k: string) => env(k) ?? (() => { throw new Error(`${k} is required`); })();
@@ -91,6 +94,25 @@ const refresh = setInterval(() => {
   db.tx({}, loadVersions).then((v) => registry.restore(v)).catch((error) => log.error("config refresh failed", { error }));
 }, 30_000);
 refresh.unref();
+
+// Dispatcher: offers waiting orders to riders, expires stale offers, cancels orders no kitchen answered.
+const dispatchMs = Number(env("TUNAKULA_DISPATCH_MS") ?? 5000);
+if (dispatchMs > 0) {
+  const dispatcher = app.get<DispatchService>(TOKENS.dispatch);
+  let running = false;
+  const loop = setInterval(async () => {
+    if (running) return;
+    running = true;
+    try {
+      for (const c of registry.countries()) {
+        if (!registry.published(c.iso2)) continue;
+        const r = await dispatcher.tick(c.iso2);
+        if (r.offered || r.cancelled) log.info("dispatch", { country: c.iso2, ...r });
+      }
+    } catch (error) { log.error("dispatch failed", { error }); } finally { running = false; }
+  }, dispatchMs);
+  loop.unref();
+}
 
 await app.listen({ port: Number(env("PORT") ?? 8080), host: "0.0.0.0" });
 log.info("api listening", { port: Number(env("PORT") ?? 8080), connectors: connectors.map((c) => c.id) });
