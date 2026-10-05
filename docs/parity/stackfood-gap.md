@@ -10,7 +10,7 @@ Legend: **Built** works end to end · **Partial** the engine or a screen exists,
 
 | Feature | Status |
 | --- | --- |
-| Home: banners, categories, nearby restaurants, popular dishes | Partial: website shows the real Kinshasa restaurants (names, menus, logos, covers and dish photos imported from the legacy catalogue on 2026-10-05); still rendered from a built-in snapshot, not yet the live API |
+| Home: banners, categories, nearby restaurants, popular dishes | Built (preview): the real Kinshasa restaurants with their names, menus, logos, covers and dish photos; the home grid and every storefront read the live catalogue API in the browser and fall back to a committed snapshot offline |
 | Distance (km) and delivery time per restaurant | Built (API and website) |
 | Sign up / sign in by phone code | Built (SMS or WhatsApp code; delivery needs the messaging adapter) |
 | Search with filters (veg, rating, price, cuisine, distance) | Partial: text search and sort only |
@@ -92,3 +92,7 @@ The four live Kinshasa restaurants on cd.tunakula.com (Lagrâce Cuisine, Bin's R
 - `public/photos/` — the imported images; `public/photos/SOURCES.tsv` records each file's source URL.
 
 The legacy `is_halal`/`veg` flags are blanket defaults (even pork was flagged halal), so they were dropped rather than shown as dietary claims.
+
+The storefronts now read this catalogue **live from the browser**: `lib/live-catalogue.ts` fetches the restaurant list and each menu from the CORS-open catalogue API (`NEXT_PUBLIC_LEGACY_API`, default cd.tunakula.com), converts USD→CDF with a live free-FX rate, and `components/live.tsx` (`LiveMenu`, `LiveMerchantGrid`) swaps the fresh data into the server-rendered snapshot. With JavaScript off or the API unreachable, the committed snapshot shows instead, so pages are never blank.
+
+The complete legacy functionality inventory — ~130 API endpoints across customer, business, rider and admin, with probe evidence and the platform's config flags (wallet, loyalty, referrals, coupons, cashback, subscriptions, scheduled orders, take-away, Stripe, offline payment) — is in [`legacy-feature-surface.md`](legacy-feature-surface.md). It was built from the public app bundles and unauthenticated API probes; the admin panel's own screens sit behind a login captcha and still need a read-only session, and the authenticated vendor/rider endpoints need an app token, to capture fully.

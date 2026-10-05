@@ -3,7 +3,8 @@ import { Phone, SiteFooter, SiteNav } from "../components/site";
 import { HeroCarousel, NearMeButton, PlaceLine } from "../components/hero";
 import { EtaChip, StoreSorter } from "../components/location";
 import { PayScreen, TrackingScreen } from "../components/screens";
-import { JoinCard, MerchantCard } from "../components/merchant";
+import { JoinCard } from "../components/merchant";
+import { LiveMerchantGrid } from "../components/live";
 import { FoodImage, PlateArt, type Recipe } from "../components/plate";
 import { fc, favourites, MERCHANTS } from "../lib/catalogue";
 import fees from "@tunakula/ts-contracts/published/fee-comparison.json";
@@ -122,7 +123,7 @@ export default function Home() {
           </div>
           <StoreSorter scope="home" />
           <div className="mgrid" data-scope="home">
-            {MERCHANTS.map((m) => <MerchantCard key={m.slug} m={m} />)}
+            <LiveMerchantGrid fallback={MERCHANTS} />
             <JoinCard />
           </div>
         </div>

@@ -16,6 +16,14 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 const LIB = join(dirname(fileURLToPath(import.meta.url)), "..", "lib");
+import { readdirSync } from "node:fs";
+const PHOTOS = join(LIB, "..", "public", "photos");
+const photoFiles = new Map(); // basename (no ext) -> "/photos/<file>"
+for (const f of readdirSync(PHOTOS)) {
+  const dot = f.lastIndexOf(".");
+  if (dot > 0) photoFiles.set(f.slice(0, dot), `/photos/${f}`);
+}
+const localPhoto = (base) => photoFiles.get(base);
 const src = JSON.parse(readFileSync(join(LIB, "catalogue.source.json"), "utf8"));
 const fx = JSON.parse(readFileSync(join(LIB, "fx-rate.json"), "utf8"));
 const RATE = fx.rate;
@@ -54,10 +62,15 @@ export interface MenuItem {
   readonly allergens?: readonly string[];
   /** For shops: the unit sold. */
   readonly unit?: string;
+  /** Remote photo URL on the live catalogue (used by the runtime live refresh). */
+  readonly photo?: string;
 }
 
 export interface Merchant {
   readonly slug: string;
+  /** Id and zone on the live catalogue API, for refreshing this storefront at runtime. */
+  readonly legacyId: number;
+  readonly zone: number;
   readonly name: string;
   readonly kind: MerchantKind;
   readonly cuisine: string;
@@ -71,6 +84,9 @@ export interface Merchant {
   readonly monogram: string;
   readonly tone: { readonly bg: string; readonly fg: string; readonly accent: string };
   readonly cover: readonly [Recipe, Recipe, Recipe];
+  /** Remote cover/logo URLs on the live catalogue (used by the runtime live refresh). */
+  readonly coverUrl?: string;
+  readonly logoUrl?: string;
   readonly about: string;
   readonly menu: readonly { readonly section: string; readonly items: readonly MenuItem[] }[];
 }
@@ -79,6 +95,7 @@ out.push("export const MERCHANTS: readonly Merchant[] = [");
 for (const m of src.merchants) {
   out.push("  {");
   out.push(`    slug: ${s(m.slug)},`);
+  out.push(`    legacyId: ${m.legacyId}, zone: ${m.zone},`);
   out.push(`    name: ${s(m.name)},`);
   out.push(`    kind: ${s(m.kind)},`);
   out.push(`    cuisine: ${s(m.cuisine)},`);
@@ -92,6 +109,10 @@ for (const m of src.merchants) {
   out.push(`    monogram: ${s(m.monogram)},`);
   out.push(`    tone: { bg: ${s(m.tone.bg)}, fg: ${s(m.tone.fg)}, accent: ${s(m.tone.accent)} },`);
   out.push(`    cover: [${m.cover.map(s).join(", ")}],`);
+  const coverLocal = localPhoto(`cover-${m.slug}`) ?? m.coverUrl;
+  const logoLocal = localPhoto(`logo-${m.slug}`) ?? m.logoUrl;
+  if (coverLocal) out.push(`    coverUrl: ${s(coverLocal)},`);
+  if (logoLocal) out.push(`    logoUrl: ${s(logoLocal)},`);
   out.push(`    about: ${s(m.about)},`);
   out.push("    menu: [");
   for (const sec of m.menu) {
@@ -103,6 +124,8 @@ for (const m of src.merchants) {
       if (it.tags?.length) parts.push(`tags: [${it.tags.map(s).join(", ")}]`);
       if (it.allergens?.length) parts.push(`allergens: [${it.allergens.map(s).join(", ")}]`);
       if (it.unit) parts.push(`unit: ${s(it.unit)}`);
+      const itemPhoto = localPhoto(it.id) ?? it.photo;
+      if (itemPhoto) parts.push(`photo: ${s(itemPhoto)}`);
       out.push(`          { ${parts.join(", ")} },`);
     }
     out.push("        ],");

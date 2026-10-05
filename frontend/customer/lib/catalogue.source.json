@@ -5,6 +5,10 @@
   "merchants": [
     {
       "slug": "lagrace-cuisine",
+      "legacyId": 18,
+      "zone": 31,
+      "logoUrl": "https://cd.tunakula.com/storage/app/public/restaurant/2025-01-08-677ed76796c39.png",
+      "coverUrl": "https://cd.tunakula.com/storage/app/public/restaurant/cover/2025-01-08-677ed76798549.png",
       "name": "Lagrâce Cuisine",
       "kind": "Restaurant",
       "cuisine": "Cuisine Kinoise, Cuisine Européenne",
@@ -40,6 +44,7 @@
               "description": "",
               "usd": 8.96,
               "recipe": "poisson",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2026-01-21-69711fcc9fc95.png",
               "tags": [],
               "allergens": []
             },
@@ -49,6 +54,7 @@
               "description": "",
               "usd": 1.0,
               "recipe": "liboke",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2026-01-21-69710f6b05952.png",
               "tags": [],
               "allergens": []
             }
@@ -63,6 +69,7 @@
               "description": "",
               "usd": 11.2,
               "recipe": "poisson",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2026-01-21-69711c52cab1f.png",
               "tags": [],
               "allergens": []
             },
@@ -72,6 +79,7 @@
               "description": "",
               "usd": 5.6,
               "recipe": "fruits",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2026-01-21-6971159398ddd.png",
               "tags": [],
               "allergens": []
             },
@@ -81,6 +89,7 @@
               "description": "",
               "usd": 6.72,
               "recipe": "fruits",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2026-01-21-697109deadd86.png",
               "tags": [
                 "Popular"
               ],
@@ -97,6 +106,7 @@
               "description": "",
               "usd": 5.6,
               "recipe": "brochettes",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2026-01-21-697113687a4c8.png",
               "tags": [
                 "Popular"
               ],
@@ -108,6 +118,7 @@
               "description": "",
               "usd": 5.6,
               "recipe": "poisson",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-01-09-678018f219d95.png",
               "tags": [
                 "Popular"
               ],
@@ -124,6 +135,7 @@
               "description": "",
               "usd": 4.48,
               "recipe": "poisson",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2026-01-21-697112a93f15a.png",
               "tags": [],
               "allergens": []
             },
@@ -133,6 +145,7 @@
               "description": "",
               "usd": 13.44,
               "recipe": "poisson",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-01-09-677feb93711d0.png",
               "tags": [],
               "allergens": []
             }
@@ -147,6 +160,7 @@
               "description": "",
               "usd": 5.6,
               "recipe": "fruits",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-01-09-678028751a090.png",
               "tags": [],
               "allergens": []
             },
@@ -156,6 +170,7 @@
               "description": "",
               "usd": 11.2,
               "recipe": "fruits",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-01-09-678028021f76d.png",
               "tags": [],
               "allergens": []
             }
@@ -170,6 +185,7 @@
               "description": "",
               "usd": 5.6,
               "recipe": "pain",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-01-09-67801f7889949.png",
               "tags": [
                 "Popular"
               ],
@@ -181,6 +197,7 @@
               "description": "",
               "usd": 6.72,
               "recipe": "pain",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-01-09-67801eb66e494.png",
               "tags": [],
               "allergens": []
             },
@@ -190,6 +207,7 @@
               "description": "",
               "usd": 5.6,
               "recipe": "pain",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-01-09-67801d594e47b.png",
               "tags": [],
               "allergens": []
             },
@@ -199,6 +217,7 @@
               "description": "",
               "usd": 5.6,
               "recipe": "pain",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-01-09-67801d0204a83.png",
               "tags": [
                 "Popular"
               ],
@@ -210,6 +229,7 @@
               "description": "",
               "usd": 6.72,
               "recipe": "pain",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-01-09-67801c410d5b7.png",
               "tags": [
                 "Popular"
               ],
@@ -221,6 +241,7 @@
               "description": "",
               "usd": 5.6,
               "recipe": "pain",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-01-09-67801bcebf968.png",
               "tags": [],
               "allergens": []
             },
@@ -230,6 +251,7 @@
               "description": "",
               "usd": 5.6,
               "recipe": "poisson",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-01-09-67801b416598a.png",
               "tags": [
                 "Popular"
               ],
@@ -241,6 +263,7 @@
               "description": "",
               "usd": 5.6,
               "recipe": "pain",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-01-09-678019e47e443.png",
               "tags": [],
               "allergens": []
             }
@@ -255,6 +278,7 @@
               "description": "",
               "usd": 5.6,
               "recipe": "pain",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-01-09-67801e0e00b28.png",
               "tags": [],
               "allergens": []
             }
@@ -269,6 +293,7 @@
               "description": "",
               "usd": 6.72,
               "recipe": "brochettes",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-01-09-6780129e13fb3.png",
               "tags": [],
               "allergens": []
             },
@@ -278,6 +303,7 @@
               "description": "",
               "usd": 7.84,
               "recipe": "poisson",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-01-09-677ffb8256a2a.png",
               "tags": [],
               "allergens": []
             },
@@ -287,6 +313,7 @@
               "description": "",
               "usd": 11.2,
               "recipe": "brochettes",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-01-09-677fe7916f538.png",
               "tags": [
                 "Popular"
               ],
@@ -303,6 +330,7 @@
               "description": "",
               "usd": 5.6,
               "recipe": "brochettes",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-01-09-6780116254569.png",
               "tags": [
                 "Popular"
               ],
@@ -314,6 +342,7 @@
               "description": "",
               "usd": 8.96,
               "recipe": "brochettes",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-01-09-67800b0feedfa.png",
               "tags": [],
               "allergens": []
             },
@@ -323,6 +352,7 @@
               "description": "",
               "usd": 13.44,
               "recipe": "poisson",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-01-09-6780092f8ae43.png",
               "tags": [],
               "allergens": []
             },
@@ -332,6 +362,7 @@
               "description": "",
               "usd": 7.84,
               "recipe": "poisson",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-01-09-678005b17e683.png",
               "tags": [],
               "allergens": []
             },
@@ -341,6 +372,7 @@
               "description": "",
               "usd": 11.2,
               "recipe": "poisson",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-01-09-678000f215918.png",
               "tags": [
                 "Popular"
               ],
@@ -352,6 +384,7 @@
               "description": "",
               "usd": 8.96,
               "recipe": "poisson",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-01-09-677ffd25910bb.png",
               "tags": [
                 "Popular"
               ],
@@ -363,6 +396,7 @@
               "description": "",
               "usd": 12.32,
               "recipe": "poisson",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-01-09-677fe9cf50962.png",
               "tags": [],
               "allergens": []
             },
@@ -372,6 +406,7 @@
               "description": "",
               "usd": 13.44,
               "recipe": "poisson",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-01-09-677fe4dbb1a1c.png",
               "tags": [
                 "Popular"
               ],
@@ -383,6 +418,7 @@
               "description": "",
               "usd": 16.8,
               "recipe": "poisson",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-01-09-677fe31516faa.png",
               "tags": [],
               "allergens": []
             },
@@ -392,6 +428,7 @@
               "description": "",
               "usd": 6.72,
               "recipe": "poisson",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-01-09-677fe09540ea8.png",
               "tags": [],
               "allergens": []
             },
@@ -401,6 +438,7 @@
               "description": "",
               "usd": 11.2,
               "recipe": "brochettes",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-01-09-677fe019d893e.png",
               "tags": [],
               "allergens": []
             },
@@ -410,6 +448,7 @@
               "description": "",
               "usd": 11.2,
               "recipe": "poisson",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-01-09-677fdf9fb998f.png",
               "tags": [],
               "allergens": []
             },
@@ -419,6 +458,7 @@
               "description": "",
               "usd": 5.6,
               "recipe": "poisson",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-01-09-677fdd7c8f4fb.png",
               "tags": [],
               "allergens": []
             },
@@ -428,6 +468,7 @@
               "description": "",
               "usd": 16.8,
               "recipe": "poisson",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-01-09-677fda3d86122.png",
               "tags": [],
               "allergens": []
             }
@@ -442,6 +483,7 @@
               "description": "",
               "usd": 6.72,
               "recipe": "poisson",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-01-09-67800486e8ec8.png",
               "tags": [],
               "allergens": []
             }
@@ -456,6 +498,7 @@
               "description": "",
               "usd": 14.56,
               "recipe": "poisson",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-01-09-677ffec239ff0.png",
               "tags": [
                 "Popular"
               ],
@@ -467,6 +510,7 @@
               "description": "",
               "usd": 11.2,
               "recipe": "brochettes",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-01-09-677fed3ee8b7e.png",
               "tags": [
                 "Popular"
               ],
@@ -483,6 +527,7 @@
               "description": "",
               "usd": 6.72,
               "recipe": "jus",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-01-09-677fdeb1b964f.png",
               "tags": [],
               "allergens": []
             },
@@ -492,6 +537,7 @@
               "description": "",
               "usd": 8.96,
               "recipe": "brochettes",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-01-09-677fde208faa7.png",
               "tags": [],
               "allergens": []
             },
@@ -501,6 +547,7 @@
               "description": "",
               "usd": 6.72,
               "recipe": "fruits",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-01-09-677fdc89f316f.png",
               "tags": [],
               "allergens": []
             },
@@ -510,6 +557,7 @@
               "description": "",
               "usd": 6.72,
               "recipe": "poisson",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-01-09-677fdbb925de9.png",
               "tags": [],
               "allergens": []
             }
@@ -519,6 +567,10 @@
     },
     {
       "slug": "bins-restaurant",
+      "legacyId": 19,
+      "zone": 31,
+      "logoUrl": "https://cd.tunakula.com/storage/app/public/restaurant/2025-12-19-694532aa8552e.png",
+      "coverUrl": "https://cd.tunakula.com/storage/app/public/restaurant/cover/2025-02-01-679e00ea8fdf7.png",
       "name": "Bin's Restaurant",
       "kind": "Restaurant",
       "cuisine": "Cuisine Africaine",
@@ -554,6 +606,7 @@
               "description": "Banane & Chikwange",
               "usd": 11.2,
               "recipe": "brochettes",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2026-01-21-69710665aadd1.png",
               "tags": [],
               "allergens": []
             },
@@ -563,6 +616,7 @@
               "description": "Chikwange & Frites 🍟",
               "usd": 8.96,
               "recipe": "brochettes",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2026-01-21-697103e309d22.png",
               "tags": [],
               "allergens": []
             }
@@ -577,6 +631,7 @@
               "description": "",
               "usd": 10.1,
               "recipe": "poisson",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2026-01-19-696e28be4e3de.png",
               "tags": [],
               "allergens": []
             },
@@ -586,6 +641,7 @@
               "description": "",
               "usd": 11.7,
               "recipe": "riz",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2026-01-19-696e2255d3aeb.png",
               "tags": [
                 "Popular"
               ],
@@ -602,6 +658,7 @@
               "description": "",
               "usd": 11.2,
               "recipe": "brochettes",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2026-01-19-696e215b5ea50.png",
               "tags": [],
               "allergens": []
             }
@@ -616,6 +673,7 @@
               "description": "",
               "usd": 5.3,
               "recipe": "jus",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2026-01-19-696e2006b4621.png",
               "tags": [
                 "Popular"
               ],
@@ -632,6 +690,7 @@
               "description": "",
               "usd": 11.2,
               "recipe": "jus",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2026-01-19-696e1d5936273.png",
               "tags": [
                 "Popular"
               ],
@@ -643,6 +702,10 @@
     },
     {
       "slug": "nickyb-ets",
+      "legacyId": 25,
+      "zone": 32,
+      "logoUrl": "https://cd.tunakula.com/storage/app/public/restaurant/2025-12-06-6934518102219.png",
+      "coverUrl": "https://cd.tunakula.com/storage/app/public/restaurant/cover/2025-12-06-6934518104c23.png",
       "name": "NickyB ETS",
       "kind": "Restaurant",
       "cuisine": "Cuisine Kinoise, Cuisine Ngala, Cuisine kongo, Cuisine Luba, Cuisine Swahili",
@@ -678,6 +741,7 @@
               "description": "Sachez Sucre",
               "usd": 7.48,
               "recipe": "beignets",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-03-12-67d1cc67773f1.png",
               "tags": [],
               "allergens": []
             },
@@ -687,6 +751,7 @@
               "description": "Riz 25kg",
               "usd": 33.44,
               "recipe": "riz",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-03-12-67d1c72683b3b.png",
               "tags": [],
               "allergens": []
             },
@@ -696,6 +761,7 @@
               "description": "Semoule 25kg",
               "usd": 32.78,
               "recipe": "poisson",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-03-12-67d1c6ae02cd8.png",
               "tags": [],
               "allergens": []
             },
@@ -705,6 +771,7 @@
               "description": "Carton FRITE FRAICHE CRUE",
               "usd": 36.74,
               "recipe": "poisson",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-03-12-67d1c58381cf9.png",
               "tags": [],
               "allergens": []
             }
@@ -719,6 +786,7 @@
               "description": "Lait Nido 900g \r\nLait Nido 1800g",
               "usd": 17.38,
               "recipe": "poisson",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-03-12-67d1c9294b70a.png",
               "tags": [],
               "allergens": []
             }
@@ -733,6 +801,7 @@
               "description": "Huile 5L",
               "usd": 14.3,
               "recipe": "poisson",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-03-12-67d1c609b157f.png",
               "tags": [],
               "allergens": []
             }
@@ -747,6 +816,7 @@
               "description": "Carton Viande de Porc",
               "usd": 50.82,
               "recipe": "brochettes",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-03-12-67d1c4b206d03.png",
               "tags": [
                 "Popular"
               ],
@@ -758,6 +828,7 @@
               "description": "Carton Croupions de Dinde",
               "usd": 34.98,
               "recipe": "poisson",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-03-12-67d1c42fdacce.png",
               "tags": [],
               "allergens": []
             },
@@ -767,6 +838,7 @@
               "description": "Carton Poulet Nu Azur",
               "usd": 30.58,
               "recipe": "brochettes",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-03-12-67d1c3853c140.png",
               "tags": [
                 "Popular"
               ],
@@ -778,6 +850,7 @@
               "description": "Carton Poulet Nu Calissa",
               "usd": 32.78,
               "recipe": "brochettes",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-03-12-67d1c2dae9719.png",
               "tags": [],
               "allergens": []
             },
@@ -787,6 +860,7 @@
               "description": "Carton Wilki P11",
               "usd": 51.7,
               "recipe": "poisson",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-03-12-67d1c21fa54bf.png",
               "tags": [
                 "Popular"
               ],
@@ -798,6 +872,7 @@
               "description": "Carton Wilki P10",
               "usd": 43.12,
               "recipe": "poisson",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-03-12-67d1c1c137ed6.png",
               "tags": [],
               "allergens": []
             },
@@ -807,6 +882,7 @@
               "description": "Carton Poulet à Rotir",
               "usd": 63.58,
               "recipe": "brochettes",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-03-12-67d1c132d2d5f.png",
               "tags": [
                 "Popular"
               ],
@@ -818,6 +894,7 @@
               "description": "Carton Makoso",
               "usd": 23.32,
               "recipe": "poisson",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-03-12-67d1c0a093032.png",
               "tags": [],
               "allergens": []
             },
@@ -827,6 +904,7 @@
               "description": "Carton Cotis de Porc (Mipanzi)",
               "usd": 53.68,
               "recipe": "brochettes",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-03-12-67d1bf5ba8062.png",
               "tags": [
                 "Popular"
               ],
@@ -838,6 +916,7 @@
               "description": "Carton Gésier",
               "usd": 30.8,
               "recipe": "poisson",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-03-12-67d1be5c29449.png",
               "tags": [],
               "allergens": []
             },
@@ -847,6 +926,7 @@
               "description": "Carton Cuisse à Bouillir",
               "usd": 31.9,
               "recipe": "poisson",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-03-12-67d1bdaec6112.png",
               "tags": [
                 "Popular"
               ],
@@ -858,6 +938,7 @@
               "description": "Carton Cuisse à Rôtir",
               "usd": 29.04,
               "recipe": "poisson",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-03-12-67d1bd2cc61e4.png",
               "tags": [],
               "allergens": []
             },
@@ -867,6 +948,7 @@
               "description": "Carton Mikila",
               "usd": 71.28,
               "recipe": "poisson",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-03-12-67d1bc821a164.png",
               "tags": [
                 "Popular"
               ],
@@ -878,6 +960,7 @@
               "description": "Carton Tripe",
               "usd": 35.2,
               "recipe": "poisson",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-03-12-67d1bbe219173.png",
               "tags": [],
               "allergens": []
             },
@@ -887,6 +970,7 @@
               "description": "Carton Foie",
               "usd": 30.36,
               "recipe": "poisson",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-03-12-67d1bb3861806.png",
               "tags": [],
               "allergens": []
             },
@@ -896,6 +980,7 @@
               "description": "Carton Makayabu",
               "usd": 110.0,
               "recipe": "poisson",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-03-12-67d1ba91b8fa3.png",
               "tags": [],
               "allergens": []
             },
@@ -905,6 +990,7 @@
               "description": "Carton Poumon",
               "usd": 25.52,
               "recipe": "poisson",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-03-12-67d1b8337b665.png",
               "tags": [
                 "Popular"
               ],
@@ -916,6 +1002,7 @@
               "description": "Carton Rognon",
               "usd": 26.4,
               "recipe": "poisson",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-03-12-67d1b77a3014b.png",
               "tags": [],
               "allergens": []
             },
@@ -925,6 +1012,7 @@
               "description": "Carton Mbanga",
               "usd": 33.44,
               "recipe": "poisson",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-03-12-67d1b3ef887b3.png",
               "tags": [],
               "allergens": []
             },
@@ -934,6 +1022,7 @@
               "description": "1Kg Makayabu",
               "usd": 11.0,
               "recipe": "poisson",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-03-12-67d1b2890d07b.png",
               "tags": [
                 "Popular"
               ],
@@ -945,6 +1034,7 @@
               "description": "Carton Mungusu",
               "usd": 34.54,
               "recipe": "poisson",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-03-12-67d1b10b921ad.png",
               "tags": [],
               "allergens": []
             },
@@ -954,6 +1044,7 @@
               "description": "Carton Malua",
               "usd": 78.32,
               "recipe": "poisson",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-03-12-67d19f762cc92.png",
               "tags": [],
               "allergens": []
             },
@@ -963,6 +1054,7 @@
               "description": "Carton Malangwa",
               "usd": 28.6,
               "recipe": "poisson",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-03-12-67d19e7614be0.png",
               "tags": [],
               "allergens": []
             },
@@ -972,6 +1064,7 @@
               "description": "Carton Tilapia",
               "usd": 31.68,
               "recipe": "poisson",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-03-12-67d19d997f10d.png",
               "tags": [],
               "allergens": []
             },
@@ -981,6 +1074,7 @@
               "description": "Rame poisson 20+",
               "usd": 30.8,
               "recipe": "poisson",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-03-12-67d19cca2a815.png",
               "tags": [],
               "allergens": []
             }
@@ -990,6 +1084,10 @@
     },
     {
       "slug": "tacos-land",
+      "legacyId": 27,
+      "zone": 31,
+      "logoUrl": "https://cd.tunakula.com/storage/app/public/restaurant/2025-04-10-67f8322ddc945.png",
+      "coverUrl": "https://cd.tunakula.com/storage/app/public/restaurant/cover/2025-04-10-67f8322de00b0.png",
       "name": "Tacos Land",
       "kind": "Restaurant",
       "cuisine": "Cuisine Européenne",
@@ -1025,6 +1123,7 @@
               "description": "",
               "usd": 10.19,
               "recipe": "brochettes",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-04-11-67f8c02741c89.png",
               "tags": [
                 "Popular"
               ],
@@ -1036,6 +1135,7 @@
               "description": "",
               "usd": 7.2,
               "recipe": "pain",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-04-11-67f8b7f3b8d4b.png",
               "tags": [],
               "allergens": []
             },
@@ -1045,6 +1145,7 @@
               "description": "",
               "usd": 6.72,
               "recipe": "brochettes",
+              "photo": "https://cd.tunakula.com/storage/app/public/product/2025-04-11-67f8b536bc1ae.png",
               "tags": [
                 "Popular"
               ],

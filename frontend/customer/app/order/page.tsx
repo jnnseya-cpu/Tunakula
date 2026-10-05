@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { SiteFooter, SiteNav } from "../../components/site";
-import { JoinCard, MerchantCard } from "../../components/merchant";
+import { JoinCard } from "../../components/merchant";
+import { LiveMerchantGrid } from "../../components/live";
 import { StoreFilter } from "../../components/filter";
 import { StoreSorter } from "../../components/location";
 import { LiveStoreGrid } from "../../components/live-store";
@@ -24,7 +25,7 @@ export default function Order() {
         <div className="wrap">
           <StoreSorter scope="order" />
           <div className="mgrid" data-scope="order">
-            {MERCHANTS.map((m) => <MerchantCard key={m.slug} m={m} />)}
+            <LiveMerchantGrid fallback={MERCHANTS} />
             <JoinCard />
           </div>
           <LiveStoreGrid exclude={MERCHANTS.map((m) => m.name)} />
