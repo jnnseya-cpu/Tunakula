@@ -17,7 +17,7 @@ import type { Db } from "../db/db.ts";
 import type { CountryConfigRegistry } from "../modules/config/config-registry.ts";
 import { PaymentRouter } from "../modules/payments/payment-router.ts";
 import { IdempotencyInterceptor, ProblemFilter, TOKENS } from "./common.ts";
-import { AdminConfigController, AdminController, AuthController, MeController, CatalogueController, OrdersController, PaymentsController, PlatformController, WebhooksController } from "./controllers.ts";
+import { AdminConfigController, AdminController, AuthController, KitchenController, MeController, CatalogueController, OrdersController, PaymentsController, PlatformController, WebhooksController } from "./controllers.ts";
 
 export interface ApiDeps {
   readonly db: Db;
@@ -45,7 +45,7 @@ export async function createApi(deps: ApiDeps): Promise<NestFastifyApplication> 
     static register(): DynamicModule {
       return {
         module: ApiModule,
-        controllers: [AdminConfigController, AdminController, MeController, PlatformController, AuthController, CatalogueController, OrdersController, PaymentsController, WebhooksController],
+        controllers: [AdminConfigController, AdminController, KitchenController, MeController, PlatformController, AuthController, CatalogueController, OrdersController, PaymentsController, WebhooksController],
         providers: [
           { provide: TOKENS.db, useValue: deps.db },
           { provide: TOKENS.registry, useValue: deps.registry },

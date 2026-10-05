@@ -41,6 +41,8 @@ export const STATE_GROUPS = {
 const DELIVERED = STATE_GROUPS.delivered as readonly string[];
 const LOST = STATE_GROUPS.lost as readonly string[];
 const NOT_PLACED = ["DRAFT", "PENDING_PAYMENT", "PAYMENT_FAILED", "EXPIRED"];
+const KITCHEN_ACTIVE = ["PLACED", "ACCEPTED", "PREPARING", "PACKED", "READY"];
+const KITCHEN_DONE = ["PICKED_UP", "DELIVERED", "REJECTED", "CANCELLED"];
 
 /** Roles whose holders are managed by someone with a narrower "manage" right. */
 const MANAGED_BY: Partial<Record<Role, Action>> = { RIDER: "rider:manage", KITCHEN_STAFF: "staff:manage", BRANCH_MANAGER: "staff:manage" };
@@ -111,6 +113,7 @@ export class AdminService {
       if (country) {
         const profile = this.#profile(country);
         const vis = await this.#visibility(sql, principal, country, profile);
+        const prep = await this.#visibility(sql, principal, country, profile, "order:prepare");
         const marketWide = { type: "scope", country };
         capabilities = {
           overview: vis.all || vis.branches.length > 0,
@@ -122,6 +125,7 @@ export class AdminService {
           payments: vis.all,
           audit: this.#can(principal, "audit:read", marketWide, profile),
           customers: vis.all,
+          kitchen: prep.all || prep.branches.length > 0,
         };
       }
       return {
@@ -548,6 +552,85 @@ export class AdminService {
       const u = await userByPhone(sql, phone);
       if (!u) throw notFound("Nobody with that phone number yet");
       return { id: u.id, display_name: u.display_name, phone: u.phone_e164, status: u.status };
+    });
+  }
+
+  /**
+   * GET /v1/kitchen/orders[?branch_id=]: the kitchen board. Orders being handled at the branches this
+   * person can prepare for, oldest first, plus what left the counter in the last two hours.
+   */
+  async kitchen(principal: Principal, country: string, branchId?: string) {
+    const profile = this.#profile(country);
+    return this.db.tx({ country }, async (sql) => {
+      const vis = await this.#visibility(sql, principal, country, profile, "order:prepare");
+      let list = vis.branches;
+      if (list.length === 0) throw forbidden("You do not work in a kitchen in this market");
+      if (branchId) list = list.filter((b) => b.id === branchId);
+      if (branchId && list.length === 0) throw forbidden("You do not work at this branch");
+      const ids = list.map((b) => b.id);
+      const status = await sql.query<{ id: string; status: string }>("SELECT id, status FROM catalogue.branch WHERE id = ANY($1::uuid[])", [ids]);
+      const statusOf = new Map(status.map((r) => [r.id, r.status]));
+      const since = new Date(this.now().getTime() - 2 * 3_600_000);
+      const rows = await sql.query<{
+        order_id: string; state: string; type: string; payment_mode: string; total_minor: string; currency: string; created_at: Date; updated_at: Date;
+        branch_id: string; customer_name: string | null; rider_id: string | null; rider_name: string | null; lines: unknown; times: Record<string, string> | null;
+        packages: number | null; labels: string[] | null; confirmation_model: string | null;
+      }>(
+        `SELECT o.order_id, o.state, o.type, o.payment_mode, o.total_minor::text AS total_minor, o.currency, o.created_at, o.updated_at, o.branch_id,
+                u.display_name AS customer_name, o.rider_id, r.display_name AS rider_name,
+                (SELECT d.payload->'snapshot'->'lines' FROM ordering.order_event d WHERE d.order_id = o.order_id AND d.type = 'ORDER_DRAFTED' LIMIT 1) AS lines,
+                (SELECT d.payload->'snapshot'->>'confirmationModel' FROM ordering.order_event d WHERE d.order_id = o.order_id AND d.type = 'ORDER_DRAFTED' LIMIT 1) AS confirmation_model,
+                (SELECT jsonb_object_agg(e.payload->>'to', e.at) FROM ordering.order_event e WHERE e.order_id = o.order_id AND e.type = 'STATE_CHANGED') AS times,
+                (SELECT (e.payload->'evidence'->>'packageCount')::int FROM ordering.order_event e WHERE e.order_id = o.order_id AND e.type = 'STATE_CHANGED' AND e.payload->>'to' = 'PACKED' ORDER BY e.seq DESC LIMIT 1) AS packages,
+                (SELECT array(SELECT jsonb_array_elements_text(e.payload->'evidence'->'labelIds')) FROM ordering.order_event e WHERE e.order_id = o.order_id AND e.type = 'STATE_CHANGED' AND e.payload->>'to' = 'READY' ORDER BY e.seq DESC LIMIT 1) AS labels
+           FROM ordering.order_view o
+           LEFT JOIN identity.app_user u ON u.id = o.customer_id
+           LEFT JOIN identity.app_user r ON r.id::text = o.rider_id
+          WHERE o.branch_id = ANY($1::uuid[])
+            AND (o.state = ANY($2) OR (o.state = ANY($3) AND o.updated_at >= $4))
+          ORDER BY o.created_at ASC LIMIT 200`,
+        [ids, KITCHEN_ACTIVE, KITCHEN_DONE, since],
+      );
+      return {
+        now: this.now().toISOString(),
+        branches: list.map((b) => ({
+          id: b.id, name: b.name, commune: b.commune, status: statusOf.get(b.id) ?? "OPEN",
+          can_pause: this.#can(principal, "availability:write", this.#branchResource(country, b), profile),
+        })),
+        orders: rows.map((o) => ({
+          order_id: o.order_id,
+          ref: o.order_id.slice(-5).toUpperCase(),
+          state: o.state,
+          type: o.type,
+          payment_mode: o.payment_mode,
+          total: { amount_minor: o.total_minor, currency: o.currency },
+          branch_id: o.branch_id,
+          customer: o.customer_name ? o.customer_name.split(/\s+/)[0] : null,
+          rider: o.rider_id ? { id: o.rider_id, name: o.rider_name ?? "Rider" } : null,
+          lines: ((o.lines ?? []) as { id: string; name: string; quantity: number; options?: string[]; allergenFlags?: string[]; note?: string }[]).map((l) => ({
+            id: l.id, name: l.name, quantity: l.quantity, options: l.options ?? [], allergens: l.allergenFlags ?? [], ...(l.note ? { note: l.note } : {}),
+          })),
+          confirmation_model: o.confirmation_model ?? "RESTAURANT_FIRST",
+          packages: o.packages ?? null,
+          labels: o.labels ?? [],
+          times: Object.fromEntries(Object.entries(o.times ?? {}).map(([k, v]) => [k, new Date(v).toISOString()])),
+          created_at: new Date(o.created_at).toISOString(),
+        })),
+      };
+    });
+  }
+
+  /** POST /v1/kitchen/branches/:id/status: stop or resume taking new orders (busy, out of gas, closing early). */
+  async setBranchStatus(principal: Principal, country: string, branchId: string, status: string, reason?: string) {
+    if (!["OPEN", "PAUSED"].includes(status)) throw badRequest("STATUS_INVALID", "Status is OPEN or PAUSED");
+    const profile = this.#profile(country);
+    return this.db.tx({ country }, async (sql) => {
+      const branch = (await this.#branches(sql)).find((b) => b.id === branchId);
+      if (!branch) throw notFound("Branch");
+      if (!this.#can(principal, "availability:write", this.#branchResource(country, branch), profile)) throw forbidden("Pausing orders needs a manager or the owner");
+      const [row] = await sql.query<{ status: string }>("UPDATE catalogue.branch SET status = $2, updated_at = now() WHERE id = $1 RETURNING status", [branchId, status]);
+      await audit(sql, { actor: principal.userId, action: status === "PAUSED" ? "branch.paused" : "branch.resumed", target: `branch:${branchId}`, country, ...(reason ? { detail: { reason } } : {}) });
+      return { id: branchId, status: row?.status ?? status };
     });
   }
 }

@@ -34,6 +34,7 @@ type NavItem = { href: string; key: Key; cap?: keyof Me["capabilities"]; soon?: 
 /** 24×24 outline icons (single path each) for the side menu. */
 const ICON: Record<string, string> = {
   overview: "M4 13h6V4H4v9Zm0 7h6v-5H4v5Zm10 0h6v-9h-6v9Zm0-16v5h6V4h-6Z",
+  kitchen: "M8 2v5a2 2 0 0 1-1 1.7V22H5V8.7A2 2 0 0 1 4 7V2h1v4h1V2h1v4h1V2Zm9 0c2 0 3 2.5 3 6s-1 4-2 4.5V22h-2V2h1ZM11 13h2v9h-2v-9Zm-1-3h4v2h-4v-2Z",
   orders: "M7 4h10l1 3h3v2h-1l-1.5 10h-13L4 9H3V7h3l1-3Zm1.4 3h7.2l-.3-1H8.7l-.3 1ZM6 9l1.3 8h9.4L18 9H6Z",
   pos: "M4 4h16v10H4V4Zm2 2v6h12V6H6Zm-1 10h14v4H5v-4Zm3 1v2h2v-2H8Zm4 0v2h2v-2h-2Z",
   support: "M12 3a8 8 0 0 0-8 8v5a3 3 0 0 0 3 3h2v-7H6v-1a6 6 0 1 1 12 0v1h-3v7h2.2a2 2 0 0 1-2 1H13v2h2.2a4 4 0 0 0 3.9-3.2A3 3 0 0 0 20 16v-5a8 8 0 0 0-8-8Z",
@@ -54,6 +55,7 @@ const Icon = ({ k }: { k: string }) => <svg viewBox="0 0 24 24" width="18" heigh
 const NAV: { group: Key; items: NavItem[] }[] = [
   { group: "g_operations", items: [
     { href: "/", key: "overview", cap: "overview" },
+    { href: "/kitchen/", key: "kitchen", cap: "kitchen" },
     { href: "/orders/", key: "orders", cap: "orders" },
     { href: "/pos/", key: "pos", soon: true },
     { href: "/support/", key: "support", soon: true },
@@ -103,8 +105,11 @@ export function Shell({ title, children, actions }: { title: Key; children: Reac
 
   const load = useCallback(async (c: string) => {
     try {
-      setMe(await api<Me>("/v1/me", { country: c }));
+      const m = await api<Me>("/v1/me", { country: c });
+      setMe(m);
       setError(null);
+      // Kitchen teams have no dashboard: their home is the live board.
+      if (window.location.pathname === "/" && !m.capabilities.overview && m.capabilities.kitchen) router.replace("/kitchen/");
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) router.replace("/login/");
       else setError((e as Error).message);

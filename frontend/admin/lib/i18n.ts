@@ -4,6 +4,7 @@ export type Lang = "fr" | "en";
 const T = {
   overview: { fr: "Tableau de bord", en: "Overview" },
   orders: { fr: "Commandes", en: "Orders" },
+  kitchen: { fr: "Cuisine en direct", en: "Kitchen" },
   merchants: { fr: "Restaurants et commerces", en: "Merchants" },
   team: { fr: "Équipe et rôles", en: "Team and roles" },
   markets: { fr: "Marchés", en: "Markets" },

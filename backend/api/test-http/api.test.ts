@@ -801,3 +801,46 @@ describe("customer order history and tracking", () => {
     assert.equal(typeof r.body.branch.lat, "number");
   });
 });
+
+describe("kitchen board", () => {
+  test("kitchen staff see their branch's orders with lines, times and the next step; customers see nothing", async () => {
+    const me = await call("GET", "/v1/me", { token: kitchen.token, country: "CD" });
+    assert.equal(me.body.capabilities.kitchen, true);
+    assert.equal(me.body.capabilities.overview, false, "kitchen staff have no order:read dashboard");
+    const placed = await placePrepaid();
+    await call("POST", "/v1/payments/intents", { token: customer.token, country: "CD", body: { order_id: placed.orderId, method_type: "MOBILE_MONEY_PUSH", payer: { msisdn: "+243810000001" } } });
+    const r = await call("GET", "/v1/kitchen/orders", { token: kitchen.token, country: "CD" });
+    assert.equal(r.status, 200);
+    assert.deepEqual(r.body.branches.map((b: { id: string }) => b.id), [branchId]);
+    assert.equal(r.body.branches[0].can_pause, false);
+    const o = r.body.orders.find((x: { order_id: string }) => x.order_id === placed.orderId);
+    assert.ok(o, "the new order is on the board");
+    assert.equal(o.state, "PLACED");
+    assert.equal(o.ref.length, 5);
+    assert.ok(o.lines.length > 0 && o.lines.every((l: { id: string; quantity: number }) => l.id && l.quantity > 0));
+    assert.ok(o.times.PLACED);
+    assert.ok(r.body.orders.every((x: { branch_id: string }) => x.branch_id === branchId));
+    const anon = await call("GET", "/v1/kitchen/orders", { token: customer.token, country: "CD" });
+    assert.equal(anon.status, 403);
+    const other = await call("GET", `/v1/kitchen/orders?branch_id=${randomUUID()}`, { token: kitchen.token, country: "CD" });
+    assert.equal(other.status, 403);
+  });
+
+  test("the owner pauses and resumes intake; a paused kitchen takes no new orders; kitchen staff cannot pause", async () => {
+    const staff = await call("POST", `/v1/kitchen/branches/${branchId}/status`, { token: kitchen.token, country: "CD", body: { status: "PAUSED" } });
+    assert.equal(staff.status, 403);
+    const pause = await call("POST", `/v1/kitchen/branches/${branchId}/status`, { token: restaurantOwner.token, country: "CD", body: { status: "PAUSED", reason: "Out of charcoal" } });
+    assert.equal(pause.status, 200);
+    assert.equal(pause.body.status, "PAUSED");
+    const q = await call("POST", "/v1/carts/quote", { country: "CD", body: cart() });
+    assert.equal(q.status, 422);
+    assert.equal(q.body.code, "BRANCH_CLOSED");
+    const near = await call("GET", `/v1/branches/nearby?lat=${DROP.lat}&lng=${DROP.lng}`, { country: "CD" });
+    assert.equal(near.body.data.find((b: { id: string }) => b.id === branchId).open, false);
+    const resume = await call("POST", `/v1/kitchen/branches/${branchId}/status`, { token: restaurantOwner.token, country: "CD", body: { status: "OPEN" } });
+    assert.equal(resume.body.status, "OPEN");
+    assert.equal((await call("POST", "/v1/carts/quote", { country: "CD", body: cart() })).status, 200);
+    const bad = await call("POST", `/v1/kitchen/branches/${branchId}/status`, { token: restaurantOwner.token, country: "CD", body: { status: "CLOSED_FOREVER" } });
+    assert.equal(bad.status, 400);
+  });
+});

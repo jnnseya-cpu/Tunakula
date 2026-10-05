@@ -252,6 +252,29 @@ export class MeController {
   }
 }
 
+/** Kitchen board: the orders a kitchen is handling, and pausing intake. Order actions use POST /v1/orders/:id/transitions. */
+@Controller("v1/kitchen")
+export class KitchenController {
+  constructor(
+    @Inject(TOKENS.db) private readonly db: Db,
+    @Inject(TOKENS.tokens) private readonly tokens: TokenService,
+    @Inject(TOKENS.admin) private readonly admin: AdminService,
+  ) {}
+
+  @Get("orders")
+  async orders(@Req() req: FastifyRequest, @Query("branch_id") branchId?: string) {
+    const principal = await this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+    return this.admin.kitchen(principal, country(req), branchId || undefined);
+  }
+
+  @Post("branches/:id/status")
+  @HttpCode(200)
+  async status(@Req() req: FastifyRequest, @Param("id") id: string, @Body() body: { status?: string; reason?: string }) {
+    const principal = await this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+    return this.admin.setBranchStatus(principal, country(req), id, body?.status ?? "", body?.reason);
+  }
+}
+
 /** Admin console: analytics, orders, branches, team and roles, payments, ledger, audit. All scoped by X-Country. */
 @Controller("v1/admin")
 export class AdminController {

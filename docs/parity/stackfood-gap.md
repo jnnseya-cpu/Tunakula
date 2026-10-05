@@ -35,10 +35,10 @@ Legend: **Built** works end to end · **Partial** the engine or a screen exists,
 | Feature | Status |
 | --- | --- |
 | Dashboard and reports | Partial: admin dashboard scoped to the owner's branches |
-| Live orders: accept, prepare, ready, hand over | Partial: API built, no kitchen screen |
+| Live orders: accept, prepare, ready, hand over | Built: live kitchen board with sound, accept/reject with reason, cook, pack (line check, allergens, bags), ready (labels, seals, photo), counter handover with code |
 | POS | Missing |
 | Menu: foods, categories, variations, add-ons, availability, bulk import | Partial: items and availability only |
-| Opening hours, schedule, temporary close | Missing |
+| Opening hours, schedule, temporary close | Partial: pause and resume taking orders (audited); weekly hours missing |
 | Coupons, campaigns, ads | Missing |
 | Reviews and replies | Missing |
 | Wallet, withdrawals, earnings | Partial: ledger only |
