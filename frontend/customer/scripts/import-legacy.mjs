@@ -141,7 +141,8 @@ async function importRestaurant({ id, zone }, catName, toneIndex) {
     const nm = `${p.name} ${cat}`.toLowerCase();
     if (["pili", "epic", "piment"].some((k) => nm.includes(k))) tags.push("Spicy");
     const itemId = `${slug}--${p.id}`;
-    await downloadPhoto(p.image_full_url, itemId);
+    // Dish photos are served from the live catalogue URL (committing ~2,000 of them would bloat the
+    // repo). Only logos and covers are stored locally, for the cards and storefront headers.
     const list = sections.get(cat) ?? [];
     list.push({ id: itemId, name: strip(p.name), description: strip(p.description), usd: Math.round((Number(p.price) || 0) * 100) / 100, recipe, photo: p.image_full_url || "", tags: [...new Set(tags)], allergens: [] });
     sections.set(cat, list);
