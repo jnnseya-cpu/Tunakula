@@ -21,6 +21,10 @@ import type { PaymentService } from "../src/app/payments.ts";
 import { addBinding, verifyAuditChain, type NewBinding } from "../src/persistence/identity.ts";
 import { loadVersions, saveVersions } from "../src/persistence/config.ts";
 import { CountryConfigRegistry, GROUP_INTERNAL_BRAND, READINESS_AREAS, TUNAKULA_BRAND } from "../src/index.ts";
+import { messagingSender } from "../src/app/channels.ts";
+import { twilioMessaging } from "../src/modules/messaging/twilio.ts";
+import type { HttpReply, HttpRequest } from "../src/modules/messaging/messaging.ts";
+import type { NotificationService } from "../src/app/comms.ts";
 
 const profile = (iso: "cd" | "gb" | "sn") => {
   const p = syntheticProfileDocument(iso);
@@ -1182,5 +1186,58 @@ describe("communication dispatch engine and delivery log", () => {
     const approvals = inbox.body.data.filter((n: { event_key: string }) => n.event_key === "rider.approved");
     assert.equal(approvals.length, 1, "notified exactly once");
     assert.ok(approvals[0].subject.toLowerCase().includes("livreur"));
+  });
+});
+
+describe("real SMS/WhatsApp channel adapter", () => {
+  test("the engine sends WhatsApp through the messaging provider and records the message id", async () => {
+    const calls: HttpRequest[] = [];
+    const transport = async (req: HttpRequest): Promise<HttpReply> => { calls.push(req); return { status: 201, body: JSON.stringify({ sid: "SM-LIVE-1" }) }; };
+    const reg = new CountryConfigRegistry({
+      brands: [TUNAKULA_BRAND, GROUP_INTERNAL_BRAND],
+      connectors: [{ id: "bitripay", certified: true }, { id: "sandbox", certified: true }],
+      apiHosts: { "europe-west2": "https://eu.api.tunakula.com", "africa-south1": "https://af.api.tunakula.com" },
+    });
+    reg.restore(await db.tx({}, loadVersions));
+    const messaging = twilioMessaging({ accountSid: "ACtest", authToken: "tok", smsFrom: "+10000000000", whatsappFrom: "+14155238886", send: transport });
+    const app2 = await createApi({ db, registry: reg, connectors: [primary, fallback], tokenSecret: "test-secret-test-secret-test-secret!!", otp, senders: messagingSender(messaging), onError: () => undefined });
+    try {
+      const comms = app2.get(TOKENS.comms) as NotificationService;
+      // order.delivered → inapp (logged) + push (logged) + whatsapp (sent via the provider)
+      const r = await comms.dispatch({ country: "CD", eventKey: "order.delivered", recipientUserId: customer.userId, data: { order: "Z-1" } });
+      const byChannel = Object.fromEntries(r.deliveries.map((d) => [d.channel, d.status]));
+      assert.equal(byChannel.whatsapp, "sent", JSON.stringify(r.deliveries));
+      assert.equal(byChannel.inapp, "logged");
+      assert.equal(calls.length, 1, "exactly one provider call for the one messaging channel");
+      const form = new URLSearchParams(calls[0]!.body);
+      assert.equal(form.get("To"), "whatsapp:+243810000001", "addressed to the recipient's phone");
+      assert.equal(form.get("From"), "whatsapp:+14155238886");
+      assert.ok((form.get("Body") ?? "").includes("Z-1"), "subject rendered with the order token");
+      // The delivery log keeps the provider's status.
+      const log = await db.tx({ country: "CD" }, (sql) => sql.query<{ status: string; provider_ref: string | null }>("SELECT status, provider_ref FROM comms.delivery WHERE event_key = 'order.delivered' AND channel = 'whatsapp' AND recipient_user_id = $1 ORDER BY created_at DESC LIMIT 1", [customer.userId]));
+      assert.equal(log[0]!.status, "sent");
+      assert.equal(log[0]!.provider_ref, "SM-LIVE-1");
+    } finally {
+      await app2.close();
+    }
+  });
+
+  test("a provider rejection is recorded as a failed delivery, not a crash", async () => {
+    const transport = async (): Promise<HttpReply> => ({ status: 400, body: JSON.stringify({ message: "number is not WhatsApp-enabled", code: 63013 }) });
+    const reg = new CountryConfigRegistry({
+      brands: [TUNAKULA_BRAND, GROUP_INTERNAL_BRAND],
+      connectors: [{ id: "bitripay", certified: true }, { id: "sandbox", certified: true }],
+      apiHosts: { "europe-west2": "https://eu.api.tunakula.com", "africa-south1": "https://af.api.tunakula.com" },
+    });
+    reg.restore(await db.tx({}, loadVersions));
+    const messaging = twilioMessaging({ accountSid: "ACtest", authToken: "tok", whatsappFrom: "+14155238886", send: transport });
+    const app2 = await createApi({ db, registry: reg, connectors: [primary, fallback], tokenSecret: "test-secret-test-secret-test-secret!!", otp, senders: messagingSender(messaging), onError: () => undefined });
+    try {
+      const comms = app2.get(TOKENS.comms) as NotificationService;
+      const r = await comms.dispatch({ country: "CD", eventKey: "order.picked_up", recipientUserId: customer.userId, data: { rider: "Benjamin" } });
+      assert.equal(Object.fromEntries(r.deliveries.map((d) => [d.channel, d.status])).whatsapp, "failed");
+    } finally {
+      await app2.close();
+    }
   });
 });

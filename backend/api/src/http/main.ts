@@ -5,8 +5,12 @@
  *   DATABASE_APP_ROLE       role granted by the migrator (default tunakula_app)
  *   TUNAKULA_TOKEN_SECRET   ≥ 32 characters
  *   TUNAKULA_SANDBOX_PAYMENTS=1   enable the sandbox connector (never in production)
- *   TUNAKULA_DEV_OTP=1      log sign-in codes instead of sending them (development only; there is
- *                           no SMS/WhatsApp MessagingChannel adapter yet, so without it the API refuses to start)
+ *   TUNAKULA_MESSAGING_PROVIDER=twilio   the SMS/WhatsApp MessagingChannel adapter (sign-in codes and
+ *                           the comms dispatch engine). Needs TUNAKULA_TWILIO_ACCOUNT_SID,
+ *                           TUNAKULA_TWILIO_AUTH_TOKEN, and TUNAKULA_TWILIO_SMS_FROM and/or
+ *                           TUNAKULA_TWILIO_WHATSAPP_FROM (E.164 sender numbers).
+ *   TUNAKULA_DEV_OTP=1      log sign-in codes instead of sending them (development only; used when no
+ *                           messaging provider is configured, else the API refuses to start)
  *   BITRIPAY_SECRET_KEY / BITRIPAY_WEBHOOK_SECRET, KODA_SECRET_KEY / KODA_WEBHOOK_SECRET
  *   TUNAKULA_CONSOLE_ORIGINS  comma-separated browser origins allowed to call the API (the admin console, the website)
  *   TUNAKULA_GOOGLE_ROUTES_KEY  Google Routes API key: road distance and live-traffic travel times
@@ -20,6 +24,10 @@ import { KodaConnector } from "@tunakula/payment-connector-koda";
 import { SandboxConnector } from "@tunakula/payment-connector-sandbox";
 import type { ConnectorCapability, PaymentConnector } from "@tunakula/ts-contracts";
 import type { OtpSender } from "../app/auth.ts";
+import { messagingSender, otpViaMessaging } from "../app/channels.ts";
+import type { ChannelSender } from "../app/comms.ts";
+import type { MessagingChannel } from "../modules/messaging/messaging.ts";
+import { twilioMessaging } from "../modules/messaging/twilio.ts";
 import { connect } from "../db/db.ts";
 import { migrate } from "../db/migrate.ts";
 import { GROUP_INTERNAL_BRAND, TUNAKULA_BRAND } from "../modules/config/brand.ts";
@@ -56,14 +64,23 @@ if (env("DATABASE_OWNER_URL")) {
 }
 const db = connect(required("DATABASE_URL"));
 
-// Sign-in codes need the MessagingChannel adapter (SMS/WhatsApp, §7.3). Until it is configured,
-// only an explicit development flag lets the API start, and codes then go to the log.
-if (env("TUNAKULA_DEV_OTP") !== "1") throw new Error("No MessagingChannel adapter is configured for sign-in codes; set TUNAKULA_DEV_OTP=1 for development");
-const otp: OtpSender = {
-  async send(phone, code, channel) {
-    log.warn("development sign-in code", { channel, phoneSuffix: phone.slice(-4), code });
-  },
-};
+// The MessagingChannel adapter (SMS/WhatsApp, §7.3) serves both sign-in codes and the communication
+// dispatch engine. Configure a provider for production; without one, the dev flag logs codes instead.
+let messaging: MessagingChannel | undefined;
+if (env("TUNAKULA_MESSAGING_PROVIDER") === "twilio") {
+  messaging = twilioMessaging({
+    accountSid: required("TUNAKULA_TWILIO_ACCOUNT_SID"),
+    authToken: required("TUNAKULA_TWILIO_AUTH_TOKEN"),
+    ...(env("TUNAKULA_TWILIO_SMS_FROM") ? { smsFrom: required("TUNAKULA_TWILIO_SMS_FROM") } : {}),
+    ...(env("TUNAKULA_TWILIO_WHATSAPP_FROM") ? { whatsappFrom: required("TUNAKULA_TWILIO_WHATSAPP_FROM") } : {}),
+  });
+  log.info("messaging provider configured", { provider: "twilio", sms: Boolean(env("TUNAKULA_TWILIO_SMS_FROM")), whatsapp: Boolean(env("TUNAKULA_TWILIO_WHATSAPP_FROM")) });
+}
+if (!messaging && env("TUNAKULA_DEV_OTP") !== "1") throw new Error("No MessagingChannel adapter is configured; set TUNAKULA_MESSAGING_PROVIDER=twilio (with its keys) for production, or TUNAKULA_DEV_OTP=1 for development");
+const otp: OtpSender = messaging
+  ? otpViaMessaging(messaging)
+  : { async send(phone, code, channel) { log.warn("development sign-in code", { channel, phoneSuffix: phone.slice(-4), code }); } };
+const senders: ChannelSender | undefined = messaging ? messagingSender(messaging) : undefined;
 const registry = new CountryConfigRegistry({
   brands: [TUNAKULA_BRAND, GROUP_INTERNAL_BRAND],
   connectors: connectors.map((c) => ({ id: c.id, certified: true })),
@@ -86,6 +103,7 @@ const app = await createApi({
   connectors,
   tokenSecret: required("TUNAKULA_TOKEN_SECRET"),
   otp,
+  ...(senders ? { senders } : {}),
   routing,
   corsOrigins: (env("TUNAKULA_CONSOLE_ORIGINS") ?? "").split(",").map((o) => o.trim()).filter(Boolean),
   onError: (e) => log.error("unhandled", { error: e }),

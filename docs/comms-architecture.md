@@ -57,6 +57,27 @@ push adapters; the default **sandbox sender** records every channel as `logged`,
 exercisable with no provider keys. Statuses: `sent` (a provider accepted it), `logged` (sandbox),
 `suppressed` (opted out), `failed`.
 
+### Real SMS / WhatsApp adapter
+
+`MessagingChannel` (`modules/messaging/messaging.ts`) is the port for sending a person an SMS or
+WhatsApp message. It reports four outcomes so a caller never confuses failure with "maybe sent"
+(ADR 0003): `sent` (with the provider's message id), `failed` (a definite 4xx rejection), `unavailable`
+(it never left — network/DNS/429), `unknown` (timeout or 5xx). `modules/messaging/twilio.ts` is a real
+Twilio adapter — one provider for both SMS and WhatsApp (Twilio's WhatsApp Business API) — over a
+swappable HTTP transport.
+
+`app/channels.ts` bridges it into both seams, so one provider serves everything:
+- `messagingSender` — the dispatch engine's `ChannelSender`: SMS and WhatsApp go through the provider
+  (resolving the recipient's phone from identity), and email/push/in-app are recorded as `logged`
+  until their own adapters are wired; an `unavailable`/`unknown`/`failed` provider outcome becomes a
+  `failed` delivery row with the reason kept.
+- `otpViaMessaging` — sign-in's `OtpSender`, so the one-time code uses the same provider.
+
+Configure it in production with `TUNAKULA_MESSAGING_PROVIDER=twilio`, `TUNAKULA_TWILIO_ACCOUNT_SID`,
+`TUNAKULA_TWILIO_AUTH_TOKEN`, and `TUNAKULA_TWILIO_SMS_FROM` and/or `TUNAKULA_TWILIO_WHATSAPP_FROM`.
+Without a provider, development still runs with `TUNAKULA_DEV_OTP=1` (codes logged) and the sandbox
+sender.
+
 ### Store (migration `0008_comms`, all FORCE RLS by country)
 
 - `comms.delivery` — append-only log: every event × channel × recipient with its status.

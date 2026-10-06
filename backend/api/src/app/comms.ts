@@ -17,6 +17,7 @@ import type { Principal } from "../modules/identity/policy.ts";
 import { require as requireAction } from "./principal.ts";
 import { badRequest, notFound } from "./errors.ts";
 import { planChannels, renderSubject, resolveEvent } from "../modules/comms/dispatch-core.ts";
+import { userById } from "../persistence/identity.ts";
 import {
   getPreferences, insertDelivery, insertNotification, listDeliveries, listInbox,
   markRead, optedOutChannels, setPreference, unreadCount,
@@ -24,7 +25,8 @@ import {
 
 export interface ChannelMessage {
   readonly channel: CommsChannel;
-  readonly to: { readonly userId: string };
+  /** The recipient and the contact details a channel adapter needs (phone for SMS/WhatsApp, email). */
+  readonly to: { readonly userId: string; readonly phone?: string | null; readonly email?: string | null };
   readonly subject: string;
   readonly event: CommsEvent;
   readonly data: Record<string, string | number>;
@@ -69,6 +71,8 @@ export class NotificationService {
     const audience = input.audience ?? event.audience[0]!;
     return this.#db.tx({ country: input.country }, async (sql) => {
       const optedOut = await optedOutChannels(sql, input.country, input.recipientUserId);
+      const contact = await userById(sql, input.recipientUserId);
+      const to = { userId: input.recipientUserId, phone: contact?.phone_e164 ?? null, email: contact?.email ?? null };
       const deliveries: { channel: CommsChannel; status: string }[] = [];
       for (const { channel, suppressed } of planChannels(event, optedOut)) {
         let status: "sent" | "logged" | "suppressed" | "failed" = "suppressed";
@@ -76,7 +80,7 @@ export class NotificationService {
         let failure: string | undefined;
         if (!suppressed) {
           try {
-            const r = await this.#sender.send({ channel, to: { userId: input.recipientUserId }, subject, event, data });
+            const r = await this.#sender.send({ channel, to, subject, event, data });
             status = r.status;
             ref = r.ref;
             failure = r.failure;
