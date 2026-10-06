@@ -118,15 +118,32 @@ export async function fetchLiveMerchants(zones: readonly number[], bySlug: Map<s
   return out;
 }
 
+/** How many menu items a storefront loads at most (pages of 200). Covers the largest real menus. */
+const MAX_MENU_ITEMS = 1200;
+const PAGE = 200;
+
 /** Live menu for one restaurant, mapped to the snapshot's section/item shape with remote photos. */
 export async function fetchLiveMenu(legacyId: number, zone: number, slug: string, categoryName: (id?: number) => string, signal?: AbortSignal): Promise<{ section: string; items: LiveMenuItem[] }[]> {
-  const data = await getJSON<{ products: LegacyProduct[] }>(`/products/latest?restaurant_id=${legacyId}&category_id=0&limit=200&offset=1`, zone, signal);
+  const first = await getJSON<{ products: LegacyProduct[]; total_size?: number | string }>(`/products/latest?restaurant_id=${legacyId}&category_id=0&limit=${PAGE}&offset=1`, zone, signal);
   const rate = await liveRate();
-  const products = data.products ?? [];
+  const total = Math.min(Number(first.total_size) || 0, MAX_MENU_ITEMS);
+  const products = [...(first.products ?? [])];
+  // Pages are 1-based; pull the rest until we have the whole menu (capped), in parallel.
+  const lastPage = Math.ceil(total / PAGE);
+  if (lastPage > 1) {
+    const pages = await Promise.all(
+      Array.from({ length: lastPage - 1 }, (_unused, i) =>
+        getJSON<{ products: LegacyProduct[] }>(`/products/latest?restaurant_id=${legacyId}&category_id=0&limit=${PAGE}&offset=${i + 2}`, zone, signal).then((d) => d.products ?? []).catch(() => [] as LegacyProduct[])),
+    );
+    for (const page of pages) products.push(...page);
+  }
   const ranked = [...products].sort((a, b) => (b.order_count ?? b.sell_count ?? 0) - (a.order_count ?? a.sell_count ?? 0));
   const popular = new Set(ranked.slice(0, 2).filter((p) => (p.order_count ?? p.sell_count ?? 0) > 0).map((p) => p.id));
   const sections = new Map<string, LiveMenuItem[]>();
+  const seen = new Set<number>();
   for (const p of products) {
+    if (seen.has(p.id)) continue; // parallel pages can overlap if the catalogue shifts
+    seen.add(p.id);
     const cat = categoryName(p.category_id) || "Menu";
     const tags: MenuItem["tags"] = [];
     if (popular.has(p.id) || p.recommended) (tags as string[]).push("Popular");

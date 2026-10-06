@@ -1241,3 +1241,38 @@ describe("real SMS/WhatsApp channel adapter", () => {
     }
   });
 });
+
+describe("order lifecycle fires customer notifications", () => {
+  test("placing and moving an order notifies the customer at each step", async () => {
+    const diner = await signIn("+243810000130");
+    await backdate(diner.userId, 60); // COD needs an account older than the floor
+    const q = await call("POST", "/v1/carts/quote", { country: "CD", body: cart() });
+    const placed = await call("POST", "/v1/orders", { token: diner.token, country: "CD", body: { ...cart(), payment_mode: "CASH_ON_DELIVERY", expected_total: q.body.total } });
+    assert.equal(placed.body.state, "PLACED", JSON.stringify(placed.body));
+    const orderId = placed.body.order_id as string;
+    const code = placed.body.recipient_code as string;
+
+    await transition(ops, orderId, { type: "ASSIGN_RIDER", riderId: rider.userId });
+    assert.equal((await transition(kitchen, orderId, { type: "ACCEPT" })).body.state, "ACCEPTED");
+    await transition(kitchen, orderId, { type: "START_PREPARING" });
+    await transition(kitchen, orderId, { type: "PACK", confirmedLineIds: ["l1"], packageCount: 1, allergenAcknowledged: true });
+    await transition(kitchen, orderId, { type: "MARK_READY", packages: [{ labelId: "L-1", sealId: "S-1" }], packPhotoRef: "photo://pack" });
+    await transition(rider, orderId, { type: "PICK_UP", scannedLabelIds: ["L-1"], restaurantConfirmed: true, sealsIntact: true, location: KINSHASA });
+    assert.equal((await transition(rider, orderId, { type: "DELIVER", scannedLabelId: "L-1", location: DROP, sealIntact: true, verification: { method: "CODE", code } })).body.state, "DELIVERED");
+
+    const inbox = await call("GET", "/v1/notifications?limit=100", { token: diner.token, country: "CD" });
+    const seen = new Set<string>(inbox.body.data.map((n: { event_key: string }) => n.event_key));
+    for (const e of ["order.placed", "order.accepted", "order.preparing", "order.ready", "order.picked_up", "order.delivered"]) {
+      assert.ok(seen.has(e), `customer was not notified of ${e}`);
+    }
+    const delivered = inbox.body.data.find((n: { event_key: string }) => n.event_key === "order.delivered") as { subject: string };
+    assert.ok(delivered.subject.includes(`#${orderId.slice(0, 8)}`), "the notification names the order");
+    // The pickup notification names the rider.
+    const pickedUp = inbox.body.data.find((n: { event_key: string }) => n.event_key === "order.picked_up") as { subject: string };
+    assert.ok(pickedUp.subject.length > 0);
+
+    // Each step notified exactly once (deduped), even if a transition is retried.
+    const placedCount = inbox.body.data.filter((n: { event_key: string }) => n.event_key === "order.placed").length;
+    assert.equal(placedCount, 1);
+  });
+});

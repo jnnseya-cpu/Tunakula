@@ -41,11 +41,11 @@ export async function createApi(deps: ApiDeps): Promise<NestFastifyApplication> 
   const now = deps.now ?? (() => new Date());
   const tokens = new TokenService(deps.tokenSecret, { now });
   const routing = deps.routing ?? straightLineRouting();
-  const commerce = new CommerceService(deps.db, deps.registry, routing, now);
+  const comms = new NotificationService(deps.db, deps.registry, deps.senders ?? sandboxSender, now);
+  const commerce = new CommerceService(deps.db, deps.registry, routing, now, comms);
   const dispatch = new DispatchService(deps.db, commerce, now);
   const router = new PaymentRouter(deps.connectors, { now });
   const payments = new PaymentService(deps.db, router, new Map(deps.connectors.map((c) => [c.id, c])), commerce);
-  const comms = new NotificationService(deps.db, deps.registry, deps.senders ?? sandboxSender, now);
   const onboarding = new OnboardingService(deps.db, commerce, now, comms);
 
   @Module({})

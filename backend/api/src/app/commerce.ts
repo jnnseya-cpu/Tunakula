@@ -15,6 +15,7 @@ import { OrderRuleError, replay, type OrderCommand } from "../modules/ordering/o
 import { RIDER_ORDER_TYPES, type Actor, type OrderLine, type OrderSnapshot, type OrderType } from "../modules/ordering/order-types.ts";
 import { priceOrder, PricingError, type PriceBreakdown } from "../modules/pricing/pricing.ts";
 import { getBranch, menuOf, type BranchRow } from "../persistence/catalogue.ts";
+import { userById } from "../persistence/identity.ts";
 import { postJournal } from "../persistence/ledger.ts";
 import { handleOrderCommand, loadOrderEvents, OrderConflictError } from "../persistence/orders.ts";
 import { ApiError, badRequest, conflict, notFound, unprocessable } from "./errors.ts";
@@ -51,17 +52,41 @@ const GEOFENCE_M = 150;
 const MAX_QUANTITY = 99;
 const COD_SHARE_MIN_SAMPLE = 100n;
 
+/** Order states that notify the customer, and the catalogue event each fires. */
+const ORDER_EVENT: Readonly<Record<string, string>> = {
+  PLACED: "order.placed", ACCEPTED: "order.accepted", PREPARING: "order.preparing", READY: "order.ready",
+  PICKED_UP: "order.picked_up", DELIVERED: "order.delivered", REJECTED: "order.rejected",
+  CANCELLED: "order.cancelled", DELIVERY_FAILED: "order.delivery_failed", REFUNDED: "payment.refund_processed",
+};
+
+/** What the dispatch engine needs to tell a customer about their order. */
+interface OrderNotifier {
+  dispatch(input: { country: string; eventKey: string; recipientUserId: string; audience?: string; data?: Record<string, string | number>; dedupeKey?: string }): Promise<unknown>;
+}
+
 export class CommerceService {
   private readonly db: Db;
   private readonly registry: CountryConfigRegistry;
   private readonly routing: RoutingProvider;
   private readonly now: () => Date;
+  private readonly notifier: OrderNotifier | undefined;
 
-  constructor(db: Db, registry: CountryConfigRegistry, routing: RoutingProvider, now: () => Date = () => new Date()) {
+  constructor(db: Db, registry: CountryConfigRegistry, routing: RoutingProvider, now: () => Date = () => new Date(), notifier?: OrderNotifier) {
     this.db = db;
     this.registry = registry;
     this.routing = routing;
     this.now = now;
+    this.notifier = notifier;
+  }
+
+  /** Tells the customer about an order state change (best-effort, outside the state transaction). */
+  async #notifyOrder(country: string, info: { state: string; orderId: string; customerId: string; restaurant?: string | undefined; rider?: string | undefined }): Promise<void> {
+    const eventKey = ORDER_EVENT[info.state];
+    if (!eventKey || !this.notifier) return;
+    const data: Record<string, string> = { order: `#${info.orderId.slice(0, 8)}` };
+    if (info.restaurant) data.restaurant = info.restaurant;
+    if (info.rider) data.rider = info.rider;
+    await this.notifier.dispatch({ country, eventKey, recipientUserId: info.customerId, audience: "customer", data, dedupeKey: `order:${info.orderId}:${info.state}` }).catch(() => undefined);
   }
 
   profile(country: string): CountryProfile {
@@ -125,7 +150,8 @@ export class CommerceService {
   /** Places an order: re-prices, checks the accepted total, creates the event stream (§11.2). */
   async place(country: string, principal: Principal, input: PlaceOrderInput, idempotencyKey: string): Promise<{ orderId: string; state: string; recipientCode: string; quote: Quote }> {
     const profile = this.profile(country);
-    return this.db.tx({ country }, async (sql) => {
+    let placedRestaurant: string | undefined;
+    const out = await this.db.tx({ country }, async (sql) => {
       const quote = await this.#quote(sql, country, input);
       const total = quote.breakdown.total;
       if (input.expectedTotal?.currency !== total.currency || input.expectedTotal.amount_minor !== total.minor.toString()) {
@@ -135,6 +161,7 @@ export class CommerceService {
       if (input.orderType === "XBO" && !input.recipient) throw badRequest("RECIPIENT_REQUIRED", "Cross-border orders name a recipient");
 
       const branch = (await getBranch(sql, input.branchId)) as BranchRow;
+      placedRestaurant = branch.name;
       const [row] = await sql.query<{ id: string }>("SELECT platform.uuid_v7()::text AS id");
       const orderId = (row as { id: string }).id;
       const recipientCode = String(randomInt(0, 10_000)).padStart(4, "0");
@@ -192,6 +219,9 @@ export class CommerceService {
       const { order } = await this.#run(sql, tenant, orderId, actor, `${idempotencyKey}:${next.type}`, next);
       return { orderId, state: order.state, recipientCode, quote };
     });
+    // A cash order is PLACED straight away; a prepaid one becomes PLACED when payment confirms.
+    if (out.state === "PLACED") await this.#notifyOrder(country, { state: "PLACED", orderId: out.orderId, customerId: principal.userId, restaurant: placedRestaurant });
+    return out;
   }
 
   async get(country: string, principal: Principal, orderId: string) {
@@ -234,7 +264,8 @@ export class CommerceService {
   async transition(country: string, principal: Principal, orderId: string, command: OrderCommand, commandId: string) {
     if (command.type === "CREATE_DRAFT") throw badRequest("COMMAND_NOT_ALLOWED", "Orders are created by placing them");
     const profile = this.profile(country);
-    return this.db.tx({ country }, async (sql) => {
+    let notify: { state: string; orderId: string; customerId: string; restaurant?: string | undefined; rider?: string | undefined } | undefined;
+    const result = await this.db.tx({ country }, async (sql) => {
       const { order, resource } = await this.#load(sql, orderId);
       // Customers may cancel their own order (the aggregate allows it only before acceptance); staff need order:manage.
       const ownCancel = command.type === "CANCEL" && order.snapshot.customerId === principal.userId;
@@ -248,8 +279,18 @@ export class CommerceService {
       if (result.order.state === "DELIVERED" && order.state !== "DELIVERED" && result.events.length > 0) {
         await this.#settle(sql, result.order.snapshot);
       }
+      if (result.order.state !== order.state && ORDER_EVENT[result.order.state]) {
+        const branch = await getBranch(sql, result.order.snapshot.branchId);
+        const riderId = result.order.riderId;
+        const rider = riderId && (result.order.state === "PICKED_UP" || result.order.state === "DELIVERED")
+          ? (await userById(sql, riderId))?.display_name ?? undefined
+          : undefined;
+        notify = { state: result.order.state, orderId, customerId: result.order.snapshot.customerId, restaurant: branch?.name, rider };
+      }
       return result;
     });
+    if (notify) await this.#notifyOrder(country, notify);
+    return result;
   }
 
   /** Called by payments when the provider confirms or fails (system actor). */

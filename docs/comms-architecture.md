@@ -91,10 +91,19 @@ sender.
 - `GET /v1/comms/deliveries` — the delivery log (platform-config authority).
 - `POST /v1/comms/test` — fire any catalogue event to yourself; the console's "send test to me".
 
-### First real emission
+### Real emissions
 
-Approving or rejecting a rider (`/v1/ops/rider-applications/:id/{approve,reject}`) now dispatches
-`rider.approved` / `rider.rejected` to the applicant, once (deduped on the application id), outside the
-decision transaction so a notify failure never undoes the decision. The console's "Send test" and
-"Recent deliveries" read these endpoints, falling back to a local sandbox record when the API is
-unreachable.
+- **Rider decisions** — approving/rejecting a rider (`/v1/ops/rider-applications/:id/{approve,reject}`)
+  dispatches `rider.approved` / `rider.rejected` to the applicant, once (deduped on the application id).
+- **Order lifecycle** — a state change on an order dispatches the matching `order.*` event to the
+  customer: placed, accepted, preparing, ready, picked up (names the rider), delivered, rejected,
+  cancelled, delivery failed, and `payment.refund_processed` on refund. Each step is deduped
+  (`order:{id}:{state}`) so it notifies exactly once, and the dispatch runs outside the state
+  transaction so a messaging failure never blocks the order. With a WhatsApp/SMS provider configured
+  (see above), these go out as WhatsApp or SMS as well as in-app, per the catalogue.
+  (A prepaid order becomes PLACED when payment confirms, via the payment path; that `order.placed`
+  emission is the one remaining wiring point.)
+
+Every emission is best-effort and outside the originating transaction, so a notify failure never
+undoes the action. The console's "Send test" and "Recent deliveries" read these endpoints, falling
+back to a local sandbox record when the API is unreachable.
