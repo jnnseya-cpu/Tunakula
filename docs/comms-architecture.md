@@ -42,10 +42,38 @@ template-QA panel that previews the branded email for any event and fires a test
 (recorded in sandbox until a provider key is set), a recent-deliveries log, and every event grouped
 by category with its severity, mandatory flag, audiences and channels.
 
-## Sending (next step)
+## The dispatch engine (backend)
 
-The dispatch engine and channel adapters (email, SMS/WhatsApp via the messaging adapter, push, and
-the in-app feed) deliver an event to a recipient by reading its catalogue entry, honouring opt-outs
-except for `mandatory` events, rendering the branded template, and writing an append-only delivery
-record — the same pattern as the custody/ledger/audit tables. The catalogue and the console land
-first so the contract is fixed before the adapters are wired.
+`NotificationService` (`backend/api/src/app/comms.ts`) delivers an event to a recipient: it reads the
+catalogue entry, renders the subject, decides the channels — honouring the recipient's opt-outs,
+except for `mandatory` events — sends each through its channel adapter, and writes an **append-only
+delivery-log row per channel**. In-app deliveries also land in the recipient's inbox. A `dedupeKey`
+makes an emission idempotent, so the same event never delivers twice (e.g. an approval on a retry).
+The pure decisions (`resolveEvent`, `renderSubject`, `planChannels`) live in
+`modules/comms/dispatch-core.ts` and are unit-tested on their own.
+
+Channel senders are injected (`ApiDeps.senders`). Production wires real email / SMS / WhatsApp /
+push adapters; the default **sandbox sender** records every channel as `logged`, so the whole flow is
+exercisable with no provider keys. Statuses: `sent` (a provider accepted it), `logged` (sandbox),
+`suppressed` (opted out), `failed`.
+
+### Store (migration `0008_comms`, all FORCE RLS by country)
+
+- `comms.delivery` — append-only log: every event × channel × recipient with its status.
+- `comms.notification` — the in-app inbox (mutable: a notification is marked read).
+- `comms.preference` — per-channel opt-outs; no row means on, and `mandatory` events ignore it.
+
+### Endpoints
+
+- `GET /v1/notifications` · `POST /v1/notifications/:id/read` — the recipient's inbox and read state.
+- `GET|POST /v1/notifications/preferences` — the recipient's channel opt-outs (in-app can't be off).
+- `GET /v1/comms/deliveries` — the delivery log (platform-config authority).
+- `POST /v1/comms/test` — fire any catalogue event to yourself; the console's "send test to me".
+
+### First real emission
+
+Approving or rejecting a rider (`/v1/ops/rider-applications/:id/{approve,reject}`) now dispatches
+`rider.approved` / `rider.rejected` to the applicant, once (deduped on the application id), outside the
+decision transaction so a notify failure never undoes the decision. The console's "Send test" and
+"Recent deliveries" read these endpoints, falling back to a local sandbox record when the API is
+unreachable.

@@ -43,11 +43,13 @@ export class OnboardingService {
   private readonly db: Db;
   private readonly commerce: CommerceService;
   private readonly now: () => Date;
+  private readonly notifier: undefined | { dispatch(input: { country: string; eventKey: string; recipientUserId: string; audience?: string; data?: Record<string, string | number>; dedupeKey?: string }): Promise<unknown> };
 
-  constructor(db: Db, commerce: CommerceService, now: () => Date = () => new Date()) {
+  constructor(db: Db, commerce: CommerceService, now: () => Date = () => new Date(), notifier?: OnboardingService["notifier"]) {
     this.db = db;
     this.commerce = commerce;
     this.now = now;
+    this.notifier = notifier;
   }
 
   async #can(principal: Principal, country: string, actions: readonly Action[]): Promise<boolean> {
@@ -178,7 +180,7 @@ export class OnboardingService {
   async decide(principal: Principal, country: string, id: string, approve: boolean, note?: string) {
     if (!(await this.#can(principal, country, ["rider:manage"]))) throw forbidden("Reviewing riders needs rider:manage");
     if (!approve && !(note ?? "").trim()) throw badRequest("REASON_REQUIRED", "Tell the applicant why (they see this)");
-    return this.db.tx({ country }, async (sql) => {
+    const applicantId = await this.db.tx({ country }, async (sql) => {
       const [a] = await sql.query<{ id: string; user_id: string; status: string; zones: string[]; checks: Check[] }>(
         "SELECT id, user_id, status, zones, checks FROM onboarding.rider_application WHERE id = $1 FOR UPDATE", [id],
       );
@@ -193,7 +195,13 @@ export class OnboardingService {
       await sql.query("UPDATE onboarding.rider_application SET status = $2, reviewed_by = $3, reviewed_at = $4, decision_note = $5 WHERE id = $1",
         [id, approve ? "APPROVED" : "REJECTED", principal.userId, this.now(), note?.trim() || null]);
       await audit(sql, { actor: principal.userId, action: approve ? "rider.approved" : "rider.rejected", target: `user:${a.user_id}`, country, detail: { application: id, zones: a.zones, flags: flagged, ...(note ? { note } : {}) } });
-      return { id, status: approve ? "APPROVED" : "REJECTED" };
+      return a.user_id;
     });
+    // Tell the applicant, once, outside the decision transaction (a notify failure never undoes it).
+    await this.notifier?.dispatch({
+      country, eventKey: approve ? "rider.approved" : "rider.rejected", recipientUserId: applicantId,
+      audience: "rider", dedupeKey: `rider-decision:${id}`, ...(note?.trim() ? { data: { reason: note.trim() } } : {}),
+    }).catch(() => undefined);
+    return { id, status: approve ? "APPROVED" : "REJECTED" };
   }
 }

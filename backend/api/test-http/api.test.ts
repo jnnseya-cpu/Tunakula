@@ -1110,3 +1110,77 @@ describe("rider self-registration with ID checks", () => {
     assert.equal((await call("GET", "/v1/rider-applications/mine", { token: applicant.token, country: "CD" })).body.is_rider, true);
   });
 });
+
+describe("communication dispatch engine and delivery log", () => {
+  const jpeg = (seed: number) => Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(64, seed), Buffer.from([0xff, 0xd9])]).toString("base64");
+
+  test("admin fires a test event to self; it logs per channel and lands in the inbox", async () => {
+    const before = (await call("GET", "/v1/notifications", { token: admin.token, country: "CD" })).body.unread;
+    const r = await call("POST", "/v1/comms/test", { token: admin.token, country: "CD", body: { event_key: "order.delivered", data: { order: "A-1001" } } });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.equal(r.body.event, "order.delivered");
+    const channels = Object.fromEntries(r.body.deliveries.map((d: { channel: string; status: string }) => [d.channel, d.status]));
+    assert.equal(channels.inapp, "logged");
+    assert.equal(channels.push, "logged");
+    assert.equal(channels.whatsapp, "logged");
+    // In-app delivery shows up in the inbox (unread) and in the delivery log.
+    const inbox = await call("GET", "/v1/notifications", { token: admin.token, country: "CD" });
+    assert.equal(inbox.body.unread, before + 1);
+    assert.ok(inbox.body.data.some((n: { event_key: string; subject: string }) => n.event_key === "order.delivered" && n.subject.includes("A-1001")));
+    const log = await call("GET", "/v1/comms/deliveries", { token: admin.token, country: "CD" });
+    assert.ok(log.body.data.some((d: { event_key: string; channel: string }) => d.event_key === "order.delivered" && d.channel === "inapp"));
+    const unknown = await call("POST", "/v1/comms/test", { token: admin.token, country: "CD", body: { event_key: "no.such_event" } });
+    assert.equal(unknown.body.code, "UNKNOWN_EVENT");
+  });
+
+  test("the delivery log and self-test need platform-config authority", async () => {
+    assert.equal((await call("GET", "/v1/comms/deliveries", { token: ops.token, country: "CD" })).status, 403);
+    assert.equal((await call("POST", "/v1/comms/test", { token: ops.token, country: "CD", body: { event_key: "order.delivered" } })).status, 403);
+    assert.equal((await call("GET", "/v1/comms/deliveries", { token: customer.token, country: "CD" })).status, 403);
+  });
+
+  test("opt-outs suppress a normal event's channels but a mandatory notice ignores them", async () => {
+    assert.equal((await call("POST", "/v1/notifications/preferences", { token: customer.token, country: "CD", body: { channel: "email", enabled: false } })).status, 200);
+    const prefs = await call("GET", "/v1/notifications/preferences", { token: customer.token, country: "CD" });
+    assert.equal(prefs.body.channels.email, false);
+    assert.equal(prefs.body.channels.inapp, true);
+    // You cannot turn off in-app.
+    assert.equal((await call("POST", "/v1/notifications/preferences", { token: customer.token, country: "CD", body: { channel: "inapp", enabled: false } })).body.code, "INAPP_REQUIRED");
+
+    // Dispatch directly via the service so we can target the opted-out customer.
+    const comms = api.get(TOKENS.comms) as import("../src/app/comms.ts").NotificationService;
+    const normal = await comms.dispatch({ country: "CD", eventKey: "payment.successful", recipientUserId: customer.userId, data: { amount: "10 000 FC" } });
+    const normalByChannel = Object.fromEntries(normal.deliveries.map((d) => [d.channel, d.status]));
+    assert.equal(normalByChannel.email, "suppressed", "opted-out email is suppressed on a normal event");
+    assert.equal(normalByChannel.inapp, "logged");
+
+    const mandatory = await comms.dispatch({ country: "CD", eventKey: "payment.failed", recipientUserId: customer.userId });
+    const mandByChannel = Object.fromEntries(mandatory.deliveries.map((d) => [d.channel, d.status]));
+    assert.equal(mandByChannel.email, "logged", "a mandatory notice reaches email despite the opt-out");
+    assert.equal(mandByChannel.sms, "logged");
+  });
+
+  test("marking an inbox item read lowers the unread count", async () => {
+    await call("POST", "/v1/comms/test", { token: admin.token, country: "CD", body: { event_key: "ops.kpi_alert", data: { item: "Delivered rate" } } });
+    const inbox = await call("GET", "/v1/notifications", { token: admin.token, country: "CD", headers: {} });
+    const unread = inbox.body.unread as number;
+    const first = inbox.body.data[0] as { id: string };
+    const read = await call("POST", `/v1/notifications/${first.id}/read`, { token: admin.token, country: "CD" });
+    assert.equal(read.body.read, true);
+    assert.equal((await call("GET", "/v1/notifications?unread=1", { token: admin.token, country: "CD" })).body.unread, unread - 1);
+  });
+
+  test("approving a rider notifies the applicant, once (idempotent)", async () => {
+    const who = await signIn("+243810000120");
+    const idPhoto = (await call("POST", "/v1/media", { token: who.token, country: "CD", body: { purpose: "RIDER_ID", content_type: "image/jpeg", data_base64: jpeg(31) } })).body.id;
+    const selfie = (await call("POST", "/v1/media", { token: who.token, country: "CD", body: { purpose: "RIDER_SELFIE", content_type: "image/jpeg", data_base64: jpeg(32) } })).body.id;
+    const app = await call("POST", "/v1/rider-applications", { token: who.token, country: "CD", body: { full_name: "Esther Nsimba", date_of_birth: "1994-09-09", zones: ["gombe"], vehicle: "FOOT", id_type: "VOTER_CARD", id_number: "5566 7788 99", id_photo: idPhoto, selfie } });
+    assert.equal(app.status, 201, JSON.stringify(app.body));
+    const ok = await call("POST", `/v1/ops/rider-applications/${app.body.id}/approve`, { token: admin.token, country: "CD", body: {} });
+    assert.equal(ok.body.status, "APPROVED");
+    const inbox = await call("GET", "/v1/notifications", { token: who.token, country: "CD" });
+    const approvals = inbox.body.data.filter((n: { event_key: string }) => n.event_key === "rider.approved");
+    assert.equal(approvals.length, 1, "notified exactly once");
+    assert.ok(approvals[0].subject.toLowerCase().includes("livreur"));
+  });
+});

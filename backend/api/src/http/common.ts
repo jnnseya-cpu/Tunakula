@@ -20,6 +20,7 @@ export const TOKENS = {
   onboarding: "ONBOARDING_SERVICE",
   config: "CONFIG_SERVICE",
   admin: "ADMIN_SERVICE",
+  comms: "COMMS_SERVICE",
   logger: "LOGGER",
 } as const;
 

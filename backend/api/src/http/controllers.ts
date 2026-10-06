@@ -10,6 +10,7 @@ import type { ConfigService } from "../app/config.ts";
 import type { DispatchService } from "../app/dispatch.ts";
 import type { EtaService } from "../app/eta.ts";
 import type { OnboardingService } from "../app/onboarding.ts";
+import type { NotificationService } from "../app/comms.ts";
 import { serialiseQuote, type CommerceService, type PlaceOrderInput, type QuoteInput } from "../app/commerce.ts";
 import { badRequest, notFound } from "../app/errors.ts";
 import type { PaymentService } from "../app/payments.ts";
@@ -511,6 +512,67 @@ export class AdminConfigController {
   @Get(":iso2/diff")
   async diff(@Req() req: FastifyRequest, @Param("iso2") iso2: string, @Query("from") from: string, @Query("to") to: string) {
     return { data: this.config.diff(await this.#principal(req), iso2, Number(from), Number(to)) };
+  }
+}
+
+/** The recipient's in-app inbox and their channel opt-outs. */
+@Controller("v1/notifications")
+export class NotificationsController {
+  constructor(
+    @Inject(TOKENS.db) private readonly db: Db,
+    @Inject(TOKENS.tokens) private readonly tokens: TokenService,
+    @Inject(TOKENS.comms) private readonly comms: NotificationService,
+  ) {}
+
+  #me(req: FastifyRequest) {
+    return this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+  }
+
+  @Get()
+  async inbox(@Req() req: FastifyRequest, @Query("unread") unread?: string, @Query("limit") limit?: string) {
+    return this.comms.inbox(await this.#me(req), country(req), { unreadOnly: unread === "1" || unread === "true", ...(limit ? { limit: Number(limit) } : {}) });
+  }
+
+  @Post(":id/read")
+  @HttpCode(200)
+  async read(@Req() req: FastifyRequest, @Param("id") id: string) {
+    return this.comms.markRead(await this.#me(req), country(req), id);
+  }
+
+  @Get("preferences")
+  async prefs(@Req() req: FastifyRequest) {
+    return this.comms.preferences(await this.#me(req), country(req));
+  }
+
+  @Post("preferences")
+  @HttpCode(200)
+  async setPrefs(@Req() req: FastifyRequest, @Body() body: { channel?: string; enabled?: boolean }) {
+    return this.comms.setPreference(await this.#me(req), country(req), body?.channel ?? "", body?.enabled !== false);
+  }
+}
+
+/** Operations: the delivery log and a self-test. The catalogue itself is shared code the console reads directly. */
+@Controller("v1/comms")
+export class CommsController {
+  constructor(
+    @Inject(TOKENS.db) private readonly db: Db,
+    @Inject(TOKENS.tokens) private readonly tokens: TokenService,
+    @Inject(TOKENS.comms) private readonly comms: NotificationService,
+  ) {}
+
+  #me(req: FastifyRequest) {
+    return this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+  }
+
+  @Get("deliveries")
+  async deliveries(@Req() req: FastifyRequest, @Query("limit") limit?: string) {
+    return this.comms.deliveries(await this.#me(req), country(req), limit ? Number(limit) : 50);
+  }
+
+  @Post("test")
+  @HttpCode(200)
+  async test(@Req() req: FastifyRequest, @Body() body: { event_key?: string; data?: Record<string, string | number> }) {
+    return this.comms.sendTest(await this.#me(req), country(req), body?.event_key ?? "", body?.data ?? {});
   }
 }
 

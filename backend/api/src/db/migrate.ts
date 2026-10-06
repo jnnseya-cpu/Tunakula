@@ -8,7 +8,7 @@ import pg from "pg";
 
 const DIR = new URL("../../migrations/", import.meta.url);
 
-const APPEND_ONLY = ["ordering.order_event", "money.journal", "money.ledger_entry", "payments.payment_attempt", "identity.audit_log", "dispatch.cash_remittance"];
+const APPEND_ONLY = ["ordering.order_event", "money.journal", "money.ledger_entry", "payments.payment_attempt", "identity.audit_log", "dispatch.cash_remittance", "comms.delivery"];
 
 export async function migrate(ownerUrl: string, appRole?: string): Promise<string[]> {
   const client = new pg.Client({ connectionString: ownerUrl });
@@ -42,7 +42,7 @@ export async function migrate(ownerUrl: string, appRole?: string): Promise<strin
 
 async function grant(client: pg.Client, role: string): Promise<void> {
   if (!/^[a-z_][a-z0-9_]*$/.test(role)) throw new Error(`Invalid role name ${role}`);
-  const schemas = ["platform", "config", "identity", "catalogue", "ordering", "money", "payments", "dispatch", "onboarding", "media", "api"];
+  const schemas = ["platform", "config", "identity", "catalogue", "ordering", "money", "payments", "dispatch", "onboarding", "media", "comms", "api"];
   for (const s of schemas) {
     await client.query(`GRANT USAGE ON SCHEMA ${s} TO ${role}`);
     await client.query(`GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA ${s} TO ${role}`);

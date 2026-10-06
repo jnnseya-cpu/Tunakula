@@ -7,12 +7,13 @@
  * what fires on which channel, which notices bypass opt-outs, preview the branded email for any
  * event and fire a test to themselves (recorded in sandbox until a provider key is set).
  */
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   COMMS_CATALOGUE, COMMS_CHANNELS, COMMS_AUDIENCES, commsSummary,
   type CommsChannel, type CommsEvent, type CommsSeverity,
 } from "@tunakula/ts-contracts/comms";
 import { Gate, Shell, useConsole } from "../../components/shell";
+import { api } from "../../lib/api";
 
 const CHANNEL_LABEL: Record<CommsChannel, string> = { email: "Email", inapp: "In-app", sms: "SMS", push: "Push", whatsapp: "WhatsApp" };
 const AUD_LABEL: Record<string, [string, string]> = {
@@ -26,10 +27,11 @@ export default function CommsPage() {
   return <Shell title="comms"><Gate cap="markets"><Comms /></Gate></Shell>;
 }
 
-interface Delivery { id: number; event: string; channel: CommsChannel; status: "sent" | "logged"; at: string }
+interface Delivery { id: string; event: string; channel: CommsChannel; status: string; at: string }
+interface DeliveryRow { id: string; event_key: string; channel: CommsChannel; status: string; created_at: string }
 
 function Comms() {
-  const { lang } = useConsole();
+  const { lang, country } = useConsole();
   const L = (fr: string, en: string) => (lang === "fr" ? fr : en);
   const summary = useMemo(() => commsSummary(), []);
   const maxCoverage = Math.max(...Object.values(summary.channelCoverage));
@@ -38,16 +40,33 @@ function Comms() {
   const selected = useMemo(() => COMMS_CATALOGUE.flatMap((c) => c.events).find((e) => e.key === selectedKey)!, [selectedKey]);
 
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
-  const [seq, setSeq] = useState(1);
-  const sendTest = () => {
-    const now = new Date().toLocaleTimeString(lang === "fr" ? "fr-FR" : "en-GB");
-    const rows: Delivery[] = selected.channels.map((channel, i) => ({
-      id: seq + i, event: selected.key, channel,
-      status: channel === "inapp" ? "logged" : "logged", // sandbox: no provider key, so recorded not sent
-      at: now,
-    }));
-    setDeliveries((d) => [...rows.reverse(), ...d].slice(0, 40));
-    setSeq((n) => n + rows.length);
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+
+  const time = (iso: string) => new Date(iso).toLocaleTimeString(lang === "fr" ? "fr-FR" : "en-GB");
+  const loadLog = useCallback(async () => {
+    try {
+      const r = await api<{ data: DeliveryRow[] }>(`/v1/comms/deliveries?limit=40`, { country });
+      setDeliveries(r.data.map((d) => ({ id: d.id, event: d.event_key, channel: d.channel, status: d.status, at: time(d.created_at) })));
+    } catch { /* no backend reachable: leave the log as is */ }
+  }, [country, lang]);
+  useEffect(() => { void loadLog(); }, [loadLog]);
+
+  const sendTest = async () => {
+    setBusy(true);
+    setNote(null);
+    try {
+      await api(`/v1/comms/test`, { method: "POST", body: { event_key: selectedKey }, country });
+      await loadLog();
+      setNote(L("Test déclenché — voir les livraisons récentes.", "Test fired — see recent deliveries."));
+    } catch {
+      // Offline/sandbox: record the attempt locally so the flow is still demonstrable.
+      const now = new Date().toLocaleTimeString(lang === "fr" ? "fr-FR" : "en-GB");
+      setDeliveries((d) => [...selected.channels.map((channel, i) => ({ id: `local-${Date.now()}-${i}`, event: selected.key, channel, status: "logged", at: now })).reverse(), ...d].slice(0, 40));
+      setNote(L("Enregistré en sandbox (API indisponible).", "Recorded in sandbox (API unavailable)."));
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -92,8 +111,8 @@ function Comms() {
           </select>
           <MailPreview event={selected} />
           <div className="comms-actions">
-            <button type="button" className="btn primary" onClick={sendTest}>{L("M'envoyer un test", "Send test to me")}</button>
-            <span className="muted">{L("Sandbox : enregistré tant qu'aucune clé fournisseur n'est définie.", "Sandbox: recorded until a provider key is set.")}</span>
+            <button type="button" className="btn primary" onClick={() => void sendTest()} disabled={busy}>{busy ? "…" : L("M'envoyer un test", "Send test to me")}</button>
+            <span className="muted">{note ?? L("Sandbox : enregistré tant qu'aucune clé fournisseur n'est définie.", "Sandbox: recorded until a provider key is set.")}</span>
           </div>
         </section>
       </div>
@@ -106,7 +125,7 @@ function Comms() {
               <div className="deliv-row" key={d.id}>
                 <span className={`chan chan-${d.channel}`}>{CHANNEL_LABEL[d.channel]}</span>
                 <span className="deliv-ev">{d.event}</span>
-                <span className={`deliv-status ${d.status}`}>{d.status === "sent" ? L("envoyé", "sent") : L("enregistré", "logged")}</span>
+                <span className={`deliv-status ${d.status}`}>{d.status === "sent" ? L("envoyé", "sent") : d.status === "suppressed" ? L("désinscrit", "opted out") : d.status === "failed" ? L("échec", "failed") : L("enregistré", "logged")}</span>
                 <span className="deliv-at num">{d.at}</span>
               </div>
             ))}</div>}

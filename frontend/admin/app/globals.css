@@ -395,3 +395,5 @@ tr.sel td { background: rgba(250, 210, 14, 0.12); }
 .aud { font-size: 10.5px; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 1px 7px; }
 .chan { font-size: 10.5px; font-weight: 600; border-radius: 5px; padding: 1px 7px; color: #fff; }
 .chan-email { background: #3b82f6; } .chan-inapp { background: #6b7280; } .chan-sms { background: #8b5cf6; } .chan-push { background: #0ea5e9; } .chan-whatsapp { background: #25d366; }
+.deliv-status.suppressed { color: #e0a100; }
+.deliv-status.failed { color: #e5484d; }

@@ -6,6 +6,7 @@ import { FastifyAdapter, type NestFastifyApplication } from "@nestjs/platform-fa
 import type { PaymentConnector } from "@tunakula/ts-contracts";
 import { AdminService } from "../app/admin.ts";
 import { AuthService, type OtpSender } from "../app/auth.ts";
+import { NotificationService, sandboxSender, type ChannelSender } from "../app/comms.ts";
 import { CatalogueService } from "../app/catalogue.ts";
 import { CommerceService } from "../app/commerce.ts";
 import { ConfigService } from "../app/config.ts";
@@ -19,7 +20,7 @@ import type { Db } from "../db/db.ts";
 import type { CountryConfigRegistry } from "../modules/config/config-registry.ts";
 import { PaymentRouter } from "../modules/payments/payment-router.ts";
 import { IdempotencyInterceptor, ProblemFilter, TOKENS } from "./common.ts";
-import { AdminConfigController, AdminController, AuthController, KitchenController, MeController, OnboardingController, OpsController, RiderController, CatalogueController, OrdersController, PaymentsController, PlatformController, WebhooksController } from "./controllers.ts";
+import { AdminConfigController, AdminController, AuthController, CommsController, KitchenController, MeController, NotificationsController, OnboardingController, OpsController, RiderController, CatalogueController, OrdersController, PaymentsController, PlatformController, WebhooksController } from "./controllers.ts";
 
 export interface ApiDeps {
   readonly db: Db;
@@ -32,6 +33,8 @@ export interface ApiDeps {
   readonly onError?: (e: unknown) => void;
   /** Browser origins allowed to call the API (the admin console, the website). None by default. */
   readonly corsOrigins?: readonly string[];
+  /** Channel adapters for notifications. Defaults to the sandbox sender (records, never sends). */
+  readonly senders?: ChannelSender;
 }
 
 export async function createApi(deps: ApiDeps): Promise<NestFastifyApplication> {
@@ -42,13 +45,15 @@ export async function createApi(deps: ApiDeps): Promise<NestFastifyApplication> 
   const dispatch = new DispatchService(deps.db, commerce, now);
   const router = new PaymentRouter(deps.connectors, { now });
   const payments = new PaymentService(deps.db, router, new Map(deps.connectors.map((c) => [c.id, c])), commerce);
+  const comms = new NotificationService(deps.db, deps.registry, deps.senders ?? sandboxSender, now);
+  const onboarding = new OnboardingService(deps.db, commerce, now, comms);
 
   @Module({})
   class ApiModule {
     static register(): DynamicModule {
       return {
         module: ApiModule,
-        controllers: [AdminConfigController, AdminController, KitchenController, OpsController, OnboardingController, RiderController, MeController, PlatformController, AuthController, CatalogueController, OrdersController, PaymentsController, WebhooksController],
+        controllers: [AdminConfigController, AdminController, KitchenController, OpsController, OnboardingController, RiderController, MeController, PlatformController, AuthController, CatalogueController, OrdersController, PaymentsController, WebhooksController, NotificationsController, CommsController],
         providers: [
           { provide: TOKENS.db, useValue: deps.db },
           { provide: TOKENS.registry, useValue: deps.registry },
@@ -58,7 +63,8 @@ export async function createApi(deps: ApiDeps): Promise<NestFastifyApplication> 
           { provide: TOKENS.payments, useValue: payments },
           { provide: TOKENS.catalogue, useValue: new CatalogueService(deps.db, deps.registry) },
           { provide: TOKENS.dispatch, useValue: dispatch },
-          { provide: TOKENS.onboarding, useValue: new OnboardingService(deps.db, commerce, now) },
+          { provide: TOKENS.onboarding, useValue: onboarding },
+          { provide: TOKENS.comms, useValue: comms },
           { provide: TOKENS.eta, useValue: new EtaService(deps.db, deps.registry, routing, now) },
           { provide: TOKENS.config, useValue: new ConfigService(deps.db, deps.registry) },
           { provide: TOKENS.admin, useValue: new AdminService(deps.db, deps.registry, now) },
