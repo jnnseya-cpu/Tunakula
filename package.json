@@ -32,6 +32,6 @@
     "@types/node": "^22.19.0",
     "currency-codes": "^2.2.0",
     "fast-check": "^4.10.2",
-    "typescript": "^5.9.3"
+    "typescript": "^7.0.2"
   }
 }
