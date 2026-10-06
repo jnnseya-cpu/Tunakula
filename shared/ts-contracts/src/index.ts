@@ -7,3 +7,5 @@ export {
   type ProfileValidation,
   type ValidateOptions,
 } from "./validate-country-profile.ts";
+
+export * from "./comms.ts";

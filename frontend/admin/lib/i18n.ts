@@ -9,6 +9,7 @@ const T = {
   merchants: { fr: "Restaurants et commerces", en: "Merchants" },
   team: { fr: "Équipe et rôles", en: "Team and roles" },
   markets: { fr: "Marchés", en: "Markets" },
+  comms: { fr: "Communications", en: "Communications" },
   finance: { fr: "Finance", en: "Finance" },
   payments: { fr: "Paiements", en: "Payments" },
   audit: { fr: "Journal d'audit", en: "Audit log" },

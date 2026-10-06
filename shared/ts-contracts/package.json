@@ -7,6 +7,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./eta-model": "./src/eta-model.ts",
+    "./comms": "./src/comms.ts",
     "./testing": "./src/testing.ts",
     "./published/*": "./published/*"
   },
