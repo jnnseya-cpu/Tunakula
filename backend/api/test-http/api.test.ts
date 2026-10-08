@@ -269,6 +269,52 @@ describe("catalogue (CAT-002/003) under scoped permissions", () => {
     assert.equal(moambe.recommended, true);
   });
 
+  test("bulk import: adds new dishes, updates by id, and is all-or-nothing on errors", async () => {
+    // A fresh owner and group keep this fully off the shared order/branch fixtures.
+    const boss = await signIn("+243810000140");
+    await grant({ userId: boss.userId, role: "RESTAURANT_OWNER", scope: { type: "RESTAURANT_GROUP", id: "rg-bulk" } });
+    const bulk = (await call("POST", "/v1/branches", { token: admin.token, country: "CD", body: { name: "Bulk Kitchen", restaurant_group_id: "rg-bulk", city: "kinshasa", commune: "gombe", ...KINSHASA } })).body.id;
+    const imp = (rows: unknown[], who = boss) => call("POST", `/v1/branches/${bulk}/menu/import`, { token: who.token, country: "CD", body: { rows } });
+
+    const first = await imp([
+      { names: { fr: "Fumbwa", en: "Fumbwa" }, prices: { USD: "7.00" }, category: "Cuisine Locale", veg: true, tags: ["signature"], allergens: ["peanuts"] },
+      { names: { fr: "Jus de gingembre" }, prices: { USD: "2.00" }, category: "Boisson", available: false },
+    ]);
+    assert.equal(first.status, 200, JSON.stringify(first.body));
+    assert.deepEqual([first.body.created, first.body.updated], [2, 0]);
+    let menu = (await call("GET", `/v1/branches/${bulk}/menu`, { country: "CD" })).body.items;
+    assert.equal(menu.length, 2);
+    const jus = menu.find((i: { names: Record<string, string> }) => i.names.fr === "Jus de gingembre");
+    assert.equal(jus.available, false, "available:false honoured on add");
+    const fumbwa = menu.find((i: { names: Record<string, string> }) => i.names.fr === "Fumbwa");
+
+    // Update by id: raise the price and category; add a brand-new row in the same import.
+    const second = await imp([
+      { id: fumbwa.id, names: { fr: "Fumbwa ya ngolo" }, prices: { USD: "8.00" }, category: "Cuisine Locale", veg: true, allergens: ["peanuts"], recommended: true },
+      { names: { fr: "Chikwangue" }, prices: { USD: "1.50" }, category: "Accompagnements" },
+    ]);
+    assert.deepEqual([second.body.created, second.body.updated], [1, 1]);
+    menu = (await call("GET", `/v1/branches/${bulk}/menu`, { country: "CD" })).body.items;
+    assert.equal(menu.length, 3);
+    const edited = menu.find((i: { id: string }) => i.id === fumbwa.id);
+    assert.equal(edited.names.fr, "Fumbwa ya ngolo");
+    assert.deepEqual(edited.prices.USD, { amount_minor: "800", currency: "USD" });
+    assert.equal(edited.recommended, true);
+
+    // A bad row rolls the whole import back: nothing is applied.
+    const bad = await imp([
+      { names: { fr: "Valide" }, prices: { USD: "3.00" } },
+      { names: { fr: "Sans prix de règlement" }, prices: { CDF: "1000" } },
+    ]);
+    assert.equal(bad.status, 422);
+    assert.equal(bad.body.code, "IMPORT_INVALID");
+    assert.equal(bad.body.errors[0].row, 2);
+    assert.equal((await call("GET", `/v1/branches/${bulk}/menu`, { country: "CD" })).body.items.length, 3, "nothing from the failed import");
+
+    // A customer cannot bulk-import.
+    assert.equal((await imp([{ names: { fr: "x" }, prices: { USD: "1.00" } }], customer)).status, 403);
+  });
+
   test("§9.5 RLS: the branch does not exist from the GB market", async () => {
     assert.equal((await call("GET", `/v1/branches/${branchId}/menu`, { country: "CD" })).status, 200);
     assert.equal((await call("GET", `/v1/branches/${branchId}/menu`, { country: "GB" })).status, 404);

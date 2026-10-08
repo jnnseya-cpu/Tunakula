@@ -120,6 +120,14 @@ export class CatalogueController {
     return this.catalogue.updateItem(country(req), principal, id, item, body ?? ({} as never));
   }
 
+  /** Bulk upsert the menu (CSV is parsed client-side into rows). All-or-nothing: errors apply nothing. */
+  @Post("branches/:id/menu/import")
+  @HttpCode(200)
+  async importMenu(@Req() req: FastifyRequest, @Param("id") id: string, @Body() body: { rows?: (ItemBody & { id?: string; available?: boolean })[] }) {
+    const principal = await this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+    return this.catalogue.importMenu(country(req), principal, id, body?.rows ?? []);
+  }
+
   @Post("branches/:id/items/:item/availability")
   @HttpCode(200)
   async availability(@Req() req: FastifyRequest, @Param("id") id: string, @Param("item") item: string, @Body() body: { available: boolean }) {

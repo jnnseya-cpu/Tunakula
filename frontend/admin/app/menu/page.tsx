@@ -41,6 +41,7 @@ function Menu() {
   const [cat, setCat] = useState("");
   const [form, setForm] = useState<Form | null>(null);
   const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
     api<{ data: Branch[] }>("/v1/admin/branches", { country })
@@ -70,6 +71,55 @@ function Menu() {
     category: it.category ?? "", price: it.prices[settlement] ? decimal(it.prices[settlement]!.amount_minor, settlement) : "",
     veg: it.veg === true ? "veg" : it.veg === false ? "non" : "", recommended: it.recommended, tags: it.tags.join(", "), allergens: it.allergens.join(", "),
   });
+
+  const branchName = branches?.find((b) => b.id === branchId)?.name ?? "menu";
+  const doExport = () => {
+    const rows = (items ?? []).map((it) => [
+      it.id, it.names.fr ?? "", it.names.en ?? "", it.description?.fr ?? "", it.category ?? "",
+      it.prices[settlement] ? decimal(it.prices[settlement]!.amount_minor, settlement) : "",
+      it.veg === true ? "veg" : it.veg === false ? "non" : "", it.recommended ? "1" : "0",
+      it.tags.join(";"), it.allergens.join(";"), it.available ? "1" : "0",
+    ]);
+    const csv = toCsv([["id", "name_fr", "name_en", "description_fr", "category", `price_${settlement}`, "veg", "recommended", "tags", "allergens", "available"], ...rows]);
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const a = document.createElement("a");
+    a.href = url; a.download = `${branchName.replace(/[^\w-]+/g, "-").toLowerCase()}-menu.csv`; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const doImport = async (file: File) => {
+    setBusy(true); setNotice(null); setError(null);
+    try {
+      const table = parseCsv(await file.text());
+      if (table.length < 2) throw new Error(L("Le fichier est vide.", "The file is empty."));
+      const header = table[0]!.map((h) => h.trim().toLowerCase());
+      const col = (name: string) => header.indexOf(name);
+      const pc = header.findIndex((h) => h.startsWith("price"));
+      const rows = table.slice(1).filter((r) => r.some((c) => c.trim())).map((r) => {
+        const get = (name: string) => { const i = col(name); return i >= 0 ? (r[i] ?? "").trim() : ""; };
+        const names: Record<string, string> = {};
+        if (get("name_fr")) names.fr = get("name_fr");
+        if (get("name_en")) names.en = get("name_en");
+        const veg = get("veg").toLowerCase();
+        const row: Record<string, unknown> = {
+          names, prices: { [settlement]: pc >= 0 ? (r[pc] ?? "").trim() : "" },
+          category: get("category") || null,
+          veg: veg === "veg" || veg === "1" || veg === "true" ? true : veg === "non" || veg === "0" || veg === "false" ? false : null,
+          recommended: ["1", "true", "oui", "yes"].includes(get("recommended").toLowerCase()),
+          tags: get("tags").split(";").map((t) => t.trim()).filter(Boolean),
+          allergens: get("allergens").split(";").map((t) => t.trim()).filter(Boolean),
+        };
+        if (get("description_fr")) row.description = { fr: get("description_fr") };
+        if (get("id")) row.id = get("id");
+        const av = get("available").toLowerCase();
+        if (av) row.available = ["1", "true", "oui", "yes"].includes(av);
+        return row;
+      });
+      const r = await api<{ imported: number; created: number; updated: number }>(`/v1/branches/${branchId}/menu/import`, { method: "POST", country, body: { rows } });
+      setNotice(L(`${r.imported} plats importés (${r.created} ajoutés, ${r.updated} modifiés).`, `${r.imported} dishes imported (${r.created} added, ${r.updated} updated).`));
+      load();
+    } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
+  };
 
   const save = async () => {
     if (!form) return;
@@ -109,8 +159,13 @@ function Menu() {
           <option value="">{L("Toutes les catégories", "All categories")}</option>
           {categories.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
+        <button type="button" className="btn" onClick={doExport} disabled={!items}>{L("Exporter", "Export")}</button>
+        <label className="btn" aria-disabled={busy}>{L("Importer", "Import")}
+          <input type="file" accept=".csv,text/csv" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) void doImport(f); e.target.value = ""; }} />
+        </label>
         <button type="button" className="btn primary" onClick={() => setForm(blankForm())}>{L("Ajouter un plat", "Add a dish")}</button>
       </div>
+      {notice ? <div className="banner ok">{notice}</div> : null}
 
       {!items ? <div className="muted">…</div> : (
         <table className="tbl menu-tbl">
@@ -156,6 +211,38 @@ function Menu() {
       ) : null}
     </div>
   );
+}
+
+/** Serialise a table to RFC 4180 CSV, quoting any field with a comma, quote or newline. */
+function toCsv(table: (string | number)[][]): string {
+  const cell = (v: string | number) => {
+    const s = String(v);
+    return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  return table.map((row) => row.map(cell).join(",")).join("\r\n");
+}
+
+/** Parse RFC 4180 CSV (quoted fields, escaped quotes, CRLF or LF) into a table of strings. */
+function parseCsv(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let field = "";
+  let inQuotes = false;
+  const s = text.replace(/^﻿/, ""); // strip BOM
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (inQuotes) {
+      if (c === '"') { if (s[i + 1] === '"') { field += '"'; i++; } else inQuotes = false; }
+      else field += c;
+    } else if (c === '"') inQuotes = true;
+    else if (c === ",") { row.push(field); field = ""; }
+    else if (c === "\n" || c === "\r") {
+      if (c === "\r" && s[i + 1] === "\n") i++;
+      row.push(field); field = ""; rows.push(row); row = [];
+    } else field += c;
+  }
+  if (field !== "" || row.length) { row.push(field); rows.push(row); }
+  return rows;
 }
 
 function decimal(minor: string, currency: string): string {

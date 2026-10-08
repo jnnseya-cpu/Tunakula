@@ -6,7 +6,7 @@ import type { CountryConfigRegistry } from "../modules/config/config-registry.ts
 import type { Principal } from "../modules/identity/policy.ts";
 import { addMenuItem, createBranch, getBranch, menuOf, setAvailability, updateMenuItem, type MenuItemInput, type MenuItemRow } from "../persistence/catalogue.ts";
 import { audit } from "../persistence/identity.ts";
-import { badRequest, notFound } from "./errors.ts";
+import { badRequest, notFound, unprocessable } from "./errors.ts";
 import { require } from "./principal.ts";
 
 export class CatalogueService {
@@ -91,6 +91,45 @@ export class CatalogueService {
     });
   }
 
+  /** Bulk upsert of a branch's menu. A row with an id updates that dish; without one, it is added.
+   *  All rows are validated first; if any is invalid, nothing is applied and every error is returned. */
+  async importMenu(country: string, principal: Principal, branchId: string, rows: readonly ImportRow[]) {
+    const profile = this.#profile(country);
+    if (!Array.isArray(rows) || rows.length === 0) throw badRequest("NO_ROWS", "Send at least one row to import");
+    if (rows.length > 2000) throw badRequest("TOO_MANY_ROWS", "Import at most 2000 rows at a time");
+
+    const prepared: { line: number; id?: string; available?: boolean; input: MenuItemInput }[] = [];
+    const errors: { row: number; message: string }[] = [];
+    rows.forEach((row, i) => {
+      try {
+        prepared.push({ line: i + 1, ...(row.id ? { id: String(row.id) } : {}), ...(row.available !== undefined ? { available: Boolean(row.available) } : {}), input: this.#priced(profile, country, row) });
+      } catch (e) {
+        errors.push({ row: i + 1, message: (e as Error).message });
+      }
+    });
+    if (errors.length) throw unprocessable("IMPORT_INVALID", `${errors.length} of ${rows.length} rows are invalid; nothing was imported`, { errors });
+
+    return this.db.tx({ country }, async (sql) => {
+      const branch = await getBranch(sql, branchId);
+      if (!branch) throw notFound("Branch");
+      require(principal, "menu:write", { type: "menu", country, branchId, restaurantGroupId: branch.restaurant_group_id }, { activeCountry: country, profile });
+      let created = 0, updated = 0;
+      for (const p of prepared) {
+        if (p.id) {
+          const item = await updateMenuItem(sql, branchId, p.id, p.input);
+          if (!item) throw unprocessable("IMPORT_ID_NOT_FOUND", `Row ${p.line}: no dish ${p.id} in this branch`, { errors: [{ row: p.line, message: "unknown id" }] });
+          updated += 1;
+          if (p.available !== undefined) await setAvailability(sql, p.id, p.available);
+        } else {
+          const item = await addMenuItem(sql, branch, p.input);
+          created += 1;
+          if (p.available === false) await setAvailability(sql, item.id, false);
+        }
+      }
+      return { imported: created + updated, created, updated, errors: [] as { row: number; message: string }[] };
+    });
+  }
+
   async setAvailability(country: string, principal: Principal, branchId: string, itemId: string, available: boolean) {
     const profile = this.#profile(country);
     return this.db.tx({ country }, async (sql) => {
@@ -120,6 +159,11 @@ interface ItemInput {
   tags?: string[];
   allergens?: string[];
   recommended?: boolean;
+}
+
+interface ImportRow extends ItemInput {
+  id?: string;
+  available?: boolean;
 }
 
 function publicItem(i: MenuItemRow) {

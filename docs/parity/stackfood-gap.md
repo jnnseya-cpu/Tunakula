@@ -37,7 +37,7 @@ Legend: **Built** works end to end · **Partial** the engine or a screen exists,
 | Dashboard and reports | Partial: admin dashboard scoped to the owner's branches |
 | Live orders: accept, prepare, ready, hand over | Built: live kitchen board with sound, accept/reject with reason, cook, pack (line check, allergens, bags), ready (labels, seals, photo), counter handover with code |
 | POS | Missing |
-| Menu: foods, categories, variations, add-ons, availability, bulk import | Partial: merchant menu management (list, search, add, edit a dish — name/description per language, category, price, veg, tags, allergens, recommended, availability) in the console at Commerce → Carte et plats; variations, add-ons and bulk import/export still missing |
+| Menu: foods, categories, variations, add-ons, availability, bulk import | Partial: merchant menu management (list, search, add, edit, availability, recommended; name/description per language, category, price, veg, tags, allergens) and **CSV bulk import/export** (all-or-nothing, upsert by id) in the console at Commerce → Carte et plats; variations and add-ons still missing |
 | Opening hours, schedule, temporary close | Partial: pause and resume taking orders (audited); weekly hours missing |
 | Coupons, campaigns, ads | Missing |
 | Reviews and replies | Missing |
