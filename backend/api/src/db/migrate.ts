@@ -8,7 +8,7 @@ import pg from "pg";
 
 const DIR = new URL("../../migrations/", import.meta.url);
 
-const APPEND_ONLY = ["ordering.order_event", "money.journal", "money.ledger_entry", "payments.payment_attempt", "identity.audit_log", "dispatch.cash_remittance", "comms.delivery"];
+const APPEND_ONLY = ["ordering.order_event", "money.journal", "money.ledger_entry", "payments.payment_attempt", "identity.audit_log", "dispatch.cash_remittance", "dispatch.rider_payout", "comms.delivery"];
 
 export async function migrate(ownerUrl: string, appRole?: string): Promise<string[]> {
   const client = new pg.Client({ connectionString: ownerUrl });

@@ -156,6 +156,93 @@ export class DispatchService {
     });
   }
 
+  /** The rider's earned balance: riderReceives on every delivered order, minus what they have cashed out. */
+  async #earnedBalance(sql: Sql, riderId: string): Promise<bigint> {
+    const [e] = await sql.query<{ earned: string }>(
+      `SELECT COALESCE(sum((d.payload->'snapshot'->'money'->'riderReceives'->>'minor')::bigint), 0)::text AS earned
+         FROM ordering.order_view o JOIN ordering.order_event d ON d.order_id = o.order_id AND d.type = 'ORDER_DRAFTED'
+        WHERE o.rider_id = $1 AND o.state = 'DELIVERED'`,
+      [riderId],
+    );
+    const [p] = await sql.query<{ paid: string }>("SELECT COALESCE(sum(amount_minor), 0)::text AS paid FROM dispatch.rider_payout WHERE rider_id = $1", [riderId]);
+    return BigInt(e?.earned ?? "0") - BigInt(p?.paid ?? "0");
+  }
+
+  /** GET /v1/rider/earnings: per-order breakdown (base + tip), lifetime totals and the balance to cash out. */
+  async earnings(principal: Principal, country: string) {
+    if (DispatchService.riderZones(principal).length === 0) throw forbidden("Only riders have earnings");
+    const ccy = this.#profile(country).money.settlement_currency;
+    return this.db.tx({ country }, async (sql) => {
+      const orders = await sql.query<{ order_id: string; at: Date; receives: string | null; share: string | null; currency: string; branch_name: string; payment_mode: string }>(
+        `SELECT o.order_id, o.updated_at AS at,
+                (d.payload->'snapshot'->'money'->'riderReceives'->>'minor') AS receives,
+                (d.payload->'snapshot'->'money'->'riderShare'->>'minor') AS share,
+                o.currency, o.payment_mode, b.name AS branch_name
+           FROM ordering.order_view o
+           JOIN ordering.order_event d ON d.order_id = o.order_id AND d.type = 'ORDER_DRAFTED'
+           JOIN catalogue.branch b ON b.id = o.branch_id
+          WHERE o.rider_id = $1 AND o.state = 'DELIVERED'
+          ORDER BY o.updated_at DESC LIMIT 50`,
+        [principal.userId],
+      );
+      const [tot] = await sql.query<{ earned: string }>(
+        `SELECT COALESCE(sum((d.payload->'snapshot'->'money'->'riderReceives'->>'minor')::bigint), 0)::text AS earned
+           FROM ordering.order_view o JOIN ordering.order_event d ON d.order_id = o.order_id AND d.type = 'ORDER_DRAFTED'
+          WHERE o.rider_id = $1 AND o.state = 'DELIVERED'`,
+        [principal.userId],
+      );
+      const [paid] = await sql.query<{ paid: string }>("SELECT COALESCE(sum(amount_minor), 0)::text AS paid FROM dispatch.rider_payout WHERE rider_id = $1", [principal.userId]);
+      const earned = BigInt(tot?.earned ?? "0");
+      const cashedOut = BigInt(paid?.paid ?? "0");
+      const m = (minor: bigint) => ({ amount_minor: minor.toString(), currency: ccy });
+      return {
+        available: m(earned - cashedOut),
+        lifetime_earned: m(earned),
+        cashed_out: m(cashedOut),
+        orders: orders.map((o) => {
+          const receives = BigInt(o.receives ?? "0");
+          const base = BigInt(o.share ?? "0");
+          return {
+            order_id: o.order_id,
+            at: new Date(o.at).toISOString(),
+            restaurant: o.branch_name,
+            payment_mode: o.payment_mode,
+            base: m(base),
+            tip: m(receives - base),
+            total: m(receives),
+          };
+        }),
+      };
+    });
+  }
+
+  /** POST /v1/rider/cashout: pay the rider their earned balance now (ledger: rider_payable -> psp_clearing). */
+  async cashout(principal: Principal, country: string, amountMinor: string | undefined, key: string) {
+    if (DispatchService.riderZones(principal).length === 0) throw forbidden("Only riders cash out earnings");
+    const ccy = this.#profile(country).money.settlement_currency;
+    return this.db.tx({ country }, async (sql) => {
+      const jkey = `payout:${principal.userId}:${key}`;
+      const [existing] = await sql.query<{ amount_minor: string }>("SELECT amount_minor::text FROM dispatch.rider_payout WHERE journal_key = $1", [jkey]);
+      const available = await this.#earnedBalance(sql, principal.userId);
+      if (existing) return { paid: { amount_minor: existing.amount_minor, currency: ccy }, available: { amount_minor: available.toString(), currency: ccy } };
+      const amount = amountMinor && /^\d+$/.test(amountMinor) ? BigInt(amountMinor) : available;
+      if (amount <= 0n) throw unprocessable("NOTHING_TO_CASH_OUT", "You have no balance to cash out yet");
+      if (amount > available) throw conflict("MORE_THAN_AVAILABLE", `Your balance is ${available} minor units; cash out at most that`);
+      const at = this.now();
+      const money = Money.ofMinor(amount, ccy);
+      await postJournal(sql, createJournal({
+        id: jkey, idempotencyKey: jkey, description: `Instant cash-out to rider ${principal.userId.slice(-6)}`, postedAt: at,
+        entries: [{ account: "rider_payable", country, amount: money }, { account: "psp_clearing", country, amount: money.negate() }],
+      }));
+      await sql.query(
+        "INSERT INTO dispatch.rider_payout (country_iso2, rider_id, amount_minor, currency, method, journal_key, at) VALUES ($1, $2, $3, $4, 'MOBILE_MONEY', $5, $6)",
+        [country, principal.userId, amount.toString(), ccy, jkey, at],
+      );
+      await audit(sql, { actor: principal.userId, action: "rider.cashout", target: `rider:${principal.userId}`, country, detail: { amount_minor: amount.toString(), currency: ccy } });
+      return { paid: { amount_minor: amount.toString(), currency: ccy }, available: { amount_minor: (available - amount).toString(), currency: ccy } };
+    });
+  }
+
   async #jobDetail(sql: Sql, orderId: string) {
     const [o] = await sql.query<{
       order_id: string; state: string; type: string; payment_mode: string; total_minor: string; currency: string;

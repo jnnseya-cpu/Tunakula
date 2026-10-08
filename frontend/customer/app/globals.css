@@ -1172,3 +1172,18 @@ section.tight { padding: 44px 0; }
 .add-btn.sm { width: 32px; height: 32px; min-width: 32px; border-radius: 50%; }
 .g-side section { margin-bottom: 18px; }
 @media (max-width: 760px) { .g-body { grid-template-columns: 1fr; } }
+
+/* Rider earnings + instant cash-out (additive) */
+.r-earn-link { display: block; width: 100%; margin-top: 10px; padding: 12px; border: 1px solid var(--rule); border-radius: var(--radius); background: var(--card); color: var(--ink); font-weight: 600; cursor: pointer; }
+.r-sheet { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: flex-end; justify-content: center; z-index: 50; }
+.r-sheet-card { background: var(--page); width: 100%; max-width: 480px; max-height: 88vh; overflow: auto; border-radius: 18px 18px 0 0; padding: 18px; }
+.r-sheet-head { display: flex; justify-content: space-between; align-items: center; }
+.r-balance { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: 10px 0; }
+.r-balance small { display: block; color: var(--muted); }
+.r-balance b { font-size: 26px; }
+.r-balance-sub { display: flex; justify-content: space-between; color: var(--muted); font-size: 13px; margin-bottom: 8px; }
+.r-earn-h { margin: 14px 0 6px; font-size: 15px; }
+.r-earn-list { list-style: none; padding: 0; margin: 0; }
+.r-earn-list li { display: flex; justify-content: space-between; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--rule); }
+.r-earn-list small { display: block; color: var(--muted); font-size: 12px; }
+.r-earn-nums { text-align: right; }

@@ -307,6 +307,20 @@ export class RiderController {
     return this.dispatch.jobs(principal, country(req));
   }
 
+  @Get("earnings")
+  async earnings(@Req() req: FastifyRequest) {
+    const principal = await this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+    return this.dispatch.earnings(principal, country(req));
+  }
+
+  @Post("cashout")
+  @HttpCode(200)
+  async cashout(@Req() req: FastifyRequest, @Body() body: { amount_minor?: string }) {
+    const principal = await this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+    const key = req.headers["idempotency-key"] as string;
+    return this.dispatch.cashout(principal, country(req), body?.amount_minor, key);
+  }
+
   @Post("offers/:id/accept")
   @HttpCode(200)
   async accept(@Req() req: FastifyRequest, @Param("id") id: string) {

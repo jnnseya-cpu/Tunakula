@@ -1600,3 +1600,43 @@ describe("group ordering (shared cart, bill split)", () => {
     assert.equal(order.body.lines.length, 2);
   });
 });
+
+describe("rider earnings breakdown and instant cash-out", () => {
+  test("a rider sees a per-order breakdown with base and tip", async () => {
+    const e = await call("GET", "/v1/rider/earnings", { token: rider.token, country: "CD" });
+    assert.equal(e.status, 200, JSON.stringify(e.body));
+    assert.ok(e.body.orders.length >= 1, "the rider has delivered orders from earlier in the suite");
+    const o = e.body.orders[0];
+    assert.ok("base" in o && "tip" in o && "total" in o, "each order splits into base + tip");
+    assert.equal(BigInt(o.base.amount_minor) + BigInt(o.tip.amount_minor), BigInt(o.total.amount_minor), "base + tip = the rider's take");
+    assert.ok(BigInt(e.body.available.amount_minor) > 0n, "there is a balance to cash out");
+    // Only riders have earnings.
+    assert.equal((await call("GET", "/v1/rider/earnings", { token: customer.token, country: "CD" })).status, 403);
+  });
+
+  test("instant cash-out pays the balance and posts a balanced journal", async () => {
+    const before = await call("GET", "/v1/rider/earnings", { token: rider.token, country: "CD" });
+    const avail = BigInt(before.body.available.amount_minor);
+    const [payableBefore] = await inspect("CD", "SELECT COALESCE(sum(amount_minor),0)::text AS s FROM money.ledger_entry WHERE account = 'rider_payable'");
+    const out = await call("POST", "/v1/rider/cashout", { token: rider.token, country: "CD", body: {} });
+    assert.equal(out.status, 200, JSON.stringify(out.body));
+    assert.equal(out.body.paid.amount_minor, avail.toString(), "a full cash-out pays the whole balance");
+    assert.equal(out.body.available.amount_minor, "0");
+    // rider_payable moved toward zero by exactly the payout (it is a credit balance, so the sum rises).
+    const [payableAfter] = await inspect("CD", "SELECT COALESCE(sum(amount_minor),0)::text AS s FROM money.ledger_entry WHERE account = 'rider_payable'");
+    assert.equal(BigInt(payableAfter.s) - BigInt(payableBefore.s), avail, "the payout debited rider_payable");
+    // The ledger still balances per currency.
+    const [bal] = await inspect("CD", "SELECT currency, sum(amount_minor)::text AS s FROM money.ledger_entry GROUP BY currency");
+    assert.equal(bal.s, "0");
+    // Nothing left to cash out now.
+    assert.equal((await call("POST", "/v1/rider/cashout", { token: rider.token, country: "CD", body: {} })).body.code, "NOTHING_TO_CASH_OUT");
+  });
+
+  test("a cash-out is idempotent on its key", async () => {
+    // Deliver nothing new; this rider's balance is 0, so a keyed replay must not create a second payout.
+    const key = "rider-cashout-replay-key-0001";
+    const a = await call("POST", "/v1/rider/cashout", { token: rider.token, country: "CD", key, body: { amount_minor: "0" } });
+    const b = await call("POST", "/v1/rider/cashout", { token: rider.token, country: "CD", key, body: { amount_minor: "0" } });
+    assert.equal(a.status, b.status);
+  });
+});

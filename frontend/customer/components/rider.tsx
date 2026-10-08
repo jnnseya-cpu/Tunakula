@@ -66,6 +66,7 @@ export function RiderApp() {
   const [pos, setPos] = useState<Pos | null>(null);
   const [gpsError, setGpsError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [showEarn, setShowEarn] = useState(false);
   const watch = useRef<number | null>(null);
   const lastSent = useRef<{ at: number; pos: Pos } | null>(null);
   const lastOffer = useRef<string | null>(null);
@@ -196,7 +197,61 @@ export function RiderApp() {
         <div><small>Today</small><b>{money(jobs.today.earnings)}</b><span>{jobs.today.deliveries} deliver{jobs.today.deliveries === 1 ? "y" : "ies"}</span></div>
         <div><small>Cash in hand</small><b>{money(jobs.cash_in_hand)}</b><span>hand in at the hub</span></div>
       </div>
+      <button type="button" className="r-earn-link" onClick={() => setShowEarn(true)}>Earnings &amp; instant cash-out →</button>
+      {showEarn ? <EarningsPanel onClose={() => setShowEarn(false)} /> : null}
     </Frame>
+  );
+}
+
+interface Earnings {
+  available: MoneyWire; lifetime_earned: MoneyWire; cashed_out: MoneyWire;
+  orders: { order_id: string; at: string; restaurant: string; payment_mode: string; base: MoneyWire; tip: MoneyWire; total: MoneyWire }[];
+}
+
+function EarningsPanel({ onClose }: { onClose: () => void }) {
+  const [e, setE] = useState<Earnings | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState<string | null>(null);
+  const load = () => api<Earnings>("/v1/rider/earnings").then(setE).catch((err: ApiError) => setError(err.message));
+  useEffect(() => { void load(); }, []);
+
+  const cashOut = async () => {
+    setError(null); setBusy(true);
+    try {
+      const r = await api<{ paid: MoneyWire }>("/v1/rider/cashout", { method: "POST", body: {} });
+      setDone(`Paid ${money(r.paid)} to your mobile money.`);
+      await load();
+    } catch (err) { setError((err as ApiError).message); } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="r-sheet" role="dialog" aria-modal="true" aria-label="Earnings" onClick={(ev) => { if (ev.target === ev.currentTarget) onClose(); }}>
+      <div className="r-sheet-card">
+        <div className="r-sheet-head"><h2>Your earnings</h2><button type="button" className="picker-x" onClick={onClose} aria-label="Close">✕</button></div>
+        {error ? <p className="form-error">{error}</p> : null}
+        {done ? <p className="form-notice" role="status">{done}</p> : null}
+        {!e ? <div className="skeleton-line" /> : (
+          <>
+            <div className="r-balance">
+              <div><small>Available now</small><b>{money(e.available)}</b></div>
+              <button type="button" className="r-btn go" disabled={busy || BigInt(e.available.amount_minor) <= 0n} onClick={cashOut}>{busy ? "Paying…" : "Cash out instantly"}</button>
+            </div>
+            <div className="r-balance-sub"><span>Lifetime {money(e.lifetime_earned)}</span><span>Cashed out {money(e.cashed_out)}</span></div>
+            <h3 className="r-earn-h">Per delivery</h3>
+            <ul className="r-earn-list">
+              {e.orders.map((o) => (
+                <li key={o.order_id}>
+                  <div><b>{o.restaurant}</b><small>{new Date(o.at).toLocaleDateString()} · {o.payment_mode === "CASH_ON_DELIVERY" ? "cash" : "prepaid"}</small></div>
+                  <div className="r-earn-nums"><span className="num">{money(o.total)}</span><small>base {money(o.base)}{BigInt(o.tip.amount_minor) > 0n ? ` · tip ${money(o.tip)}` : ""}</small></div>
+                </li>
+              ))}
+              {e.orders.length === 0 ? <li className="muted">No deliveries yet.</li> : null}
+            </ul>
+          </>
+        )}
+      </div>
+    </div>
   );
 }
 
