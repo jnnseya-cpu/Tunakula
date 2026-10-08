@@ -36,6 +36,7 @@ export function LiveStore() {
   const [cart, setCart] = useState<Cart | null>(null);
   const [q, setQ] = useState("");
   const [diet, setDiet] = useState<string[]>([]);
+  const [rating, setRating] = useState<{ average: number | null; count: number } | null>(null);
   const [picking, setPicking] = useState<MenuItem | null>(null);
   const { place } = useLocationCtx();
 
@@ -49,6 +50,7 @@ export function LiveStore() {
       if (saved) saved.lines = saved.lines.map((l) => (l.key ? l : { ...l, key: crypto.randomUUID() }));
       setCart(saved ?? { branch_id: id, branch_name: m.branch.name, lines: [] });
     }).catch((e: ApiError) => setError(e.message));
+    api<{ average: number | null; count: number }>(`/v1/branches/${id}/reviews`, { auth: false }).then(setRating).catch(() => undefined);
   }, [id]);
   useEffect(() => {
     if (!id || !place) return;
@@ -113,6 +115,7 @@ export function LiveStore() {
           <h1 className="store-name">{menu.branch.name}</h1>
           <div className="store-meta">
             <span className={`open-badge ${open ? "on" : "off"}`}>{open ? "Open" : "Closed now"}</span>
+            {rating && rating.average !== null ? <span className="store-rating">★ {rating.average} <small>({rating.count})</small></span> : null}
             {eta ? (
               <span className="eta-chip lg">
                 <span className="eta-km"><PinIcon /> <b className="num">{eta.distance_km}</b> km</span>

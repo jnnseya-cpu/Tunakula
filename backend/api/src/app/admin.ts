@@ -654,7 +654,7 @@ export class AdminService {
       const since = new Date(this.now().getTime() - window * 86_400_000);
       const rows = await sql.query<{
         branch_id: string; name: string; total: string; accepted: string; rejected: string; cancelled: string;
-        delivered: string; failed: string; prep_secs: string | null; gmv: string | null;
+        delivered: string; failed: string; prep_secs: string | null; gmv: string | null; rating: string | null; reviews: string;
       }>(
         `WITH ev AS (
            SELECT o.branch_id, o.order_id, o.state, o.total_minor,
@@ -674,7 +674,9 @@ export class AdminService {
                 count(*) FILTER (WHERE ev.state = 'DELIVERED')::text AS delivered,
                 count(*) FILTER (WHERE ev.state = 'DELIVERY_FAILED')::text AS failed,
                 avg(EXTRACT(EPOCH FROM (ev.ready_at - ev.accepted_at))) FILTER (WHERE ev.ready_at IS NOT NULL AND ev.accepted_at IS NOT NULL)::text AS prep_secs,
-                sum(ev.total_minor) FILTER (WHERE ev.state = 'DELIVERED')::text AS gmv
+                sum(ev.total_minor) FILTER (WHERE ev.state = 'DELIVERED')::text AS gmv,
+                (SELECT avg(restaurant_rating)::numeric(3,2)::text FROM reviews.order_review rr WHERE rr.branch_id = b.id) AS rating,
+                (SELECT count(*)::text FROM reviews.order_review rr WHERE rr.branch_id = b.id) AS reviews
            FROM catalogue.branch b LEFT JOIN ev ON ev.branch_id = b.id
           WHERE b.id = ANY($1::uuid[])
           GROUP BY b.id, b.name ORDER BY b.name`,
@@ -700,6 +702,8 @@ export class AdminService {
             cancellation_rate: rate(cancelled, total),
             avg_prep_minutes: prepSecs === null ? null : Math.round(prepSecs / 6) / 10,
             gmv: { amount_minor: r.gmv ?? "0", currency: ccy },
+            rating: r.rating ? Number(r.rating) : null,
+            reviews: Number(r.reviews ?? 0),
             score,
           };
         }),

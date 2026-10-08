@@ -13,6 +13,7 @@ import type { OnboardingService } from "../app/onboarding.ts";
 import type { MembershipService } from "../app/membership.ts";
 import type { GroupOrderService } from "../app/group.ts";
 import type { CouponService } from "../app/coupons.ts";
+import type { ReviewService } from "../app/reviews.ts";
 import type { NotificationService } from "../app/comms.ts";
 import { serialiseQuote, type CommerceService, type PlaceOrderInput, type QuoteInput } from "../app/commerce.ts";
 import { badRequest, notFound } from "../app/errors.ts";
@@ -819,6 +820,48 @@ export class CouponController {
   @HttpCode(200)
   async update(@Req() req: FastifyRequest, @Param("id") id: string, @Body() body: Record<string, unknown>) {
     return this.coupons.save(country(req), await this.#p(req), id, body ?? {});
+  }
+}
+
+/** Reviews & ratings — customers rate a delivered order; restaurants reply; storefronts show the average. */
+@Controller("v1")
+export class ReviewController {
+  constructor(
+    @Inject(TOKENS.db) private readonly db: Db,
+    @Inject(TOKENS.tokens) private readonly tokens: TokenService,
+    @Inject(TOKENS.reviews) private readonly reviews: ReviewService,
+  ) {}
+
+  #p(req: FastifyRequest) {
+    return this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+  }
+
+  @Post("orders/:id/review")
+  async submit(@Req() req: FastifyRequest, @Param("id") id: string, @Body() body: { restaurant_rating?: number; rider_rating?: number; comment?: string }) {
+    return this.reviews.submit(country(req), await this.#p(req), id, { restaurantRating: Number(body?.restaurant_rating), ...(body?.rider_rating !== undefined ? { riderRating: Number(body.rider_rating) } : {}), ...(body?.comment ? { comment: body.comment } : {}) });
+  }
+
+  @Get("orders/:id/review")
+  async forOrder(@Req() req: FastifyRequest, @Param("id") id: string) {
+    return this.reviews.forOrder(country(req), await this.#p(req), id);
+  }
+
+  /** Public: a storefront's rating and recent reviews. */
+  @Get("branches/:id/reviews")
+  async forBranch(@Req() req: FastifyRequest, @Param("id") id: string, @Query("limit") limit?: string) {
+    return this.reviews.forBranch(country(req), id, limit ? Number(limit) : undefined);
+  }
+
+  /** Merchant: every review for a branch they manage. */
+  @Get("admin/branches/:id/reviews")
+  async forMerchant(@Req() req: FastifyRequest, @Param("id") id: string) {
+    return this.reviews.listForMerchant(country(req), await this.#p(req), id);
+  }
+
+  @Post("admin/reviews/:id/reply")
+  @HttpCode(200)
+  async reply(@Req() req: FastifyRequest, @Param("id") id: string, @Body() body: { reply?: string }) {
+    return this.reviews.reply(country(req), await this.#p(req), id, body?.reply ?? "");
   }
 }
 

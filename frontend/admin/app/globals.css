@@ -463,3 +463,12 @@ tr.sel td { background: rgba(250, 210, 14, 0.12); }
 .dsp-safety ul { list-style: none; padding: 0; margin: 8px 0 0; display: flex; flex-direction: column; gap: 6px; }
 .dsp-safety li { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
 .dsp-safety-act { display: flex; gap: 10px; }
+
+/* Merchant reviews (additive) */
+.review { border-top: 1px solid var(--rule); padding: 12px 0; }
+.review-head { display: flex; align-items: center; gap: 10px; }
+.review-stars { color: #f5a623; letter-spacing: 1px; }
+.review-comment { margin: 6px 0; }
+.review-reply { margin: 6px 0; padding: 8px 10px; background: var(--tint, #eef1f6); border-radius: 8px; }
+.review-reply-form { display: flex; gap: 8px; margin-top: 6px; }
+.review-reply-form .input { flex: 1; }

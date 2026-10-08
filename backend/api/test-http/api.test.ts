@@ -1798,3 +1798,64 @@ describe("coupons / promo codes", () => {
     assert.ok(list.body.coupons.some((x: { code: string }) => x.code === "ONCE"));
   });
 });
+
+describe("reviews and ratings", () => {
+  let orderId: string;
+  let reviewId: string;
+  test("a customer rates a delivered order once; the restaurant replies", async () => {
+    // Place and deliver a fresh order so there is something to review.
+    const p = await placePrepaid();
+    await call("POST", "/v1/payments/intents", { token: customer.token, country: "CD", body: { order_id: p.orderId, method_type: "MOBILE_MONEY_PUSH", payer: { msisdn: "+243810000001" } } });
+    await transition(ops, p.orderId, { type: "ASSIGN_RIDER", riderId: rider.userId });
+    await transition(kitchen, p.orderId, { type: "ACCEPT" });
+    await transition(kitchen, p.orderId, { type: "START_PREPARING" });
+    await transition(kitchen, p.orderId, { type: "PACK", confirmedLineIds: ["l1"], packageCount: 1, allergenAcknowledged: true });
+    await transition(kitchen, p.orderId, { type: "MARK_READY", packages: [{ labelId: "R-1", sealId: "RS-1" }], packPhotoRef: "photo://pack" });
+    await transition(rider, p.orderId, { type: "PICK_UP", scannedLabelIds: ["R-1"], restaurantConfirmed: true, sealsIntact: true, location: KINSHASA });
+    assert.equal((await transition(rider, p.orderId, { type: "DELIVER", scannedLabelId: "R-1", location: DROP, sealIntact: true, verification: { method: "CODE", code: p.code } })).body.state, "DELIVERED");
+    orderId = p.orderId;
+
+    // Before reviewing, the order is reviewable.
+    const pre = await call("GET", `/v1/orders/${orderId}/review`, { token: customer.token, country: "CD" });
+    assert.equal(pre.body.reviewable, true);
+    assert.equal(pre.body.review, null);
+    // Only the customer who placed it can review; rating must be 1–5.
+    assert.equal((await call("POST", `/v1/orders/${orderId}/review`, { token: rider.token, country: "CD", body: { restaurant_rating: 5 } })).status, 403);
+    assert.equal((await call("POST", `/v1/orders/${orderId}/review`, { token: customer.token, country: "CD", body: { restaurant_rating: 9 } })).body.code, "RATING_INVALID");
+    // Submit a 5-star review with a comment and a rider rating.
+    const sub = await call("POST", `/v1/orders/${orderId}/review`, { token: customer.token, country: "CD", body: { restaurant_rating: 5, rider_rating: 4, comment: "Hot, fast, delicious." } });
+    assert.equal(sub.status, 201, JSON.stringify(sub.body));
+    // Reviewing twice is refused.
+    assert.equal((await call("POST", `/v1/orders/${orderId}/review`, { token: customer.token, country: "CD", body: { restaurant_rating: 3 } })).body.code, "ALREADY_REVIEWED");
+
+    // It shows on the public storefront with the average.
+    const pub = await call("GET", `/v1/branches/${branchId}/reviews`, { country: "CD" });
+    assert.equal(pub.status, 200, JSON.stringify(pub.body));
+    assert.ok(pub.body.average >= 1 && pub.body.average <= 5);
+    assert.ok(pub.body.count >= 1);
+    const mine = pub.body.reviews.find((r: { comment: string | null }) => r.comment === "Hot, fast, delicious.");
+    assert.ok(mine, "the comment appears on the storefront");
+    reviewId = mine.id;
+
+    // The owner sees it in their list and replies.
+    const list = await call("GET", `/v1/admin/branches/${branchId}/reviews`, { token: restaurantOwner.token, country: "CD" });
+    assert.ok(list.body.reviews.some((r: { id: string }) => r.id === reviewId));
+    const reply = await call("POST", `/v1/admin/reviews/${reviewId}/reply`, { token: restaurantOwner.token, country: "CD", body: { reply: "Merci beaucoup! See you soon." } });
+    assert.equal(reply.status, 200, JSON.stringify(reply.body));
+    const after = await call("GET", `/v1/branches/${branchId}/reviews`, { country: "CD" });
+    assert.equal(after.body.reviews.find((r: { id: string }) => r.id === reviewId).reply, "Merci beaucoup! See you soon.");
+  });
+
+  test("an undelivered order cannot be reviewed", async () => {
+    const q = await call("POST", "/v1/carts/quote", { token: customer.token, country: "CD", body: cart() });
+    const placed = await call("POST", "/v1/orders", { token: customer.token, country: "CD", body: { ...cart(), payment_mode: "PREPAID", expected_total: q.body.total } });
+    assert.equal((await call("POST", `/v1/orders/${placed.body.order_id}/review`, { token: customer.token, country: "CD", body: { restaurant_rating: 5 } })).body.code, "ORDER_NOT_DELIVERED");
+  });
+
+  test("the scorecard carries the branch rating", async () => {
+    const s = await call("GET", "/v1/admin/scorecards?days=90", { token: admin.token, country: "CD" });
+    const card = s.body.scorecards.find((c: { branch_id: string }) => c.branch_id === branchId);
+    assert.ok(card.rating >= 1 && card.rating <= 5, "the scorecard shows the average rating");
+    assert.ok(card.reviews >= 1);
+  });
+});

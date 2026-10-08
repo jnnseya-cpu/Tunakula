@@ -7,7 +7,7 @@ import { money } from "../../lib/format";
 interface Scorecard {
   branch_id: string; name: string; orders: number; delivered: number; cancelled: number; rejected: number; failed: number;
   acceptance_rate: number | null; fulfilment_rate: number | null; cancellation_rate: number | null;
-  avg_prep_minutes: number | null; gmv: Money; score: number | null;
+  avg_prep_minutes: number | null; gmv: Money; rating: number | null; reviews: number; score: number | null;
 }
 
 export default function ScorecardsPage() {
@@ -47,10 +47,10 @@ function Scorecards() {
               <th>{L("Restaurant", "Restaurant")}</th><th className="num">{L("Note", "Score")}</th>
               <th className="num">{L("Commandes", "Orders")}</th><th className="num">{L("Livrées", "Delivered")}</th>
               <th className="num">{L("Acceptation", "Acceptance")}</th><th className="num">{L("Satisfaction", "Fulfilment")}</th>
-              <th className="num">{L("Annulation", "Cancellation")}</th><th className="num">{L("Préparation", "Prep")}</th><th className="num">GMV</th>
+              <th className="num">{L("Annulation", "Cancellation")}</th><th className="num">{L("Préparation", "Prep")}</th><th className="num">{L("Note", "Rating")}</th><th className="num">GMV</th>
             </tr></thead>
             <tbody>
-              {cards === null ? <tr><td colSpan={9} className="muted">…</td></tr> : cards.map((c) => (
+              {cards === null ? <tr><td colSpan={10} className="muted">…</td></tr> : cards.map((c) => (
                 <tr key={c.branch_id}>
                   <td><b>{c.name}</b></td>
                   <td className="num"><span className={`score ${scoreClass(c.score)}`}>{c.score ?? "—"}</span></td>
@@ -60,10 +60,11 @@ function Scorecards() {
                   <td className="num">{pct(c.fulfilment_rate)}</td>
                   <td className="num">{pct(c.cancellation_rate)}</td>
                   <td className="num">{c.avg_prep_minutes === null ? "—" : `${c.avg_prep_minutes} min`}</td>
+                  <td className="num">{c.rating === null ? "—" : `★ ${c.rating} (${c.reviews})`}</td>
                   <td className="num">{money(lang, c.gmv.amount_minor, c.gmv.currency)}</td>
                 </tr>
               ))}
-              {cards && cards.length === 0 ? <tr><td colSpan={9} className="muted">{L("Aucune donnée", "No data")}</td></tr> : null}
+              {cards && cards.length === 0 ? <tr><td colSpan={10} className="muted">{L("Aucune donnée", "No data")}</td></tr> : null}
             </tbody>
           </table>
         </div>

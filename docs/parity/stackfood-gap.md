@@ -24,7 +24,7 @@ Legend: **Built** works end to end · **Partial** the engine or a screen exists,
 | Paid membership (Tunakula Plus): free delivery and/or service-charge discount | Built: admin defines plans per market; customers subscribe (`/membership`), the benefit shows live on the quote and checkout, the platform funds it from subscription revenue so the merchant and rider are still paid in full, and the settlement journal stays balanced. This is the DashPass / Uber One / Deliveroo Plus equivalent |
 | Live order tracking with map and rider | Built: live progress, door code, rider name, distance, arrival time and a map (kitchen, rider, door); street tiles need a map provider key |
 | Order history, reorder, cancel with reason, refund request | Built: history, order again, cancel; refund request missing |
-| Reviews and ratings | Missing |
+| Reviews and ratings | Built: after a delivered order the customer rates the restaurant (1–5 stars) and optionally the rider, with a comment; the rating shows on the storefront (average + count) and feeds the performance scorecard; the restaurant replies from the merchant panel |
 | Chat with restaurant and rider; push and SMS notifications | Missing |
 | Wallet, loyalty points, referral | Missing |
 | Saved addresses with map pin | Missing |
@@ -43,7 +43,7 @@ Legend: **Built** works end to end · **Partial** the engine or a screen exists,
 | Menu: foods, categories, variations, add-ons, availability, bulk import | Built (merchant): menu management (list, search, add, edit, availability, recommended; name/description per language, category, price, veg, tags, allergens), **variations and add-ons** (defined per dish and priced into the quote, order line and total), and **CSV bulk import/export** (all-or-nothing, upsert by id) in the console at Commerce → Carte et plats. Categories are free text, not yet a managed list; bulk import covers foods, not options |
 | Opening hours, schedule, temporary close | Partial: pause and resume taking orders (audited); weekly hours missing |
 | Coupons, campaigns, ads | Missing |
-| Reviews and replies | Missing |
+| Reviews and replies | Built: the owner sees every review for a branch and replies (Merchants → a restaurant → Customer reviews) |
 | Wallet, withdrawals, earnings | Partial: ledger only |
 | Employees and roles | Partial: team page (admin) |
 | Self-registration and onboarding | Missing |

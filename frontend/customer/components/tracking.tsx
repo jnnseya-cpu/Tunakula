@@ -127,6 +127,8 @@ export function Tracking() {
         </ol>
       ) : null}
 
+      {o.state === "DELIVERED" ? <RateOrder orderId={o.order_id} /> : null}
+
       {code && !TERMINAL.has(o.state) ? (
         <div className="door-code">
           <div><b>Your door code</b><p className="muted">Give it to {o.type === "DELIVERY" ? "the rider when your food is in your hands" : "the counter when you collect"}. Never share it before.</p></div>
@@ -145,6 +147,55 @@ export function Tracking() {
         </div>
       </div>
       {error ? <p className="form-error" role="alert">{error}</p> : null}
+    </div>
+  );
+}
+
+function Stars({ value, onChange, label }: { value: number; onChange?: (n: number) => void; label: string }) {
+  return (
+    <div className="stars" role={onChange ? "radiogroup" : undefined} aria-label={label}>
+      {[1, 2, 3, 4, 5].map((n) => (
+        onChange
+          ? <button type="button" key={n} className={`star ${n <= value ? "on" : ""}`} aria-label={`${n} star${n > 1 ? "s" : ""}`} aria-pressed={n <= value} onClick={() => onChange(n)}>★</button>
+          : <span key={n} className={`star ${n <= value ? "on" : ""}`} aria-hidden>★</span>
+      ))}
+    </div>
+  );
+}
+
+function RateOrder({ orderId }: { orderId: string }) {
+  const [state, setState] = useState<"loading" | "form" | "done" | "hidden">("loading");
+  const [rating, setRating] = useState(0);
+  const [riderRating, setRiderRating] = useState(0);
+  const [comment, setComment] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    api<{ reviewable: boolean; review: { restaurant_rating: number } | null }>(`/v1/orders/${orderId}/review`)
+      .then((r) => setState(r.review ? "done" : r.reviewable ? "form" : "hidden"))
+      .catch(() => setState("hidden"));
+  }, [orderId]);
+
+  const submit = async () => {
+    if (rating < 1) return;
+    setBusy(true); setError(null);
+    try {
+      await api(`/v1/orders/${orderId}/review`, { method: "POST", body: { restaurant_rating: rating, ...(riderRating ? { rider_rating: riderRating } : {}), ...(comment.trim() ? { comment: comment.trim() } : {}) } });
+      setState("done");
+    } catch (e) { setError((e as ApiError).message); } finally { setBusy(false); }
+  };
+
+  if (state === "loading" || state === "hidden") return null;
+  if (state === "done") return <div className="app-card rate"><p className="form-notice">Thanks for rating your order! ★</p></div>;
+  return (
+    <div className="app-card rate">
+      <h2>How was your order?</h2>
+      <label className="rate-row"><span>The restaurant</span><Stars value={rating} onChange={setRating} label="Rate the restaurant" /></label>
+      <label className="rate-row"><span>Your rider</span><Stars value={riderRating} onChange={setRiderRating} label="Rate the rider" /></label>
+      <textarea rows={2} value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Tell them what you loved (optional)" />
+      {error ? <p className="form-error small">{error}</p> : null}
+      <button type="button" className="btn accent wide" disabled={rating < 1 || busy} onClick={submit}>{busy ? "Sending…" : "Submit rating"}</button>
     </div>
   );
 }

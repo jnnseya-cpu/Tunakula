@@ -79,6 +79,41 @@ function MerchantMenu() {
         </form>
         {notice ? <div className="banner" style={{ marginTop: 10 }}>{notice}</div> : null}
       </section>
+      <Reviews branchId={id} country={country} lang={lang} L={L} />
     </>
+  );
+}
+
+interface Review { id: string; restaurant_rating: number; rider_rating: number | null; comment: string | null; reviewer?: string; reply?: string | null; created_at: string }
+
+function Reviews({ branchId, country, lang, L }: { branchId: string; country: string; lang: string; L: (fr: string, en: string) => string }) {
+  const [rows, setRows] = useState<Review[] | null>(null);
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [notice, setNotice] = useState<string | null>(null);
+  const load = () => api<{ reviews: Review[] }>(`/v1/admin/branches/${branchId}/reviews`, { country }).then((r) => setRows(r.reviews)).catch(() => setRows([]));
+  useEffect(() => { void load(); }, [branchId, country]); // eslint-disable-line react-hooks/exhaustive-deps
+  const reply = async (id: string) => {
+    try { await api(`/v1/admin/reviews/${id}/reply`, { method: "POST", country, body: { reply: drafts[id] ?? "" } }); setNotice(L("Réponse publiée.", "Reply posted.")); void load(); }
+    catch (e) { setNotice((e as Error).message); }
+  };
+  const stars = (n: number) => "★".repeat(n) + "☆".repeat(5 - n);
+  return (
+    <section className="card">
+      <div className="card-head"><div><h2>{L("Avis clients", "Customer reviews")}</h2><p>{rows ? `${rows.length}` : "…"}</p></div></div>
+      {notice ? <div className="banner">{notice}</div> : null}
+      {rows && rows.length === 0 ? <p className="muted">{L("Aucun avis pour l'instant.", "No reviews yet.")}</p> : null}
+      {rows?.map((r) => (
+        <div key={r.id} className="review">
+          <div className="review-head"><span className="review-stars" title={`${r.restaurant_rating}/5`}>{stars(r.restaurant_rating)}</span><b>{r.reviewer ?? "Client"}</b><span className="muted small">{new Date(r.created_at).toLocaleDateString(lang === "fr" ? "fr-FR" : "en-GB")}</span></div>
+          {r.comment ? <p className="review-comment">{r.comment}</p> : null}
+          {r.reply ? <p className="review-reply"><b>{L("Votre réponse :", "Your reply:")}</b> {r.reply}</p> : (
+            <div className="review-reply-form">
+              <input className="input" placeholder={L("Répondre…", "Reply…")} value={drafts[r.id] ?? ""} onChange={(e) => setDrafts({ ...drafts, [r.id]: e.target.value })} />
+              <button type="button" className="btn" disabled={!(drafts[r.id] ?? "").trim()} onClick={() => reply(r.id)}>{L("Répondre", "Reply")}</button>
+            </div>
+          )}
+        </div>
+      ))}
+    </section>
   );
 }
