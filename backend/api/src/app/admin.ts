@@ -120,6 +120,7 @@ export class AdminService {
           orders: vis.all || vis.branches.length > 0,
           catalogue: this.#can(principal, "restaurant:manage", marketWide, profile) || vis.branches.some((b) => this.#can(principal, "menu:write", { ...this.#branchResource(country, b), type: "menu" }, profile)),
           markets: this.#can(principal, "country_config:write", marketWide, profile),
+          membership: this.#can(principal, "membership:manage", marketWide, profile),
           team: this.#isSuperAdmin(principal) || ["rider:manage", "staff:manage", "country_config:write"].some((a) => this.#can(principal, a as Action, marketWide, profile) || vis.branches.some((b) => this.#can(principal, a as Action, this.#branchResource(country, b), profile))),
           finance: this.#can(principal, "ledger:read", marketWide, profile),
           payments: vis.all,

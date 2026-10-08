@@ -14,6 +14,8 @@ interface Quote {
   price_lines: { code: string; amount: MoneyWire }[];
   total: MoneyWire;
   distance_meters?: number;
+  /** Present for a signed-in member: the platform-funded benefit and the resulting payable total. */
+  membership?: { plan_name: string; free_delivery: boolean; discount: MoneyWire; payable_total: MoneyWire };
 }
 type Mode = "DELIVERY" | "TAKEAWAY";
 type Pay = "MOBILE_MONEY_PUSH" | "CARD" | "CASH_ON_DELIVERY";
@@ -66,7 +68,8 @@ export function Checkout() {
     if (!body || !body.items.length || !live()) return;
     let stale = false;
     setQuoteError(null);
-    api<Quote>("/v1/carts/quote", { method: "POST", body, auth: false })
+    // Signed in → the quote carries the member's benefit (the token identifies them); a guest sees the plain price.
+    api<Quote>("/v1/carts/quote", { method: "POST", body })
       .then((q) => { if (!stale) setQuote(q); })
       .catch((e: ApiError) => { if (!stale) { setQuote(null); setQuoteError(e.message); } });
     return () => { stale = true; };
@@ -74,7 +77,8 @@ export function Checkout() {
 
   useEffect(() => {
     if (!quote) return;
-    api<{ data: string[] }>(`/v1/countries/CD/payment-methods?amount_minor=${quote.total.amount_minor}&currency=${quote.total.currency}`, { auth: false })
+    const due = quote.membership?.payable_total ?? quote.total;
+    api<{ data: string[] }>(`/v1/countries/CD/payment-methods?amount_minor=${due.amount_minor}&currency=${due.currency}`, { auth: false })
       .then((r) => {
         const usable = r.data.filter((m) => m === "MOBILE_MONEY_PUSH" || m === "CARD" || m === "CASH_ON_DELIVERY");
         if (mode === "DELIVERY" && !usable.includes("CASH_ON_DELIVERY")) usable.push("CASH_ON_DELIVERY");
@@ -82,7 +86,7 @@ export function Checkout() {
         if (!usable.includes(pay)) setPay((usable[0] as Pay) ?? "MOBILE_MONEY_PUSH");
       })
       .catch(() => setMethods(["MOBILE_MONEY_PUSH", "CASH_ON_DELIVERY"]));
-  }, [quote?.total.amount_minor, mode]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [quote?.total.amount_minor, quote?.membership?.payable_total.amount_minor, mode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!live()) return <div className="app-card"><h1 className="app-title">Checkout</h1><p className="muted">Ordering opens at launch.</p></div>;
   if (signedIn === null || branchId === null) return <div className="skeleton-line" />;
@@ -104,14 +108,16 @@ export function Checkout() {
     if (!quote || !body) return;
     setError(null); setNotice(null);
     try {
+      // A member pays the discounted total; everyone else the plain total.
+      const due = quote.membership?.payable_total ?? quote.total;
       let orderId = placed.current;
       if (!orderId) {
         // One Idempotency-Key per total: a retry of the same attempt replays, a new price is a new attempt.
-        if (!attempt.current || attempt.current.total !== quote.total.amount_minor) attempt.current = { key: crypto.randomUUID(), total: quote.total.amount_minor };
+        if (!attempt.current || attempt.current.total !== due.amount_minor) attempt.current = { key: crypto.randomUUID(), total: due.amount_minor };
         setBusy("Placing your order…");
         const r = await api<{ order_id: string; recipient_code: string; state: string }>("/v1/orders", {
           method: "POST", key: attempt.current.key,
-          body: { ...body, payment_mode: pay === "CASH_ON_DELIVERY" ? "CASH_ON_DELIVERY" : "PREPAID", expected_total: quote.total, ...(landmark.trim() ? { address: { landmark: landmark.trim() } } : {}) },
+          body: { ...body, payment_mode: pay === "CASH_ON_DELIVERY" ? "CASH_ON_DELIVERY" : "PREPAID", expected_total: due, ...(landmark.trim() ? { address: { landmark: landmark.trim() } } : {}) },
         });
         orderId = r.order_id;
         placed.current = orderId;
@@ -137,7 +143,7 @@ export function Checkout() {
       setBusy(null);
       if (err.code === "PRICE_CHANGED") {
         setNotice("The price changed since you opened checkout. Here is the new total — tap Place order to confirm it.");
-        api<Quote>("/v1/carts/quote", { method: "POST", body, auth: false }).then(setQuote).catch(() => undefined);
+        api<Quote>("/v1/carts/quote", { method: "POST", body }).then(setQuote).catch(() => undefined);
       } else setError(err.message);
     }
   };
@@ -200,14 +206,17 @@ export function Checkout() {
             {quote.price_lines.map((p) => (
               <div key={p.code}><dt>{LINE_LABEL[p.code] ?? p.code}{p.code === "DELIVERY_FEE" && km ? ` · ${km} km` : ""}</dt><dd className="num">{money(p.amount)}</dd></div>
             ))}
-            <div className="total"><dt>Total</dt><dd className="num">{money(quote.total)}</dd></div>
+            {quote.membership ? (
+              <div className="member-save"><dt>{quote.membership.plan_name}{quote.membership.free_delivery ? " · free delivery" : ""}</dt><dd className="num">−{money(quote.membership.discount)}</dd></div>
+            ) : null}
+            <div className="total"><dt>Total</dt><dd className="num">{money(quote.membership?.payable_total ?? quote.total)}</dd></div>
           </dl>
         ) : quoteError ? <p className="form-error">{quoteError}</p> : <div className="skeleton-line" />}
         <p className="muted small">Restaurants pay 0% commission: dishes are at the counter price. Our 10% service charge is shown on its own line.</p>
         {notice ? <p className="form-notice" role="status">{notice}</p> : null}
         {error ? <p className="form-error" role="alert">{error}</p> : null}
         <button type="button" className="btn accent wide big" disabled={!quote || !!busy || (pay === "MOBILE_MONEY_PUSH" && msisdn.replace(/\D/g, "").length < 9)} onClick={placeOrder}>
-          {busy ?? (quote ? `Place order · ${money(quote.total)}` : "Place order")}
+          {busy ?? (quote ? `Place order · ${money(quote.membership?.payable_total ?? quote.total)}` : "Place order")}
         </button>
         <Link className="link-btn" href={`/store/?id=${cart.branch_id}`}>Change my order</Link>
       </aside>

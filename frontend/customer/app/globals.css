@@ -1124,3 +1124,18 @@ section.tight { padding: 44px 0; }
 .pk-price { color: var(--muted); font-size: 13px; }
 .picker-foot { padding: 14px 18px; border-top: 1px solid var(--line, #eee); display: flex; flex-direction: column; gap: 8px; }
 .picker-foot .muted { text-align: center; }
+
+/* Tunakula Plus — membership (additive) */
+.plus-plans { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin: 20px 0; }
+.plus-plan { border: 1px solid var(--rule); border-radius: var(--radius); padding: 20px; background: var(--card); display: flex; flex-direction: column; gap: 10px; }
+.plus-plan h3 { margin: 0; }
+.plus-price { display: flex; align-items: baseline; gap: 4px; }
+.plus-price b { font-size: 28px; color: var(--ink); }
+.plus-price span { color: var(--muted); }
+.plus-benefits { list-style: none; padding: 0; margin: 6px 0; display: flex; flex-direction: column; gap: 6px; }
+.plus-benefits li { padding-left: 24px; position: relative; color: var(--ink); }
+.plus-benefits li::before { content: "✓"; position: absolute; left: 0; color: var(--ok, #0a7d33); font-weight: 700; }
+.plus-plan .btn { margin-top: auto; }
+.plus-current { border: 1px solid var(--ok, #0a7d33); border-radius: var(--radius); padding: 20px; margin: 16px 0; background: color-mix(in srgb, var(--ok, #0a7d33) 6%, var(--card)); }
+.plus-current h2 { margin: 8px 0; }
+.price-lines .member-save dt, .price-lines .member-save dd { color: var(--ok, #0a7d33); font-weight: 600; }

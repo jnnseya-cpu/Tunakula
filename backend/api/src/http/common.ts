@@ -21,6 +21,7 @@ export const TOKENS = {
   config: "CONFIG_SERVICE",
   admin: "ADMIN_SERVICE",
   comms: "COMMS_SERVICE",
+  membership: "MEMBERSHIP_SERVICE",
   logger: "LOGGER",
 } as const;
 

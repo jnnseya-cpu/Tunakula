@@ -110,6 +110,28 @@ export function recallCode(orderId: string): string | null {
   try { return localStorage.getItem(`tk-code:${orderId}`); } catch { return null; }
 }
 
+// ── Membership (the "Plus" subscription) ──
+export interface MembershipPlan {
+  id: string;
+  name: string;
+  description: string;
+  price: MoneyWire;
+  period: "MONTH" | "YEAR";
+  benefits: { free_delivery: boolean; min_subtotal: MoneyWire; service_charge_off_bps: number };
+}
+export interface MyMembership {
+  id: string;
+  status: "ACTIVE" | "CANCELLED" | "EXPIRED";
+  auto_renew: boolean;
+  started_at: string;
+  current_period_end: string;
+  plan: MembershipPlan & { active: boolean };
+}
+export const listPlans = () => api<{ data: MembershipPlan[] }>("/v1/membership/plans", { auth: false }).then((r) => r.data);
+export const myMembership = () => api<{ membership: MyMembership | null }>("/v1/me/membership").then((r) => r.membership);
+export const subscribePlan = (planId: string) => api<{ membership: MyMembership }>("/v1/me/membership", { method: "POST", body: { plan_id: planId } }).then((r) => r.membership);
+export const cancelMembership = () => api<{ membership: MyMembership | null }>("/v1/me/membership", { method: "DELETE" }).then((r) => r.membership);
+
 export const STATE_LABEL: Record<string, string> = {
   DRAFT: "Order created", PENDING_PAYMENT: "Waiting for payment", PAYMENT_FAILED: "Payment failed", PLACED: "Sent to the kitchen",
   ACCEPTED: "Kitchen accepted", PREPARING: "Being prepared", PACKED: "Packed and sealed", READY: "Ready for pickup",

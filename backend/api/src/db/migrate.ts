@@ -42,7 +42,7 @@ export async function migrate(ownerUrl: string, appRole?: string): Promise<strin
 
 async function grant(client: pg.Client, role: string): Promise<void> {
   if (!/^[a-z_][a-z0-9_]*$/.test(role)) throw new Error(`Invalid role name ${role}`);
-  const schemas = ["platform", "config", "identity", "catalogue", "ordering", "money", "payments", "dispatch", "onboarding", "media", "comms", "api"];
+  const schemas = ["platform", "config", "identity", "catalogue", "ordering", "money", "payments", "dispatch", "onboarding", "media", "comms", "membership", "api"];
   for (const s of schemas) {
     await client.query(`GRANT USAGE ON SCHEMA ${s} TO ${role}`);
     await client.query(`GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA ${s} TO ${role}`);

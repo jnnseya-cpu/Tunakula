@@ -108,6 +108,8 @@ export interface OrderSnapshot {
     readonly merchantReceives: MoneyJSON;
     readonly riderReceives: MoneyJSON;
     readonly platformReceives: MoneyJSON;
+    /** Membership benefit the platform funded on this order (free delivery / service-charge discount), §Plus. */
+    readonly membershipDiscount?: MoneyJSON;
   };
   readonly paymentMode: "PREPAID" | "CASH_ON_DELIVERY";
   /** As configured (§10.2); AGENT_OPTIMISED must be resolved at placement. */

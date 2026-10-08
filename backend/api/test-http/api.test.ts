@@ -1381,3 +1381,110 @@ describe("order lifecycle fires customer notifications", () => {
     assert.equal(placedCount, 1);
   });
 });
+
+describe("paid membership (the Plus subscription)", () => {
+  let plan: any;
+  let member: { token: string; userId: string };
+
+  test("a country admin creates a plan; a plain customer cannot", async () => {
+    const body = { name: "Tunakula Plus", description: "Free delivery on every order", price_minor: "999", currency: "USD", period: "MONTH", free_delivery: true, min_subtotal_minor: "0" };
+    assert.equal((await call("POST", "/v1/admin/membership/plans", { token: customer.token, country: "CD", body })).status, 403);
+    const created = await call("POST", "/v1/admin/membership/plans", { token: admin.token, country: "CD", body });
+    assert.equal(created.status, 201, JSON.stringify(created.body));
+    plan = created.body;
+    assert.equal(plan.name, "Tunakula Plus");
+    assert.deepEqual(plan.price, { amount_minor: "999", currency: "USD" });
+    assert.equal(plan.benefits.free_delivery, true);
+    // It shows up in the public plan list.
+    const plans = await call("GET", "/v1/membership/plans", { country: "CD" });
+    assert.ok(plans.body.data.some((p: { id: string }) => p.id === plan.id));
+  });
+
+  test("before subscribing, a member's quote has no benefit", async () => {
+    member = await signIn("+243810000050");
+    const q = await call("POST", "/v1/carts/quote", { token: member.token, country: "CD", body: cart() });
+    assert.equal(q.status, 200, JSON.stringify(q.body));
+    assert.equal(q.body.membership, undefined, "no membership block for a non-member");
+  });
+
+  test("subscribing charges the fee to the ledger and starts a period", async () => {
+    const r = await call("POST", "/v1/me/membership", { token: member.token, country: "CD", body: { plan_id: plan.id } });
+    assert.equal(r.status, 201, JSON.stringify(r.body));
+    assert.equal(r.body.membership.status, "ACTIVE");
+    assert.equal(r.body.membership.plan.id, plan.id);
+    // The fee is recorded: subscription revenue is credited (negative), the customer owes it (debit).
+    const [rev] = await inspect("CD", "SELECT sum(amount_minor)::text AS s FROM money.ledger_entry WHERE account = 'subscription_revenue'");
+    assert.equal(rev.s, "-999", "the membership fee is subscription revenue");
+    const [recv] = await inspect("CD", "SELECT sum(amount_minor)::text AS s FROM money.ledger_entry WHERE account = 'customer_receivable'");
+    assert.equal(recv.s, "999", "the customer owes the fee");
+    // Subscribing twice is refused.
+    assert.equal((await call("POST", "/v1/me/membership", { token: member.token, country: "CD", body: { plan_id: plan.id } })).body.code, "ALREADY_SUBSCRIBED");
+    // GET shows it.
+    const mine = await call("GET", "/v1/me/membership", { token: member.token, country: "CD" });
+    assert.equal(mine.body.membership.plan.id, plan.id);
+  });
+
+  test("a member's quote waives the delivery fee, funded by the platform", async () => {
+    const q = await call("POST", "/v1/carts/quote", { token: member.token, country: "CD", body: cart() });
+    assert.equal(q.status, 200, JSON.stringify(q.body));
+    assert.ok(q.body.membership, "a member gets a membership block");
+    assert.equal(q.body.membership.free_delivery, true);
+    const deliveryLine = q.body.price_lines.find((l: { code: string }) => l.code === "DELIVERY_FEE");
+    assert.ok(deliveryLine && BigInt(deliveryLine.amount.amount_minor) > 0n, "the order has a delivery fee to waive");
+    // The discount equals the delivery fee; the payable is the gross total minus it.
+    assert.equal(q.body.membership.discount.amount_minor, deliveryLine.amount.amount_minor);
+    assert.equal(BigInt(q.body.membership.payable_total.amount_minor), BigInt(q.body.total.amount_minor) - BigInt(deliveryLine.amount.amount_minor));
+  });
+
+  test("a member's order settles with the platform funding the benefit; the books balance", async () => {
+    const q = await call("POST", "/v1/carts/quote", { token: member.token, country: "CD", body: cart() });
+    const payable = q.body.membership.payable_total;
+    const discount = q.body.membership.discount.amount_minor;
+    // Pay the discounted total, not the gross.
+    const placed = await call("POST", "/v1/orders", { token: member.token, country: "CD", body: { ...cart(), payment_mode: "PREPAID", expected_total: payable } });
+    assert.equal(placed.status, 201, JSON.stringify(placed.body));
+    const orderId = placed.body.order_id;
+    const code = placed.body.recipient_code;
+    // Paying the gross total would be rejected: the member owes less.
+    assert.equal(placed.body.quote.membership.payable_total.amount_minor, payable.amount_minor);
+    const pay = await call("POST", "/v1/payments/intents", { token: member.token, country: "CD", body: { order_id: orderId, method_type: "MOBILE_MONEY_PUSH", payer: { msisdn: "+243810000050" } } });
+    assert.equal(pay.body.status, "SUCCEEDED", JSON.stringify(pay.body));
+    // Drive the order through custody to delivered.
+    await transition(ops, orderId, { type: "ASSIGN_RIDER", riderId: rider.userId });
+    await transition(kitchen, orderId, { type: "ACCEPT" });
+    await transition(kitchen, orderId, { type: "START_PREPARING" });
+    await transition(kitchen, orderId, { type: "PACK", confirmedLineIds: ["l1"], packageCount: 1, allergenAcknowledged: true });
+    await transition(kitchen, orderId, { type: "MARK_READY", packages: [{ labelId: "M-1", sealId: "MS-1" }], packPhotoRef: "photo://pack" });
+    await transition(rider, orderId, { type: "PICK_UP", scannedLabelIds: ["M-1"], restaurantConfirmed: true, sealsIntact: true, location: KINSHASA });
+    const done = await transition(rider, orderId, { type: "DELIVER", scannedLabelId: "M-1", location: DROP, sealIntact: true, verification: { method: "CODE", code } });
+    assert.equal(done.body.state, "DELIVERED", JSON.stringify(done.body));
+    // The settlement journal funds the waived delivery from subscription revenue, and still balances.
+    const entries = await inspect("CD", "SELECT e.account, e.amount_minor::text AS amount, e.currency FROM money.ledger_entry e JOIN money.journal j ON j.id = e.journal_id WHERE j.idempotency_key = $1 ORDER BY e.line", [`order:${orderId}:settlement`]);
+    const fund = entries.find((e) => e.account === "subscription_revenue");
+    assert.ok(fund, "a membership funding entry is posted");
+    assert.equal(fund.amount, discount, "the platform funds exactly the waived delivery fee");
+    const byCcy = new Map<string, bigint>();
+    for (const e of entries) byCcy.set(e.currency, (byCcy.get(e.currency) ?? 0n) + BigInt(e.amount));
+    for (const [, sum] of byCcy) assert.equal(sum, 0n, "the settlement journal balances per currency");
+  });
+
+  test("cancelling stops auto-renewal but keeps benefits until the period ends", async () => {
+    const r = await call("DELETE", "/v1/me/membership", { token: member.token, country: "CD" });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.equal(r.body.membership.auto_renew, false);
+    assert.equal(r.body.membership.status, "ACTIVE", "still active until the period ends");
+    // The benefit still applies while the paid period lasts.
+    const q = await call("POST", "/v1/carts/quote", { token: member.token, country: "CD", body: cart() });
+    assert.ok(q.body.membership, "benefit still applies inside the paid period");
+  });
+
+  test("an admin can update a plan and deactivate it", async () => {
+    const upd = await call("POST", `/v1/admin/membership/plans/${plan.id}`, { token: admin.token, country: "CD", body: { ...plan, name: "Tunakula Plus", price_minor: "1299", currency: "USD", period: "MONTH", free_delivery: true, min_subtotal_minor: "0", active: false } });
+    assert.equal(upd.status, 200, JSON.stringify(upd.body));
+    assert.equal(upd.body.active, false);
+    assert.deepEqual(upd.body.price, { amount_minor: "1299", currency: "USD" });
+    // A deactivated plan is gone from the public list.
+    const plans = await call("GET", "/v1/membership/plans", { country: "CD" });
+    assert.ok(!plans.body.data.some((p: { id: string }) => p.id === plan.id), "inactive plans are not offered");
+  });
+});

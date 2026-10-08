@@ -437,3 +437,10 @@ tr.sel td { background: rgba(250, 210, 14, 0.12); }
 .opt-row .input { flex: 1; }
 .opt-row .input.price { flex: 0 0 90px; text-align: right; }
 .opt-ed .input, .opt-ed .select { font-size: 13px; padding: 6px 9px; }
+
+/* Membership plan editor (additive) */
+.form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; padding: 16px; }
+.form-grid label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--muted, #667); }
+.form-grid label.check { flex-direction: row; align-items: center; gap: 8px; }
+.form-grid label.check input { width: auto; }
+.card-foot { padding: 0 16px 16px; display: flex; gap: 10px; justify-content: flex-end; }

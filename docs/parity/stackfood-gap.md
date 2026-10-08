@@ -19,6 +19,7 @@ Legend: **Built** works end to end · **Partial** the engine or a screen exists,
 | Cart and checkout: delivery, takeaway, dine-in, scheduled | Built for delivery and takeaway (live quote, directions, tip); dine-in and scheduled missing |
 | Pay: mobile money, card, cash, wallet, partial payment | Built: mobile money, card, cash on delivery; wallet and partial payment missing |
 | Coupons, cashback, campaigns | Missing |
+| Paid membership (Tunakula Plus): free delivery and/or service-charge discount | Built: admin defines plans per market; customers subscribe (`/membership`), the benefit shows live on the quote and checkout, the platform funds it from subscription revenue so the merchant and rider are still paid in full, and the settlement journal stays balanced. This is the DashPass / Uber One / Deliveroo Plus equivalent |
 | Live order tracking with map and rider | Built: live progress, door code, rider name, distance, arrival time and a map (kitchen, rider, door); street tiles need a map provider key |
 | Order history, reorder, cancel with reason, refund request | Built: history, order again, cancel; refund request missing |
 | Reviews and ratings | Missing |
@@ -66,6 +67,7 @@ Legend: **Built** works end to end · **Partial** the engine or a screen exists,
 | Cuisines, categories, add-ons, foods, bulk import/export | Partial: per-restaurant menu only |
 | Restaurants: list, add, join requests, commission/plan | Partial: list and menu |
 | Promotions: campaigns, banners, coupons, cashback, push, ads | Missing |
+| Membership plans (Tunakula Plus): define, price, benefits, activate | Built: plan manager at Commerce → Abonnement Plus (free delivery over a minimum subtotal, service-charge discount %, monthly/yearly), gated by `membership:manage` |
 | Customers: list, wallet, loyalty, subscribers | Missing |
 | Deliverymen: list, vehicles, shifts, reviews, bonuses, join requests | Partial: rider list with status and cash, join requests with ID review; shifts, reviews and bonuses missing |
 | Employees and roles | Built |

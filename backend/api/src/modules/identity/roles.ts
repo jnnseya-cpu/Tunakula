@@ -26,6 +26,8 @@ export const ACTIONS = [
   "restaurant:manage",
   "commission:write",
   "campaign:write",
+  /** Define and manage paid customer membership plans (the "Plus" subscription). */
+  "membership:manage",
   // Finance
   "ledger:read",
   "fx:manage",
@@ -78,6 +80,8 @@ export const ACTIONS = [
   "order:place",
   "wallet:manage",
   "xbo:send",
+  /** Subscribe to, and cancel, one's own paid membership. */
+  "membership:subscribe",
 ] as const;
 export type Action = (typeof ACTIONS)[number];
 
@@ -115,7 +119,7 @@ export const ROLES = {
   },
   COUNTRY_ADMIN: {
     scopes: ["COUNTRY"],
-    grants: all("country_config:write", "zone:write", "restaurant:manage", "commission:write", "campaign:write", "order:read", "rider:manage"),
+    grants: all("country_config:write", "zone:write", "restaurant:manage", "commission:write", "campaign:write", "membership:manage", "order:read", "rider:manage"),
   },
   CITY_OPS: {
     scopes: ["CITY"],
@@ -163,7 +167,7 @@ export const ROLES = {
   },
   CUSTOMER: {
     scopes: ["GLOBAL_IDENTITY"],
-    grants: [...when(["MARKET_OPEN"], "order:place", "xbo:send"), ...when(["OWN_RESOURCE"], "order:read", "wallet:manage")],
+    grants: [...when(["MARKET_OPEN"], "order:place", "xbo:send", "membership:subscribe"), ...when(["OWN_RESOURCE"], "order:read", "wallet:manage")],
   },
 } as const satisfies Record<string, RoleDefinition>;
 

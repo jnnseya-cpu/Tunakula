@@ -6,6 +6,7 @@ import { LocationButton } from "./location";
 
 const LINKS = [
   { href: "/order/", label: "Restaurants" },
+  { href: "/membership/", label: "Tunakula Plus" },
   { href: "/send-home/", label: "Send a meal home" },
   { href: "/restaurants/", label: "For restaurants" },
   { href: "/riders/", label: "Ride with us" },

@@ -12,6 +12,7 @@ import { CommerceService } from "../app/commerce.ts";
 import { ConfigService } from "../app/config.ts";
 import { DispatchService } from "../app/dispatch.ts";
 import { EtaService } from "../app/eta.ts";
+import { MembershipService } from "../app/membership.ts";
 import { OnboardingService } from "../app/onboarding.ts";
 import { PaymentService } from "../app/payments.ts";
 import { straightLineRouting, type RoutingProvider } from "../app/routing.ts";
@@ -20,7 +21,7 @@ import type { Db } from "../db/db.ts";
 import type { CountryConfigRegistry } from "../modules/config/config-registry.ts";
 import { PaymentRouter } from "../modules/payments/payment-router.ts";
 import { IdempotencyInterceptor, ProblemFilter, TOKENS } from "./common.ts";
-import { AdminConfigController, AdminController, AuthController, CommsController, KitchenController, MeController, NotificationsController, OnboardingController, OpsController, RiderController, CatalogueController, OrdersController, PaymentsController, PlatformController, WebhooksController } from "./controllers.ts";
+import { AdminConfigController, AdminController, AuthController, CommsController, KitchenController, MeController, MembershipController, NotificationsController, OnboardingController, OpsController, RiderController, CatalogueController, OrdersController, PaymentsController, PlatformController, WebhooksController } from "./controllers.ts";
 
 export interface ApiDeps {
   readonly db: Db;
@@ -43,6 +44,8 @@ export async function createApi(deps: ApiDeps): Promise<NestFastifyApplication> 
   const routing = deps.routing ?? straightLineRouting();
   const comms = new NotificationService(deps.db, deps.registry, deps.senders ?? sandboxSender, now);
   const commerce = new CommerceService(deps.db, deps.registry, routing, now, comms);
+  const membership = new MembershipService(deps.db, deps.registry, now);
+  commerce.useMembership(membership);
   const dispatch = new DispatchService(deps.db, commerce, now);
   const router = new PaymentRouter(deps.connectors, { now });
   const payments = new PaymentService(deps.db, router, new Map(deps.connectors.map((c) => [c.id, c])), commerce);
@@ -53,7 +56,7 @@ export async function createApi(deps: ApiDeps): Promise<NestFastifyApplication> 
     static register(): DynamicModule {
       return {
         module: ApiModule,
-        controllers: [AdminConfigController, AdminController, KitchenController, OpsController, OnboardingController, RiderController, MeController, PlatformController, AuthController, CatalogueController, OrdersController, PaymentsController, WebhooksController, NotificationsController, CommsController],
+        controllers: [AdminConfigController, AdminController, KitchenController, OpsController, OnboardingController, RiderController, MeController, MembershipController, PlatformController, AuthController, CatalogueController, OrdersController, PaymentsController, WebhooksController, NotificationsController, CommsController],
         providers: [
           { provide: TOKENS.db, useValue: deps.db },
           { provide: TOKENS.registry, useValue: deps.registry },
@@ -68,6 +71,7 @@ export async function createApi(deps: ApiDeps): Promise<NestFastifyApplication> 
           { provide: TOKENS.eta, useValue: new EtaService(deps.db, deps.registry, routing, now) },
           { provide: TOKENS.config, useValue: new ConfigService(deps.db, deps.registry) },
           { provide: TOKENS.admin, useValue: new AdminService(deps.db, deps.registry, now) },
+          { provide: TOKENS.membership, useValue: membership },
         ],
       };
     }

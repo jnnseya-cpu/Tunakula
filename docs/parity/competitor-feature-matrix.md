@@ -293,7 +293,7 @@ The superset below merges all four actors into build epics. **Each epic notes wh
 ### B. Net-new build epics (StackFood lacks; big-4 differentiators — prioritized)
 | Priority | Epic | Source platforms to model | Why it matters |
 |---|---|---|---|
-| P0 | **Paid subscription membership** (free delivery + perks + late-credit) | DashPass, Uber One, Deliveroo Plus/Diamond | Biggest customer-retention gap |
+| ✅ P0 | **Paid subscription membership** (free delivery + perks + late-credit) — **BUILT** (Tunakula Plus: admin plans, customer subscribe/cancel, quote+checkout benefit, platform-funded settlement that stays balanced) | DashPass, Uber One, Deliveroo Plus/Diamond | Biggest customer-retention gap |
 | P0 | **Group ordering + bill-split** (shared cart link, deadline, auto/manual checkout) | Uber Eats, DoorDash | Flagship social-order feature |
 | P0 | **Rich dietary/allergen filtering + structured nutrition/calorie** | Uber Eats, Deliveroo, Just Eat (14 EU allergens) | Compliance (UK/EU) + accessibility |
 | P1 | **Driver performance tiers + incentives/quests** (Top Dasher, Uber Pro, Boost) | DoorDash, Uber | Courier supply retention |

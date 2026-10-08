@@ -10,6 +10,7 @@ import type { ConfigService } from "../app/config.ts";
 import type { DispatchService } from "../app/dispatch.ts";
 import type { EtaService } from "../app/eta.ts";
 import type { OnboardingService } from "../app/onboarding.ts";
+import type { MembershipService } from "../app/membership.ts";
 import type { NotificationService } from "../app/comms.ts";
 import { serialiseQuote, type CommerceService, type PlaceOrderInput, type QuoteInput } from "../app/commerce.ts";
 import { badRequest, notFound } from "../app/errors.ts";
@@ -164,7 +165,14 @@ export class OrdersController {
   @Post("carts/quote")
   @HttpCode(200)
   async quote(@Req() req: FastifyRequest, @Body() body: QuoteBody) {
-    return serialiseQuote(await this.commerce.quote(country(req), toQuoteInput(body)));
+    // Optional auth: a signed-in customer sees their membership benefit on the quote; a guest sees the plain price.
+    let customerId: string | undefined;
+    try {
+      customerId = userId(req, this.tokens);
+    } catch {
+      customerId = undefined;
+    }
+    return serialiseQuote(await this.commerce.quote(country(req), { ...toQuoteInput(body), ...(customerId ? { customerId } : {}) }));
   }
 
   @Post("orders")
@@ -590,6 +598,66 @@ export class CommsController {
   @HttpCode(200)
   async test(@Req() req: FastifyRequest, @Body() body: { event_key?: string; data?: Record<string, string | number> }) {
     return this.comms.sendTest(await this.#me(req), country(req), body?.event_key ?? "", body?.data ?? {});
+  }
+}
+
+/** Paid customer membership — the "Plus" subscription: browse plans, subscribe, view and cancel. */
+@Controller("v1")
+export class MembershipController {
+  constructor(
+    @Inject(TOKENS.db) private readonly db: Db,
+    @Inject(TOKENS.tokens) private readonly tokens: TokenService,
+    @Inject(TOKENS.membership) private readonly membership: MembershipService,
+  ) {}
+
+  #principal(req: FastifyRequest) {
+    return this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+  }
+
+  /** Public: the plans available to subscribe to in this market. */
+  @Get("membership/plans")
+  async plans(@Req() req: FastifyRequest) {
+    return { data: await this.membership.plans(country(req)) };
+  }
+
+  /** Customer: the caller's current membership, or null. */
+  @Get("me/membership")
+  async mine(@Req() req: FastifyRequest) {
+    return this.membership.mine(country(req), await this.#principal(req));
+  }
+
+  /** Customer: subscribe to a plan. */
+  @Post("me/membership")
+  async subscribe(@Req() req: FastifyRequest, @Body() body: { plan_id?: string }) {
+    if (!body?.plan_id) throw badRequest("PLAN_REQUIRED", "Send { \"plan_id\": ... }");
+    const key = req.headers["idempotency-key"] as string;
+    return this.membership.subscribe(country(req), await this.#principal(req), body.plan_id, key);
+  }
+
+  /** Customer: cancel — stops auto-renewal, benefits last until the period ends. */
+  @Delete("me/membership")
+  @HttpCode(200)
+  async cancel(@Req() req: FastifyRequest) {
+    return this.membership.cancel(country(req), await this.#principal(req));
+  }
+
+  /** Admin: every plan in this market (including inactive). */
+  @Get("admin/membership/plans")
+  async adminPlans(@Req() req: FastifyRequest) {
+    return { data: await this.membership.allPlans(country(req), await this.#principal(req)) };
+  }
+
+  /** Admin: create a plan. */
+  @Post("admin/membership/plans")
+  async createPlan(@Req() req: FastifyRequest, @Body() body: Record<string, unknown>) {
+    return this.membership.savePlan(country(req), await this.#principal(req), undefined, body ?? {});
+  }
+
+  /** Admin: update a plan. */
+  @Post("admin/membership/plans/:id")
+  @HttpCode(200)
+  async updatePlan(@Req() req: FastifyRequest, @Param("id") id: string, @Body() body: Record<string, unknown>) {
+    return this.membership.savePlan(country(req), await this.#principal(req), id, body ?? {});
   }
 }
 

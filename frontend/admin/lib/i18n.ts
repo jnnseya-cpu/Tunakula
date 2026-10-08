@@ -22,6 +22,7 @@ const T = {
   pos: { fr: "Point de vente", en: "Point of sale" },
   zones: { fr: "Zones", en: "Zones" },
   promotions: { fr: "Promotions", en: "Promotions" },
+  membership: { fr: "Abonnement Plus", en: "Plus membership" },
   support: { fr: "Aide et soutien", en: "Support" },
   customers: { fr: "Clients", en: "Customers" },
   riders: { fr: "Livreurs et candidatures", en: "Riders and applications" },
