@@ -860,6 +860,31 @@ export class AddressController {
   }
 }
 
+/** Favourite restaurants for the signed-in customer. */
+@Controller("v1/me/favourites")
+export class FavouriteController {
+  constructor(
+    @Inject(TOKENS.db) private readonly db: Db,
+    @Inject(TOKENS.tokens) private readonly tokens: TokenService,
+    @Inject(TOKENS.addresses) private readonly addresses: AddressService,
+  ) {}
+
+  #p(req: FastifyRequest) {
+    return this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+  }
+
+  @Get()
+  async list(@Req() req: FastifyRequest) {
+    return this.addresses.favourites(country(req), await this.#p(req));
+  }
+
+  @Post(":branchId")
+  @HttpCode(200)
+  async toggle(@Req() req: FastifyRequest, @Param("branchId") branchId: string) {
+    return this.addresses.toggleFavourite(country(req), await this.#p(req), branchId);
+  }
+}
+
 /** Reviews & ratings — customers rate a delivered order; restaurants reply; storefronts show the average. */
 @Controller("v1")
 export class ReviewController {

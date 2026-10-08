@@ -28,7 +28,7 @@ Legend: **Built** works end to end · **Partial** the engine or a screen exists,
 | Chat with restaurant and rider; push and SMS notifications | Missing |
 | Wallet, loyalty points, referral | Missing |
 | Saved addresses with map pin | Built: a customer keeps several named map pins (Home, Work…), sets a default, and picks one at checkout as quick-pick chips; a one-tap "Save this address" stores the current pin |
-| Favourites | Missing |
+| Favourites | Built: a heart on each storefront adds/removes the restaurant from the customer's favourites (GET /v1/me/favourites, with name, commune and rating) |
 | Subscription (repeat) orders | Missing |
 | Languages FR / EN / LN / SW, dark mode | Missing (English only) |
 | Native Android / iOS apps | Missing |

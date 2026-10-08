@@ -132,6 +132,11 @@ export const myMembership = () => api<{ membership: MyMembership | null }>("/v1/
 export const subscribePlan = (planId: string) => api<{ membership: MyMembership }>("/v1/me/membership", { method: "POST", body: { plan_id: planId } }).then((r) => r.membership);
 export const cancelMembership = () => api<{ membership: MyMembership | null }>("/v1/me/membership", { method: "DELETE" }).then((r) => r.membership);
 
+// ── Favourites ──
+export interface FavRestaurant { branch_id: string; name: string; commune: string | null; rating: number | null }
+export const listFavourites = () => api<{ data: FavRestaurant[] }>("/v1/me/favourites").then((r) => r.data);
+export const toggleFavourite = (branchId: string) => api<{ branch_id: string; favourite: boolean }>(`/v1/me/favourites/${branchId}`, { method: "POST" });
+
 // ── Saved addresses ──
 export interface SavedAddress { id: string; label: string; lat: number; lng: number; landmark: string | null; contact_phone: string | null; is_default: boolean }
 export const listAddresses = () => api<{ data: SavedAddress[] }>("/v1/me/addresses").then((r) => r.data);

@@ -52,6 +52,31 @@ export class AddressService {
     if (rows.length === 0) throw notFound("Address");
     return { id, deleted: true };
   }
+
+  /** The customer's favourite restaurants, with name, commune and rating. */
+  async favourites(country: string, principal: Principal) {
+    const rows = await this.db.tx({ country }, (sql) => sql.query<{ branch_id: string; name: string; commune: string | null; avg: string | null }>(
+      `SELECT f.branch_id, b.name, b.commune,
+              (SELECT avg(restaurant_rating)::numeric(3,2)::text FROM reviews.order_review r WHERE r.branch_id = b.id) AS avg
+         FROM identity.favourite f JOIN catalogue.branch b ON b.id = f.branch_id
+        WHERE f.user_id = $1 AND f.country_iso2 = $2 ORDER BY f.created_at DESC`,
+      [principal.userId, country],
+    ));
+    return { data: rows.map((r) => ({ branch_id: r.branch_id, name: r.name, commune: r.commune, rating: r.avg ? Number(r.avg) : null })) };
+  }
+
+  /** Toggle a restaurant as a favourite; returns whether it is now favourited. */
+  async toggleFavourite(country: string, principal: Principal, branchId: string) {
+    if (!/^[0-9a-f-]{36}$/.test(branchId)) throw badRequest("BRANCH_INVALID", "A valid restaurant id is required");
+    return this.db.tx({ country }, async (sql) => {
+      const removed = await sql.query("DELETE FROM identity.favourite WHERE user_id = $1 AND branch_id = $2 RETURNING branch_id", [principal.userId, branchId]);
+      if (removed.length) return { branch_id: branchId, favourite: false };
+      const b = await sql.query("SELECT id FROM catalogue.branch WHERE id = $1", [branchId]);
+      if (b.length === 0) throw notFound("Restaurant");
+      await sql.query("INSERT INTO identity.favourite (country_iso2, user_id, branch_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING", [country, principal.userId, branchId]);
+      return { branch_id: branchId, favourite: true };
+    });
+  }
 }
 
 function view(a: AddressRow) {

@@ -5,7 +5,7 @@
  */
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { api, ApiError, loadCart, lineSig, money, mulMinor, addMinor, saveCart, type Cart, type CartLine, type CartLineOption, type MoneyWire } from "../lib/api";
+import { api, ApiError, getSession, listFavourites, loadCart, lineSig, money, mulMinor, addMinor, saveCart, toggleFavourite, type Cart, type CartLine, type CartLineOption, type MoneyWire } from "../lib/api";
 import { ClockIcon, PinIcon, useLocationCtx } from "./location";
 import { PlateArt, recipeFor } from "./plate-art";
 
@@ -37,6 +37,7 @@ export function LiveStore() {
   const [q, setQ] = useState("");
   const [diet, setDiet] = useState<string[]>([]);
   const [rating, setRating] = useState<{ average: number | null; count: number } | null>(null);
+  const [fav, setFav] = useState<boolean | null>(null);
   const [picking, setPicking] = useState<MenuItem | null>(null);
   const { place } = useLocationCtx();
 
@@ -51,7 +52,13 @@ export function LiveStore() {
       setCart(saved ?? { branch_id: id, branch_name: m.branch.name, lines: [] });
     }).catch((e: ApiError) => setError(e.message));
     api<{ average: number | null; count: number }>(`/v1/branches/${id}/reviews`, { auth: false }).then(setRating).catch(() => undefined);
+    if (getSession()) listFavourites().then((f) => setFav(f.some((x) => x.branch_id === id))).catch(() => undefined);
   }, [id]);
+
+  const heart = async () => {
+    if (!id || !getSession()) { window.location.href = `/signin/?next=${encodeURIComponent(`/store/?id=${id}`)}`; return; }
+    try { setFav((await toggleFavourite(id)).favourite); } catch { /* ignore */ }
+  };
   useEffect(() => {
     if (!id || !place) return;
     api<Eta>(`/v1/branches/${id}/eta?lat=${place.lat}&lng=${place.lng}`, { auth: false }).then(setEta).catch(() => setEta(null));
@@ -116,6 +123,7 @@ export function LiveStore() {
           <div className="store-meta">
             <span className={`open-badge ${open ? "on" : "off"}`}>{open ? "Open" : "Closed now"}</span>
             {rating && rating.average !== null ? <span className="store-rating">★ {rating.average} <small>({rating.count})</small></span> : null}
+            <button type="button" className={`fav-btn ${fav ? "on" : ""}`} aria-pressed={!!fav} aria-label={fav ? "Remove from favourites" : "Add to favourites"} onClick={heart}>{fav ? "♥" : "♡"}</button>
             {eta ? (
               <span className="eta-chip lg">
                 <span className="eta-km"><PinIcon /> <b className="num">{eta.distance_km}</b> km</span>

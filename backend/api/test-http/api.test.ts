@@ -1887,3 +1887,21 @@ describe("saved addresses", () => {
     assert.ok(!(await call("GET", "/v1/me/addresses", { token: customer.token, country: "CD" })).body.data.some((a: { id: string }) => a.id === work.body.id));
   });
 });
+
+describe("favourites", () => {
+  test("a customer hearts and un-hearts a restaurant", async () => {
+    assert.deepEqual((await call("GET", "/v1/me/favourites", { token: customer.token, country: "CD" })).body.data, []);
+    const on = await call("POST", `/v1/me/favourites/${branchId}`, { token: customer.token, country: "CD" });
+    assert.equal(on.status, 200, JSON.stringify(on.body));
+    assert.equal(on.body.favourite, true);
+    const list = await call("GET", "/v1/me/favourites", { token: customer.token, country: "CD" });
+    assert.equal(list.body.data.length, 1);
+    assert.equal(list.body.data[0].branch_id, branchId);
+    assert.ok("rating" in list.body.data[0] && "name" in list.body.data[0]);
+    // Toggling again removes it.
+    assert.equal((await call("POST", `/v1/me/favourites/${branchId}`, { token: customer.token, country: "CD" })).body.favourite, false);
+    assert.equal((await call("GET", "/v1/me/favourites", { token: customer.token, country: "CD" })).body.data.length, 0);
+    // A made-up restaurant can't be favourited.
+    assert.equal((await call("POST", `/v1/me/favourites/${randomUUID()}`, { token: customer.token, country: "CD" })).status, 404);
+  });
+});
