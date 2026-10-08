@@ -72,7 +72,7 @@ Legend: **Built** works end to end · **Partial** the engine or a screen exists,
 | Promotions: campaigns, banners, coupons, cashback, push, ads | Missing |
 | Membership plans (Tunakula Plus): define, price, benefits, activate | Built: plan manager at Commerce → Abonnement Plus (free delivery over a minimum subtotal, service-charge discount %, monthly/yearly), gated by `membership:manage` |
 | Customers: list, wallet, loyalty, subscribers | Missing |
-| Deliverymen: list, vehicles, shifts, reviews, bonuses, join requests | Partial: rider list with status and cash, join requests with ID review; shifts, reviews and bonuses missing |
+| Deliverymen: list, vehicles, shifts, reviews, bonuses, join requests | Partial: rider list with status and cash, join requests with ID review, and **incentive quests** (admin defines "N deliveries in a window for a bonus" at Riders; riders see progress and claim the bonus into their cashable balance) plus **performance tiers** (Bronze→Platinum) shown in the rider app; shifts and reviews still missing |
 | Employees and roles | Built |
 | Transactions: collect cash, withdrawals, disbursements | Partial: ledger and payments views |
 | Reports: transactions, orders, foods, restaurants, tax, expenses | Partial: dashboard charts + **per-restaurant performance scorecards** (acceptance/fulfilment/cancellation rates, avg prep time, GMV and a 0–100 score over 7/30/90 days, scoped to the branches the viewer can see) at Commerce → Performance des restaurants — the Uber Top Eats / Just Eat Performance Score equivalent StackFood lacks |

@@ -1696,3 +1696,51 @@ describe("rider safety / SOS", () => {
     assert.equal((await call("POST", `/v1/ops/incidents/${incidentId}`, { token: ops.token, country: "CD", body: { status: "CLOSED" } })).body.code, "STATUS_INVALID");
   });
 });
+
+describe("rider tiers and incentive quests", () => {
+  test("the rider's tier shows in earnings", async () => {
+    const e = await call("GET", "/v1/rider/earnings", { token: rider.token, country: "CD" });
+    assert.ok(["BRONZE", "SILVER", "GOLD", "PLATINUM"].includes(e.body.tier.tier), JSON.stringify(e.body.tier));
+    assert.ok(e.body.tier.deliveries >= 1);
+    assert.ok("bonuses" in e.body);
+  });
+
+  test("ops create a quest; the rider completes it and claims the bonus into their balance", async () => {
+    const q = await call("POST", "/v1/ops/quests", { token: ops.token, country: "CD", body: { name: "Weekend 1-delivery sprint", target_deliveries: 1, bonus_minor: "500", days: 7 } });
+    assert.equal(q.status, 201, JSON.stringify(q.body));
+    const questId = q.body.id;
+    // A customer cannot define quests.
+    assert.equal((await call("POST", "/v1/ops/quests", { token: customer.token, country: "CD", body: { name: "x", target_deliveries: 1, bonus_minor: "1" } })).status, 403);
+    // The quest starts now, so the rider's earlier deliveries don't count yet.
+    const before = (await call("GET", "/v1/rider/quests", { token: rider.token, country: "CD" })).body.quests.find((x: { id: string }) => x.id === questId);
+    assert.ok(before, "the rider sees the active quest");
+    assert.equal(before.claimable, false);
+    assert.equal((await call("POST", `/v1/rider/quests/${questId}/claim`, { token: rider.token, country: "CD" })).body.code, "QUEST_NOT_COMPLETE");
+
+    // Drive one fresh delivery for this rider.
+    const p = await placePrepaid();
+    await call("POST", "/v1/payments/intents", { token: customer.token, country: "CD", body: { order_id: p.orderId, method_type: "MOBILE_MONEY_PUSH", payer: { msisdn: "+243810000001" } } });
+    await transition(ops, p.orderId, { type: "ASSIGN_RIDER", riderId: rider.userId });
+    await transition(kitchen, p.orderId, { type: "ACCEPT" });
+    await transition(kitchen, p.orderId, { type: "START_PREPARING" });
+    await transition(kitchen, p.orderId, { type: "PACK", confirmedLineIds: ["l1"], packageCount: 1, allergenAcknowledged: true });
+    await transition(kitchen, p.orderId, { type: "MARK_READY", packages: [{ labelId: "Q-1", sealId: "QS-1" }], packPhotoRef: "photo://pack" });
+    await transition(rider, p.orderId, { type: "PICK_UP", scannedLabelIds: ["Q-1"], restaurantConfirmed: true, sealsIntact: true, location: KINSHASA });
+    assert.equal((await transition(rider, p.orderId, { type: "DELIVER", scannedLabelId: "Q-1", location: DROP, sealIntact: true, verification: { method: "CODE", code: p.code } })).body.state, "DELIVERED");
+
+    // Now the quest is complete and claimable.
+    const after = (await call("GET", "/v1/rider/quests", { token: rider.token, country: "CD" })).body.quests.find((x: { id: string }) => x.id === questId);
+    assert.ok(after.progress >= 1 && after.claimable === true, JSON.stringify(after));
+    const claim = await call("POST", `/v1/rider/quests/${questId}/claim`, { token: rider.token, country: "CD" });
+    assert.equal(claim.status, 200, JSON.stringify(claim.body));
+    assert.equal(claim.body.claimed, true);
+    assert.equal(claim.body.bonus.amount_minor, "500");
+    // Claiming again does not pay twice.
+    assert.equal((await call("POST", `/v1/rider/quests/${questId}/claim`, { token: rider.token, country: "CD" })).body.claimed, true);
+    // The bonus is in the rider's balance, and the ledger still balances.
+    const e = await call("GET", "/v1/rider/earnings", { token: rider.token, country: "CD" });
+    assert.ok(BigInt(e.body.bonuses.amount_minor) >= 500n);
+    const [bal] = await inspect("CD", "SELECT currency, sum(amount_minor)::text AS s FROM money.ledger_entry GROUP BY currency");
+    assert.equal(bal.s, "0");
+  });
+});

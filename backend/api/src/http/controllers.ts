@@ -327,6 +327,19 @@ export class RiderController {
     return this.dispatch.raiseSos(principal, country(req), { ...(body?.kind ? { kind: body.kind } : {}), ...(body?.lat !== undefined ? { lat: Number(body.lat) } : {}), ...(body?.lng !== undefined ? { lng: Number(body.lng) } : {}), ...(body?.note ? { note: body.note } : {}), ...(body?.order_id ? { orderId: body.order_id } : {}) });
   }
 
+  @Get("quests")
+  async quests(@Req() req: FastifyRequest) {
+    const principal = await this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+    return this.dispatch.quests(principal, country(req));
+  }
+
+  @Post("quests/:id/claim")
+  @HttpCode(200)
+  async claimQuest(@Req() req: FastifyRequest, @Param("id") id: string) {
+    const principal = await this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+    return this.dispatch.claimQuest(principal, country(req), id);
+  }
+
   @Post("offers/:id/accept")
   @HttpCode(200)
   async accept(@Req() req: FastifyRequest, @Param("id") id: string) {
@@ -376,6 +389,16 @@ export class OpsController {
   @Get("incidents")
   async incidents(@Req() req: FastifyRequest) {
     return this.dispatch.incidents(await this.#me(req), country(req));
+  }
+
+  @Get("quests")
+  async quests(@Req() req: FastifyRequest) {
+    return this.dispatch.listQuests(await this.#me(req), country(req));
+  }
+
+  @Post("quests")
+  async createQuest(@Req() req: FastifyRequest, @Body() body: { name?: string; target_deliveries?: number; bonus_minor?: string; days?: number }) {
+    return this.dispatch.createQuest(await this.#me(req), country(req), body ?? {});
   }
 
   @Post("incidents/:id")

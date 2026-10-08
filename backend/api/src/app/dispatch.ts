@@ -165,7 +165,32 @@ export class DispatchService {
       [riderId],
     );
     const [p] = await sql.query<{ paid: string }>("SELECT COALESCE(sum(amount_minor), 0)::text AS paid FROM dispatch.rider_payout WHERE rider_id = $1", [riderId]);
-    return BigInt(e?.earned ?? "0") - BigInt(p?.paid ?? "0");
+    const [b] = await sql.query<{ bonus: string }>("SELECT COALESCE(sum(amount_minor), 0)::text AS bonus FROM dispatch.rider_bonus WHERE rider_id = $1", [riderId]);
+    return BigInt(e?.earned ?? "0") + BigInt(b?.bonus ?? "0") - BigInt(p?.paid ?? "0");
+  }
+
+  /** The rider's performance tier from lifetime deliveries and 30-day acceptance (DoorDash Top Dasher / Uber Pro). */
+  async #tier(sql: Sql, riderId: string): Promise<{ tier: string; deliveries: number; acceptance_rate: number | null; next: { tier: string; deliveries: number; acceptance_rate: number } | null }> {
+    const [d] = await sql.query<{ n: string }>("SELECT count(*)::text AS n FROM ordering.order_view WHERE rider_id = $1 AND state = 'DELIVERED'", [riderId]);
+    const since = new Date(this.now().getTime() - 30 * 86_400_000);
+    const [a] = await sql.query<{ offered: string; accepted: string }>(
+      "SELECT count(*)::text AS offered, count(*) FILTER (WHERE status = 'ACCEPTED')::text AS accepted FROM dispatch.offer WHERE rider_id = $1 AND offered_at >= $2",
+      [riderId, since],
+    );
+    const deliveries = Number(d?.n ?? 0);
+    const offered = Number(a?.offered ?? 0);
+    const acceptance = offered > 0 ? Math.round((Number(a?.accepted ?? 0) / offered) * 1000) / 10 : null;
+    const ladder = [
+      { tier: "PLATINUM", deliveries: 500, acceptance_rate: 90 },
+      { tier: "GOLD", deliveries: 200, acceptance_rate: 80 },
+      { tier: "SILVER", deliveries: 50, acceptance_rate: 70 },
+      { tier: "BRONZE", deliveries: 0, acceptance_rate: 0 },
+    ];
+    const meets = (t: { deliveries: number; acceptance_rate: number }) => deliveries >= t.deliveries && (acceptance === null || acceptance >= t.acceptance_rate);
+    const tier = ladder.find(meets) ?? ladder[ladder.length - 1]!;
+    const idx = ladder.findIndex((t) => t.tier === tier.tier);
+    const next = idx > 0 ? ladder[idx - 1]! : null;
+    return { tier: tier.tier, deliveries, acceptance_rate: acceptance, next: next ? { tier: next.tier, deliveries: next.deliveries, acceptance_rate: next.acceptance_rate } : null };
   }
 
   /** GET /v1/rider/earnings: per-order breakdown (base + tip), lifetime totals and the balance to cash out. */
@@ -192,12 +217,16 @@ export class DispatchService {
         [principal.userId],
       );
       const [paid] = await sql.query<{ paid: string }>("SELECT COALESCE(sum(amount_minor), 0)::text AS paid FROM dispatch.rider_payout WHERE rider_id = $1", [principal.userId]);
-      const earned = BigInt(tot?.earned ?? "0");
+      const [bonusTot] = await sql.query<{ bonus: string }>("SELECT COALESCE(sum(amount_minor), 0)::text AS bonus FROM dispatch.rider_bonus WHERE rider_id = $1", [principal.userId]);
+      const earned = BigInt(tot?.earned ?? "0") + BigInt(bonusTot?.bonus ?? "0");
       const cashedOut = BigInt(paid?.paid ?? "0");
+      const tier = await this.#tier(sql, principal.userId);
       const m = (minor: bigint) => ({ amount_minor: minor.toString(), currency: ccy });
       return {
+        tier,
         available: m(earned - cashedOut),
         lifetime_earned: m(earned),
+        bonuses: m(BigInt(bonusTot?.bonus ?? "0")),
         cashed_out: m(cashedOut),
         orders: orders.map((o) => {
           const receives = BigInt(o.receives ?? "0");
@@ -240,6 +269,103 @@ export class DispatchService {
       );
       await audit(sql, { actor: principal.userId, action: "rider.cashout", target: `rider:${principal.userId}`, country, detail: { amount_minor: amount.toString(), currency: ccy } });
       return { paid: { amount_minor: amount.toString(), currency: ccy }, available: { amount_minor: (available - amount).toString(), currency: ccy } };
+    });
+  }
+
+  /** GET /v1/rider/quests: the active incentive quests and this rider's progress and claims. */
+  async quests(principal: Principal, country: string) {
+    if (DispatchService.riderZones(principal).length === 0) throw forbidden("Only riders have quests");
+    const ccy = this.#profile(country).money.settlement_currency;
+    const now = this.now();
+    return this.db.tx({ country }, async (sql) => {
+      const quests = await sql.query<{ id: string; name: string; target_deliveries: number; bonus_minor: string; currency: string; starts_at: Date; ends_at: Date }>(
+        "SELECT id, name, target_deliveries, bonus_minor::text, currency, starts_at, ends_at FROM dispatch.rider_quest WHERE country_iso2 = $1 AND active = true AND ends_at > $2 ORDER BY ends_at",
+        [country, now],
+      );
+      const claims = new Set((await sql.query<{ quest_id: string }>("SELECT quest_id FROM dispatch.rider_bonus WHERE rider_id = $1", [principal.userId])).map((r) => r.quest_id));
+      const out = [];
+      for (const q of quests) {
+        const [p] = await sql.query<{ n: string }>(
+          "SELECT count(*)::text AS n FROM ordering.order_view WHERE rider_id = $1 AND state = 'DELIVERED' AND updated_at >= $2 AND updated_at <= $3",
+          [principal.userId, q.starts_at, q.ends_at],
+        );
+        const progress = Number(p?.n ?? 0);
+        const claimed = claims.has(q.id);
+        out.push({
+          id: q.id, name: q.name, target: q.target_deliveries, progress: Math.min(progress, q.target_deliveries),
+          bonus: { amount_minor: q.bonus_minor, currency: q.currency }, ends_at: new Date(q.ends_at).toISOString(),
+          claimed, claimable: !claimed && progress >= q.target_deliveries,
+        });
+      }
+      return { currency: ccy, quests: out };
+    });
+  }
+
+  /** POST /v1/rider/quests/:id/claim: a rider claims a completed quest; the bonus joins their cashable balance. */
+  async claimQuest(principal: Principal, country: string, questId: string) {
+    if (DispatchService.riderZones(principal).length === 0) throw forbidden("Only riders claim quests");
+    const now = this.now();
+    return this.db.tx({ country }, async (sql) => {
+      const [q] = await sql.query<{ id: string; target_deliveries: number; bonus_minor: string; currency: string; starts_at: Date; ends_at: Date; active: boolean }>(
+        "SELECT id, target_deliveries, bonus_minor::text, currency, starts_at, ends_at, active FROM dispatch.rider_quest WHERE id = $1 AND country_iso2 = $2",
+        [questId, country],
+      );
+      if (!q) throw notFound("Quest");
+      const jkey = `bonus:${questId}:${principal.userId}`;
+      const [existing] = await sql.query<{ amount_minor: string }>("SELECT amount_minor::text FROM dispatch.rider_bonus WHERE journal_key = $1", [jkey]);
+      if (existing) return { bonus: { amount_minor: existing.amount_minor, currency: q.currency }, claimed: true };
+      if (!q.active || new Date(q.ends_at) < now) throw conflict("QUEST_CLOSED", "This quest is closed");
+      const [p] = await sql.query<{ n: string }>(
+        "SELECT count(*)::text AS n FROM ordering.order_view WHERE rider_id = $1 AND state = 'DELIVERED' AND updated_at >= $2 AND updated_at <= $3",
+        [principal.userId, q.starts_at, q.ends_at],
+      );
+      if (Number(p?.n ?? 0) < q.target_deliveries) throw unprocessable("QUEST_NOT_COMPLETE", `Complete ${q.target_deliveries} deliveries first`);
+      const amount = Money.ofMinor(BigInt(q.bonus_minor), q.currency);
+      await postJournal(sql, createJournal({
+        id: jkey, idempotencyKey: jkey, description: `Quest bonus to rider ${principal.userId.slice(-6)}`, postedAt: now,
+        entries: [{ account: "rider_incentive_expense", country, amount }, { account: "rider_payable", country, amount: amount.negate() }],
+      }));
+      await sql.query(
+        "INSERT INTO dispatch.rider_bonus (country_iso2, rider_id, quest_id, amount_minor, currency, journal_key, at) VALUES ($1, $2, $3, $4, $5, $6, $7)",
+        [country, principal.userId, questId, q.bonus_minor, q.currency, jkey, now],
+      );
+      await audit(sql, { actor: principal.userId, action: "rider.quest_claimed", target: `quest:${questId}`, country, detail: { amount_minor: q.bonus_minor } });
+      return { bonus: { amount_minor: q.bonus_minor, currency: q.currency }, claimed: true };
+    });
+  }
+
+  /** Admin: create a rider quest. POST /v1/admin/quests */
+  async createQuest(principal: Principal, country: string, input: { name?: string; target_deliveries?: number; bonus_minor?: string; days?: number }) {
+    const profile = this.#profile(country);
+    if (!(await this.#opsAllowed(principal, country, ["rider:manage"]))) throw forbidden("Defining rider quests needs rider management");
+    const name = String(input.name ?? "").trim();
+    if (!name || name.length > 80) throw badRequest("NAME_REQUIRED", "A quest needs a name of 1–80 characters");
+    const target = Math.trunc(Number(input.target_deliveries));
+    if (!Number.isInteger(target) || target < 1 || target > 1000) throw badRequest("TARGET_INVALID", "target_deliveries is 1–1000");
+    if (!/^\d+$/.test(input.bonus_minor ?? "") || BigInt(input.bonus_minor!) <= 0n) throw badRequest("BONUS_INVALID", "bonus_minor is a positive whole number");
+    const days = Math.min(Math.max(Math.trunc(Number(input.days) || 7), 1), 90);
+    const ccy = profile.money.settlement_currency;
+    return this.db.tx({ country }, async (sql) => {
+      const [row] = await sql.query<{ id: string }>(
+        "INSERT INTO dispatch.rider_quest (country_iso2, name, target_deliveries, bonus_minor, currency, ends_at) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
+        [country, name, target, input.bonus_minor, ccy, new Date(this.now().getTime() + days * 86_400_000)],
+      );
+      await audit(sql, { actor: principal.userId, action: "rider.quest_created", target: `quest:${row?.id}`, country, detail: { name, target, bonus_minor: input.bonus_minor } });
+      return { id: row?.id, name, target_deliveries: target, bonus: { amount_minor: input.bonus_minor, currency: ccy } };
+    });
+  }
+
+  /** Admin: list quests. GET /v1/admin/quests */
+  async listQuests(principal: Principal, country: string) {
+    if (!(await this.#opsAllowed(principal, country, ["rider:manage"]))) throw forbidden("Rider quests are for operations");
+    return this.db.tx({ country }, async (sql) => {
+      const rows = await sql.query<{ id: string; name: string; target_deliveries: number; bonus_minor: string; currency: string; ends_at: Date; active: boolean; claims: string }>(
+        `SELECT q.id, q.name, q.target_deliveries, q.bonus_minor::text, q.currency, q.ends_at, q.active,
+                (SELECT count(*) FROM dispatch.rider_bonus b WHERE b.quest_id = q.id)::text AS claims
+           FROM dispatch.rider_quest q WHERE q.country_iso2 = $1 ORDER BY q.created_at DESC LIMIT 100`,
+        [country],
+      );
+      return { quests: rows.map((r) => ({ id: r.id, name: r.name, target_deliveries: r.target_deliveries, bonus: { amount_minor: r.bonus_minor, currency: r.currency }, ends_at: new Date(r.ends_at).toISOString(), active: r.active, claims: Number(r.claims) })) };
     });
   }
 

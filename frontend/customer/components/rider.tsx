@@ -240,17 +240,30 @@ function SosButton({ pos, orderId }: { pos: Pos | null; orderId: string | null }
 }
 
 interface Earnings {
-  available: MoneyWire; lifetime_earned: MoneyWire; cashed_out: MoneyWire;
+  tier: { tier: string; deliveries: number; acceptance_rate: number | null; next: { tier: string; deliveries: number; acceptance_rate: number } | null };
+  available: MoneyWire; lifetime_earned: MoneyWire; bonuses: MoneyWire; cashed_out: MoneyWire;
   orders: { order_id: string; at: string; restaurant: string; payment_mode: string; base: MoneyWire; tip: MoneyWire; total: MoneyWire }[];
 }
+interface Quest { id: string; name: string; target: number; progress: number; bonus: MoneyWire; ends_at: string; claimed: boolean; claimable: boolean }
+const TIER_COLOR: Record<string, string> = { BRONZE: "#a9713b", SILVER: "#8a93a6", GOLD: "#d4a017", PLATINUM: "#5a7d9a" };
 
 function EarningsPanel({ onClose }: { onClose: () => void }) {
   const [e, setE] = useState<Earnings | null>(null);
+  const [quests, setQuests] = useState<Quest[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
-  const load = () => api<Earnings>("/v1/rider/earnings").then(setE).catch((err: ApiError) => setError(err.message));
+  const load = () => {
+    api<Earnings>("/v1/rider/earnings").then(setE).catch((err: ApiError) => setError(err.message));
+    api<{ quests: Quest[] }>("/v1/rider/quests").then((r) => setQuests(r.quests)).catch(() => undefined);
+  };
   useEffect(() => { void load(); }, []);
+
+  const claim = async (id: string) => {
+    setError(null); setBusy(true);
+    try { const r = await api<{ bonus: MoneyWire }>(`/v1/rider/quests/${id}/claim`, { method: "POST", body: {} }); setDone(`Bonus ${money(r.bonus)} added to your balance.`); await load(); }
+    catch (err) { setError((err as ApiError).message); } finally { setBusy(false); }
+  };
 
   const cashOut = async () => {
     setError(null); setBusy(true);
@@ -269,11 +282,31 @@ function EarningsPanel({ onClose }: { onClose: () => void }) {
         {done ? <p className="form-notice" role="status">{done}</p> : null}
         {!e ? <div className="skeleton-line" /> : (
           <>
+            <div className="r-tier" style={{ borderColor: TIER_COLOR[e.tier.tier] }}>
+              <span className="r-tier-badge" style={{ background: TIER_COLOR[e.tier.tier] }}>{e.tier.tier}</span>
+              <small>{e.tier.deliveries} deliveries{e.tier.acceptance_rate !== null ? ` · ${e.tier.acceptance_rate}% accepted` : ""}{e.tier.next ? ` · ${e.tier.next.deliveries - e.tier.deliveries > 0 ? e.tier.next.deliveries - e.tier.deliveries : 0} more to ${e.tier.next.tier}` : " · top tier"}</small>
+            </div>
             <div className="r-balance">
               <div><small>Available now</small><b>{money(e.available)}</b></div>
               <button type="button" className="r-btn go" disabled={busy || BigInt(e.available.amount_minor) <= 0n} onClick={cashOut}>{busy ? "Paying…" : "Cash out instantly"}</button>
             </div>
-            <div className="r-balance-sub"><span>Lifetime {money(e.lifetime_earned)}</span><span>Cashed out {money(e.cashed_out)}</span></div>
+            <div className="r-balance-sub"><span>Lifetime {money(e.lifetime_earned)}</span><span>Bonuses {money(e.bonuses)}</span><span>Cashed out {money(e.cashed_out)}</span></div>
+            {quests.length ? (
+              <>
+                <h3 className="r-earn-h">Quests</h3>
+                <ul className="r-quests">
+                  {quests.map((q) => (
+                    <li key={q.id}>
+                      <div className="r-quest-top"><b>{q.name}</b><span className="num">{money(q.bonus)}</span></div>
+                      <div className="r-quest-bar"><span style={{ width: `${Math.round((q.progress / q.target) * 100)}%` }} /></div>
+                      <div className="r-quest-foot"><small>{q.progress}/{q.target} deliveries</small>
+                        {q.claimed ? <small className="ok">Claimed ✓</small> : q.claimable ? <button type="button" className="r-btn go sm" disabled={busy} onClick={() => claim(q.id)}>Claim bonus</button> : <small>keep going</small>}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            ) : null}
             <h3 className="r-earn-h">Per delivery</h3>
             <ul className="r-earn-list">
               {e.orders.map((o) => (

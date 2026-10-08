@@ -1192,3 +1192,16 @@ section.tight { padding: 44px 0; }
 .r-sos { position: fixed; right: 16px; bottom: 90px; z-index: 40; background: #c01818; color: #fff; border: none; border-radius: 999px; padding: 12px 18px; font-weight: 800; letter-spacing: .04em; box-shadow: 0 4px 16px rgba(192,24,24,.4); cursor: pointer; }
 .r-sos-opts { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
 .r-btn.danger { background: #c01818; color: #fff; }
+
+/* Rider tier + quests (additive) */
+.r-tier { display: flex; align-items: center; gap: 10px; border: 2px solid var(--rule); border-radius: var(--radius); padding: 10px 12px; margin-bottom: 10px; }
+.r-tier-badge { color: #fff; font-weight: 800; letter-spacing: .04em; font-size: 12px; padding: 3px 10px; border-radius: 999px; }
+.r-tier small { color: var(--muted); }
+.r-quests { list-style: none; padding: 0; margin: 0; }
+.r-quests li { padding: 10px 0; border-bottom: 1px solid var(--rule); }
+.r-quest-top { display: flex; justify-content: space-between; }
+.r-quest-bar { height: 7px; border-radius: 4px; background: var(--tint); overflow: hidden; margin: 6px 0; }
+.r-quest-bar span { display: block; height: 100%; background: var(--ok, #0a7d33); }
+.r-quest-foot { display: flex; justify-content: space-between; align-items: center; color: var(--muted); }
+.r-quest-foot .ok { color: var(--ok, #0a7d33); font-weight: 600; }
+.r-btn.go.sm { padding: 5px 12px; font-size: 13px; width: auto; }
