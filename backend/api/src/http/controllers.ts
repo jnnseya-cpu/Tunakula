@@ -137,14 +137,15 @@ export class CatalogueController {
   }
 }
 
-type ItemBody = { names: Record<string, string>; description?: Record<string, string>; prices: Record<string, string>; category?: string | null; veg?: boolean | null; tags?: string[]; allergens?: string[]; recommended?: boolean };
-type QuoteBody = { branch_id: string; items: { item_id: string; quantity: number }[]; order_type: QuoteInput["orderType"]; delivery?: { lat: number; lng: number; rural?: boolean }; tip?: string };
+type ItemBody = { names: Record<string, string>; description?: Record<string, string>; prices: Record<string, string>; category?: string | null; veg?: boolean | null; tags?: string[]; allergens?: string[]; recommended?: boolean; variations?: unknown; addons?: unknown };
+type QuoteItemBody = { item_id: string; quantity: number; options?: { group: string; choices: string[] }[]; addons?: string[] };
+type QuoteBody = { branch_id: string; items: QuoteItemBody[]; order_type: QuoteInput["orderType"]; delivery?: { lat: number; lng: number; rural?: boolean }; tip?: string };
 
 const toQuoteInput = (b: QuoteBody): QuoteInput => {
   if (!b || typeof b.branch_id !== "string" || !Array.isArray(b.items)) throw badRequest("BODY_INVALID", "Send branch_id, items and order_type");
   return {
     branchId: b.branch_id,
-    items: b.items.map((i) => ({ itemId: i.item_id, quantity: i.quantity })),
+    items: b.items.map((i) => ({ itemId: i.item_id, quantity: i.quantity, ...(Array.isArray(i.options) ? { options: i.options } : {}), ...(Array.isArray(i.addons) ? { addons: i.addons } : {}) })),
     orderType: b.order_type ?? "DELIVERY",
     ...(b.delivery ? { delivery: b.delivery } : {}),
     ...(b.tip ? { tip: b.tip } : {}),
@@ -602,7 +603,7 @@ function orderView(o: OrderAggregate) {
     total: wire(Money.fromJSON(s.total)),
     payment_mode: s.paymentMode,
     rider_id: o.riderId ?? null,
-    lines: s.lines.map((l) => ({ name: l.name, quantity: l.quantity, allergens: l.allergenFlags })),
+    lines: s.lines.map((l) => ({ name: l.name, quantity: l.quantity, allergens: l.allergenFlags, options: l.options })),
     flagged_for_review: o.flaggedForReview,
     version: o.version,
   };

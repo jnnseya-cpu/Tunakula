@@ -14,7 +14,7 @@ import { evidenceBundle } from "../modules/ordering/evidence.ts";
 import { OrderRuleError, replay, type OrderCommand } from "../modules/ordering/order-aggregate.ts";
 import { RIDER_ORDER_TYPES, type Actor, type OrderLine, type OrderSnapshot, type OrderType } from "../modules/ordering/order-types.ts";
 import { priceOrder, PricingError, type PriceBreakdown } from "../modules/pricing/pricing.ts";
-import { getBranch, menuOf, type BranchRow } from "../persistence/catalogue.ts";
+import { getBranch, menuOf, type BranchRow, type MenuItemRow } from "../persistence/catalogue.ts";
 import { userById } from "../persistence/identity.ts";
 import { postJournal } from "../persistence/ledger.ts";
 import { handleOrderCommand, loadOrderEvents, OrderConflictError } from "../persistence/orders.ts";
@@ -22,9 +22,10 @@ import { ApiError, badRequest, conflict, notFound, unprocessable } from "./error
 import { require } from "./principal.ts";
 import type { RoutingProvider } from "./routing.ts";
 
+export interface LineOptionSelection { readonly group: string; readonly choices: readonly string[] }
 export interface QuoteInput {
   readonly branchId: string;
-  readonly items: readonly { readonly itemId: string; readonly quantity: number }[];
+  readonly items: readonly { readonly itemId: string; readonly quantity: number; readonly options?: readonly LineOptionSelection[]; readonly addons?: readonly string[] }[];
   readonly orderType: OrderType;
   readonly delivery?: { readonly lat: number; readonly lng: number; readonly rural?: boolean };
   readonly tip?: string;
@@ -42,7 +43,7 @@ export interface PlaceOrderInput extends QuoteInput {
 
 export interface Quote {
   readonly branch: { id: string; name: string };
-  readonly lines: readonly { itemId: string; name: string; quantity: number; unit: MoneyJSON; total: MoneyJSON; allergens: string[] }[];
+  readonly lines: readonly { itemId: string; name: string; quantity: number; unit: MoneyJSON; total: MoneyJSON; allergens: string[]; options: string[] }[];
   readonly breakdown: PriceBreakdown;
   readonly distanceMeters?: number;
 }
@@ -111,7 +112,8 @@ export class CommerceService {
 
     let goods = Money.zero(ccy);
     const lines: Quote["lines"][number][] = [];
-    for (const { itemId, quantity } of input.items) {
+    for (const lineInput of input.items) {
+      const { itemId, quantity } = lineInput;
       if (!Number.isInteger(quantity) || quantity < 1 || quantity > MAX_QUANTITY) throw badRequest("QUANTITY_INVALID", "Quantities are whole numbers from 1 to 99");
       const item = menu.get(itemId);
       if (!item) throw unprocessable("ITEM_NOT_ON_MENU", `Item ${itemId} is not on ${branch.name}'s menu`);
@@ -119,10 +121,11 @@ export class CommerceService {
       const price = item.prices[ccy];
       // MR-2: a missing price would be converted by quote; until FX quoting is wired, refuse rather than guess.
       if (price === undefined) throw unprocessable("PRICE_MISSING", `${nameOf(item.names, lang)} has no ${ccy} price`, { itemId });
-      const unit = Money.ofMinor(BigInt(price), ccy);
+      const { surcharge, descriptors } = optionSurcharge(item, lineInput, nameOf(item.names, lang));
+      const unit = Money.ofMinor(BigInt(price) + surcharge, ccy);
       const total = unit.multiply(BigInt(quantity));
       goods = goods.add(total);
-      lines.push({ itemId, name: nameOf(item.names, lang), quantity, unit: unit.toJSON(), total: total.toJSON(), allergens: item.allergens });
+      lines.push({ itemId, name: nameOf(item.names, lang), quantity, unit: unit.toJSON(), total: total.toJSON(), allergens: item.allergens, options: descriptors });
     }
 
     let distanceMeters: number | undefined;
@@ -171,7 +174,7 @@ export class CommerceService {
         itemId: l.itemId,
         name: l.name,
         quantity: l.quantity,
-        options: [],
+        options: l.options,
         allergenFlags: menu.get(l.itemId)?.allergens ?? [],
       }));
       const configured = profile.operations.confirmation_model;
@@ -410,12 +413,51 @@ function nameOf(names: Record<string, string>, lang = "en"): string {
   return names[lang] ?? names["en"] ?? names["fr"] ?? Object.values(names)[0] ?? "Item";
 }
 
+/**
+ * Validates a line's chosen variations and add-ons against what the dish defines, and returns the
+ * price delta (settlement-currency minor units) plus human-readable descriptors for the order line.
+ * The deltas flow into `goods`, so the service charge and the total reflect the options (§18).
+ */
+function optionSurcharge(item: MenuItemRow, input: { options?: readonly LineOptionSelection[]; addons?: readonly string[] }, itemName: string): { surcharge: bigint; descriptors: string[] } {
+  let surcharge = 0n;
+  const descriptors: string[] = [];
+  const groups = new Map((item.variations ?? []).map((g) => [g.id, g]));
+  const chosen = new Set<string>();
+  for (const sel of input.options ?? []) {
+    const group = groups.get(sel.group);
+    if (!group) throw unprocessable("UNKNOWN_OPTION_GROUP", `${itemName}: no such option "${sel.group}"`);
+    chosen.add(group.id);
+    const opts = new Map(group.options.map((o) => [o.id, o]));
+    const choices = [...new Set(sel.choices ?? [])];
+    if (group.type === "SINGLE" && choices.length > 1) throw unprocessable("OPTION_SINGLE", `${itemName} / ${group.name}: choose one`);
+    if (choices.length < group.min) throw unprocessable("OPTION_TOO_FEW", `${itemName} / ${group.name}: choose at least ${group.min}`);
+    if (choices.length > group.max) throw unprocessable("OPTION_TOO_MANY", `${itemName} / ${group.name}: choose at most ${group.max}`);
+    for (const id of choices) {
+      const opt = opts.get(id);
+      if (!opt) throw unprocessable("UNKNOWN_OPTION", `${itemName} / ${group.name}: no such choice`);
+      surcharge += BigInt(opt.price);
+      descriptors.push(`${group.name}: ${opt.name}`);
+    }
+  }
+  for (const group of item.variations ?? []) {
+    if (group.required && !chosen.has(group.id)) throw unprocessable("OPTION_REQUIRED", `${itemName}: "${group.name}" is required`);
+  }
+  const addons = new Map((item.addons ?? []).map((a) => [a.id, a]));
+  for (const id of [...new Set(input.addons ?? [])]) {
+    const addon = addons.get(id);
+    if (!addon) throw unprocessable("UNKNOWN_ADDON", `${itemName}: no such add-on`);
+    surcharge += BigInt(addon.price);
+    descriptors.push(`+ ${addon.name}`);
+  }
+  return { surcharge, descriptors };
+}
+
 export function serialiseQuote(q: Quote) {
   const b = q.breakdown;
   const m = (x: Money) => ({ amount_minor: x.minor.toString(), currency: x.currency });
   return {
     branch: q.branch,
-    lines: q.lines.map((l) => ({ item_id: l.itemId, name: l.name, quantity: l.quantity, unit: { amount_minor: l.unit.minor, currency: l.unit.currency }, total: { amount_minor: l.total.minor, currency: l.total.currency }, allergens: l.allergens })),
+    lines: q.lines.map((l) => ({ item_id: l.itemId, name: l.name, quantity: l.quantity, unit: { amount_minor: l.unit.minor, currency: l.unit.currency }, total: { amount_minor: l.total.minor, currency: l.total.currency }, allergens: l.allergens, options: l.options })),
     price_lines: b.lines.map((l) => ({ code: l.code, amount: m(l.amount) })),
     commission: m(b.commission),
     total: m(b.total),

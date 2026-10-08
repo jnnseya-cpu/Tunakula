@@ -315,6 +315,45 @@ describe("catalogue (CAT-002/003) under scoped permissions", () => {
     assert.equal((await imp([{ names: { fr: "x" }, prices: { USD: "1.00" } }], customer)).status, 403);
   });
 
+  test("variations and add-ons are priced into the quote and the order line", async () => {
+    const chef = await signIn("+243810000150");
+    await grant({ userId: chef.userId, role: "RESTAURANT_OWNER", scope: { type: "RESTAURANT_GROUP", id: "rg-opts" } });
+    const br = (await call("POST", "/v1/branches", { token: admin.token, country: "CD", body: { name: "Pizza Opts", restaurant_group_id: "rg-opts", city: "kinshasa", commune: "gombe", ...KINSHASA } })).body.id;
+    const add = await call("POST", `/v1/branches/${br}/items`, { token: chef.token, country: "CD", body: {
+      names: { fr: "Pizza" }, prices: { USD: "10.00" },
+      variations: [{ name: "Taille", type: "SINGLE", required: true, options: [{ name: "Moyenne", price: "0" }, { name: "Grande", price: "3.00" }] }],
+      addons: [{ name: "Fromage", price: "1.50" }, { name: "Piment", price: "0.50" }],
+    } });
+    assert.equal(add.status, 201, JSON.stringify(add.body));
+    const dish = add.body.id;
+    const size = add.body.variations[0];
+    const grande = size.options.find((o: { name: string }) => o.name === "Grande").id;
+    const fromage = add.body.addons.find((a: { name: string }) => a.name === "Fromage").id;
+    assert.equal(size.options[0].price, "0"); // Moyenne is free (minor units, USD)
+    assert.equal(add.body.addons.find((a: { name: string }) => a.name === "Fromage").price, "150");
+
+    // Grande (+3.00) + Fromage (+1.50) on a 10.00 pizza = 14.50 the unit; service charge is 10% of goods.
+    const line = { item_id: dish, quantity: 1, options: [{ group: size.id, choices: [grande] }], addons: [fromage] };
+    const q = await call("POST", "/v1/carts/quote", { country: "CD", body: { branch_id: br, items: [line], order_type: "TAKEAWAY" } });
+    assert.equal(q.status, 200, JSON.stringify(q.body));
+    assert.equal(q.body.lines[0].unit.amount_minor, "1450");
+    assert.deepEqual(q.body.lines[0].options, ["Taille: Grande", "+ Fromage"]);
+    assert.equal(q.body.price_lines.find((l: { code: string }) => l.code === "GOODS").amount.amount_minor, "1450");
+    assert.equal(q.body.price_lines.find((l: { code: string }) => l.code === "SERVICE_CHARGE").amount.amount_minor, "145");
+
+    // A required variation left out is refused; an unknown choice is refused.
+    const missing = await call("POST", "/v1/carts/quote", { country: "CD", body: { branch_id: br, items: [{ item_id: dish, quantity: 1, addons: [fromage] }], order_type: "TAKEAWAY" } });
+    assert.equal(missing.body.code, "OPTION_REQUIRED");
+    const bogus = await call("POST", "/v1/carts/quote", { country: "CD", body: { branch_id: br, items: [{ item_id: dish, quantity: 1, options: [{ group: size.id, choices: ["nope"] }] }], order_type: "TAKEAWAY" } });
+    assert.equal(bogus.body.code, "UNKNOWN_OPTION");
+
+    // Placing the order carries the chosen options onto the line and into the total.
+    const placed = await call("POST", "/v1/orders", { token: chef.token, country: "CD", body: { branch_id: br, items: [line], order_type: "TAKEAWAY", payment_mode: "PREPAID", expected_total: q.body.total } });
+    assert.equal(placed.status, 201, JSON.stringify(placed.body));
+    const view = await call("GET", `/v1/orders/${placed.body.order_id}`, { token: chef.token, country: "CD" });
+    assert.deepEqual(view.body.lines[0].options, ["Taille: Grande", "+ Fromage"]);
+  });
+
   test("§9.5 RLS: the branch does not exist from the GB market", async () => {
     assert.equal((await call("GET", `/v1/branches/${branchId}/menu`, { country: "CD" })).status, 200);
     assert.equal((await call("GET", `/v1/branches/${branchId}/menu`, { country: "GB" })).status, 404);

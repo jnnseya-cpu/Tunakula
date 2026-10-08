@@ -423,3 +423,17 @@ tr.sel td { background: rgba(250, 210, 14, 0.12); }
 .ff label.chk { flex-direction: row; align-items: center; gap: 8px; color: var(--text); }
 .ff .input, .ff .select { font-size: 13.5px; }
 .menu-form-foot { display: flex; justify-content: flex-end; gap: 10px; }
+
+/* ── Options editor (variations & add-ons) on the dish form ── */
+.opt-ed { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 4px 0 14px; }
+@media (max-width: 640px) { .opt-ed { grid-template-columns: 1fr; } .ff { grid-template-columns: 1fr; } }
+.opt-sec { border: 1px solid var(--border); border-radius: 12px; padding: 12px; }
+.opt-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.opt-head h3 { font-size: 13px; font-weight: 650; }
+.opt-grp { border: 1px solid var(--border); border-radius: 10px; padding: 10px; margin-bottom: 8px; background: var(--surface-2, rgba(127,127,127,.04)); }
+.opt-grp-top { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; flex-wrap: wrap; }
+.opt-grp-top .input { flex: 1; min-width: 120px; }
+.opt-row { display: flex; gap: 8px; align-items: center; margin: 6px 0 6px 14px; }
+.opt-row .input { flex: 1; }
+.opt-row .input.price { flex: 0 0 90px; text-align: right; }
+.opt-ed .input, .opt-ed .select { font-size: 13px; padding: 6px 9px; }

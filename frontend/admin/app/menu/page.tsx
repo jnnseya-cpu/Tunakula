@@ -12,12 +12,18 @@ import { money } from "../../lib/format";
 
 interface Branch { id: string; name: string; status: string; items: number }
 interface MoneyWire { amount_minor: string; currency: string }
+interface ApiOption { id: string; name: string; price: string }
+interface ApiVariation { id: string; name: string; type: "SINGLE" | "MULTI"; required: boolean; min: number; max: number; options: ApiOption[] }
 interface Item {
   id: string; names: Record<string, string>; description: Record<string, string>;
   prices: Record<string, MoneyWire>; category: string | null; veg: boolean | null;
   tags: string[]; allergens: string[]; available: boolean; recommended: boolean;
+  variations: ApiVariation[]; addons: ApiOption[];
 }
 interface Config { money: { currencies: { settlement: string; accepted: { code: string }[] } } }
+
+interface FormVariation { name: string; type: "SINGLE" | "MULTI"; required: boolean; options: { name: string; price: string }[] }
+interface FormAddon { name: string; price: string }
 
 const CATEGORIES = ["Restaurant", "Cuisine Locale", "Fast Food", "Boisson", "Dessert", "Végétarienne", "Accompagnements", "Fruits et Légumes", "Viande et Poisson", "Boulangeries", "Pizzérias", "Taco", "Menu Enfant", "Supermarché", "Épiceries", "Essentiel", "Promo"];
 
@@ -26,7 +32,7 @@ export default function MenuPage() {
 }
 
 const nameOf = (names: Record<string, string>, lang: string) => names[lang] || names.fr || names.en || Object.values(names)[0] || "";
-const blankForm = () => ({ id: "", name_fr: "", name_en: "", desc_fr: "", category: "", price: "", veg: "" as "" | "veg" | "non", recommended: false, tags: "", allergens: "" });
+const blankForm = () => ({ id: "", name_fr: "", name_en: "", desc_fr: "", category: "", price: "", veg: "" as "" | "veg" | "non", recommended: false, tags: "", allergens: "", variations: [] as FormVariation[], addons: [] as FormAddon[] });
 type Form = ReturnType<typeof blankForm>;
 
 function Menu() {
@@ -70,6 +76,8 @@ function Menu() {
     id: it.id, name_fr: it.names.fr ?? "", name_en: it.names.en ?? "", desc_fr: it.description?.fr ?? "",
     category: it.category ?? "", price: it.prices[settlement] ? decimal(it.prices[settlement]!.amount_minor, settlement) : "",
     veg: it.veg === true ? "veg" : it.veg === false ? "non" : "", recommended: it.recommended, tags: it.tags.join(", "), allergens: it.allergens.join(", "),
+    variations: (it.variations ?? []).map((v) => ({ name: v.name, type: v.type, required: v.required, options: v.options.map((o) => ({ name: o.name, price: decimal(o.price, settlement) })) })),
+    addons: (it.addons ?? []).map((a) => ({ name: a.name, price: decimal(a.price, settlement) })),
   });
 
   const branchName = branches?.find((b) => b.id === branchId)?.name ?? "menu";
@@ -136,6 +144,11 @@ function Menu() {
       recommended: form.recommended,
       tags: form.tags.split(",").map((t) => t.trim()).filter(Boolean),
       allergens: form.allergens.split(",").map((t) => t.trim()).filter(Boolean),
+      variations: form.variations.filter((v) => v.name.trim() && v.options.some((o) => o.name.trim())).map((v) => ({
+        name: v.name.trim(), type: v.type, required: v.required,
+        options: v.options.filter((o) => o.name.trim()).map((o) => ({ name: o.name.trim(), price: o.price.trim() || "0" })),
+      })),
+      addons: form.addons.filter((a) => a.name.trim()).map((a) => ({ name: a.name.trim(), price: a.price.trim() || "0" })),
     };
     try {
       await api(`/v1/branches/${branchId}/items${form.id ? `/${form.id}` : ""}`, { method: "POST", country, body });
@@ -202,6 +215,9 @@ function Menu() {
               <label>{L("Balises (séparées par des virgules)", "Tags (comma-separated)")}<input className="input" value={form.tags} onChange={(e) => setForm({ ...form, tags: e.target.value })} /></label>
               <label>{L("Allergènes (virgules)", "Allergens (commas)")}<input className="input" value={form.allergens} onChange={(e) => setForm({ ...form, allergens: e.target.value })} /></label>
             </div>
+
+            <OptionsEditor form={form} setForm={setForm} settlement={settlement} L={L} />
+
             <div className="menu-form-foot">
               <button type="button" className="btn" onClick={() => setForm(null)}>{L("Annuler", "Cancel")}</button>
               <button type="button" className="btn primary" onClick={() => void save()} disabled={busy}>{busy ? "…" : L("Enregistrer", "Save")}</button>
@@ -209,6 +225,49 @@ function Menu() {
           </div>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function OptionsEditor({ form, setForm, settlement, L }: { form: Form; setForm: (f: Form) => void; settlement: string; L: (fr: string, en: string) => string }) {
+  const setVar = (i: number, patch: Partial<FormVariation>) => setForm({ ...form, variations: form.variations.map((v, k) => k === i ? { ...v, ...patch } : v) });
+  const setOpt = (vi: number, oi: number, patch: Partial<{ name: string; price: string }>) =>
+    setVar(vi, { options: form.variations[vi]!.options.map((o, k) => k === oi ? { ...o, ...patch } : o) });
+  return (
+    <div className="opt-ed">
+      <div className="opt-sec">
+        <div className="opt-head"><h3>{L("Variations", "Variations")} <span className="muted">({L("taille, choix…", "size, choice…")})</span></h3>
+          <button type="button" className="btn ghost sm" onClick={() => setForm({ ...form, variations: [...form.variations, { name: "", type: "SINGLE", required: false, options: [{ name: "", price: "" }] }] })}>+ {L("Variation", "Variation")}</button></div>
+        {form.variations.map((v, vi) => (
+          <div className="opt-grp" key={vi}>
+            <div className="opt-grp-top">
+              <input className="input" placeholder={L("Nom (ex. Taille)", "Name (e.g. Size)")} value={v.name} onChange={(e) => setVar(vi, { name: e.target.value })} />
+              <select className="select" value={v.type} onChange={(e) => setVar(vi, { type: e.target.value as "SINGLE" | "MULTI" })}><option value="SINGLE">{L("Choix unique", "Single")}</option><option value="MULTI">{L("Choix multiple", "Multiple")}</option></select>
+              <label className="chk"><input type="checkbox" checked={v.required} onChange={(e) => setVar(vi, { required: e.target.checked })} /> {L("Requis", "Required")}</label>
+              <button type="button" className="btn ghost sm" onClick={() => setForm({ ...form, variations: form.variations.filter((_, k) => k !== vi) })}>✕</button>
+            </div>
+            {v.options.map((o, oi) => (
+              <div className="opt-row" key={oi}>
+                <input className="input" placeholder={L("Option (ex. Grande)", "Option (e.g. Large)")} value={o.name} onChange={(e) => setOpt(vi, oi, { name: e.target.value })} />
+                <input className="input price" inputMode="decimal" placeholder={`+ ${settlement}`} value={o.price} onChange={(e) => setOpt(vi, oi, { price: e.target.value })} />
+                <button type="button" className="btn ghost sm" onClick={() => setVar(vi, { options: v.options.filter((_, k) => k !== oi) })}>✕</button>
+              </div>
+            ))}
+            <button type="button" className="btn ghost sm" onClick={() => setVar(vi, { options: [...v.options, { name: "", price: "" }] })}>+ {L("Option", "Option")}</button>
+          </div>
+        ))}
+      </div>
+      <div className="opt-sec">
+        <div className="opt-head"><h3>{L("Add-ons", "Add-ons")} <span className="muted">({L("extras payants", "paid extras")})</span></h3>
+          <button type="button" className="btn ghost sm" onClick={() => setForm({ ...form, addons: [...form.addons, { name: "", price: "" }] })}>+ {L("Add-on", "Add-on")}</button></div>
+        {form.addons.map((a, ai) => (
+          <div className="opt-row" key={ai}>
+            <input className="input" placeholder={L("Nom (ex. Fromage)", "Name (e.g. Cheese)")} value={a.name} onChange={(e) => setForm({ ...form, addons: form.addons.map((x, k) => k === ai ? { ...x, name: e.target.value } : x) })} />
+            <input className="input price" inputMode="decimal" placeholder={`+ ${settlement}`} value={a.price} onChange={(e) => setForm({ ...form, addons: form.addons.map((x, k) => k === ai ? { ...x, price: e.target.value } : x) })} />
+            <button type="button" className="btn ghost sm" onClick={() => setForm({ ...form, addons: form.addons.filter((_, k) => k !== ai) })}>✕</button>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

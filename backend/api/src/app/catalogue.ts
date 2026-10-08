@@ -4,7 +4,7 @@ import type { CountryProfile } from "@tunakula/ts-contracts";
 import type { Db } from "../db/db.ts";
 import type { CountryConfigRegistry } from "../modules/config/config-registry.ts";
 import type { Principal } from "../modules/identity/policy.ts";
-import { addMenuItem, createBranch, getBranch, menuOf, setAvailability, updateMenuItem, type MenuItemInput, type MenuItemRow } from "../persistence/catalogue.ts";
+import { addMenuItem, createBranch, getBranch, menuOf, setAvailability, updateMenuItem, type Addon, type MenuItemInput, type MenuItemRow, type Variation, type VariationOption } from "../persistence/catalogue.ts";
 import { audit } from "../persistence/identity.ts";
 import { badRequest, notFound, unprocessable } from "./errors.ts";
 import { require } from "./principal.ts";
@@ -57,7 +57,12 @@ export class CatalogueService {
         throw badRequest("PRICE_INVALID", `${ccy} ${major}: ${(error as Error).message}`);
       }
     }
-    if (!prices[profile.money.settlement_currency]) throw badRequest("SETTLEMENT_PRICE_REQUIRED", `Give a ${profile.money.settlement_currency} price`);
+    const ccy = profile.money.settlement_currency;
+    if (!prices[ccy]) throw badRequest("SETTLEMENT_PRICE_REQUIRED", `Give a ${ccy} price`);
+    const delta = (major: unknown, where: string): string => {
+      try { const m = Money.of(String(major ?? "0"), ccy); if (m.minor < 0n) throw new Error("must be 0 or more"); return m.minor.toString(); }
+      catch (error) { throw badRequest("OPTION_PRICE_INVALID", `${where}: ${(error as Error).message}`); }
+    };
     return {
       names: input.names, prices,
       ...(input.description ? { description: input.description } : {}),
@@ -66,7 +71,40 @@ export class CatalogueService {
       ...(input.tags ? { tags: input.tags } : {}),
       ...(input.allergens ? { allergens: input.allergens } : {}),
       ...(input.recommended !== undefined ? { recommended: Boolean(input.recommended) } : {}),
+      ...(input.variations !== undefined ? { variations: this.#variations(input.variations, delta) } : {}),
+      ...(input.addons !== undefined ? { addons: this.#addons(input.addons, delta) } : {}),
     };
+  }
+
+  #variations(raw: unknown, delta: (m: unknown, where: string) => string): Variation[] {
+    if (!Array.isArray(raw)) throw badRequest("VARIATIONS_INVALID", "variations must be a list");
+    return raw.map((g: Record<string, unknown>, i): Variation => {
+      const name = String(g?.name ?? "").trim();
+      if (!name) throw badRequest("VARIATION_NAME_REQUIRED", `Variation ${i + 1} needs a name`);
+      const type = g?.type === "MULTI" ? "MULTI" : "SINGLE";
+      const options = Array.isArray(g?.options) ? g.options : [];
+      if (options.length === 0) throw badRequest("VARIATION_EMPTY", `Variation "${name}" needs at least one option`);
+      const required = Boolean(g?.required);
+      const max = type === "SINGLE" ? 1 : Math.max(1, Math.min(Number(g?.max) || options.length, options.length));
+      const min = type === "SINGLE" ? (required ? 1 : 0) : Math.max(required ? 1 : 0, Math.min(Number(g?.min) || 0, max));
+      return {
+        id: `g${i}`, name, type, required, min, max,
+        options: options.map((o: Record<string, unknown>, j): VariationOption => {
+          const on = String(o?.name ?? "").trim();
+          if (!on) throw badRequest("OPTION_NAME_REQUIRED", `An option of "${name}" needs a name`);
+          return { id: `g${i}o${j}`, name: on, price: delta(o?.price, `${name} / ${on}`) };
+        }),
+      };
+    });
+  }
+
+  #addons(raw: unknown, delta: (m: unknown, where: string) => string): Addon[] {
+    if (!Array.isArray(raw)) throw badRequest("ADDONS_INVALID", "addons must be a list");
+    return raw.map((a: Record<string, unknown>, i): Addon => {
+      const name = String(a?.name ?? "").trim();
+      if (!name) throw badRequest("ADDON_NAME_REQUIRED", `Add-on ${i + 1} needs a name`);
+      return { id: `a${i}`, name, price: delta(a?.price, `add-on ${name}`) };
+    });
   }
 
   async addItem(country: string, principal: Principal, branchId: string, input: ItemInput) {
@@ -159,6 +197,8 @@ interface ItemInput {
   tags?: string[];
   allergens?: string[];
   recommended?: boolean;
+  variations?: unknown;
+  addons?: unknown;
 }
 
 interface ImportRow extends ItemInput {
@@ -178,5 +218,8 @@ function publicItem(i: MenuItemRow) {
     allergens: i.allergens,
     available: i.available,
     recommended: i.recommended,
+    // Variation/add-on prices are minor units in the market's settlement currency (the client knows it).
+    variations: i.variations,
+    addons: i.addons,
   };
 }
