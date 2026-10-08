@@ -70,6 +70,8 @@ export class CatalogueService {
       ...(input.veg !== undefined ? { veg: input.veg === null ? null : Boolean(input.veg) } : {}),
       ...(input.tags ? { tags: input.tags } : {}),
       ...(input.allergens ? { allergens: input.allergens } : {}),
+      ...(input.dietary !== undefined ? { dietary: dietaryTags(input.dietary) } : {}),
+      ...(input.nutrition !== undefined ? { nutrition: nutritionFacts(input.nutrition) } : {}),
       ...(input.recommended !== undefined ? { recommended: Boolean(input.recommended) } : {}),
       ...(input.variations !== undefined ? { variations: this.#variations(input.variations, delta) } : {}),
       ...(input.addons !== undefined ? { addons: this.#addons(input.addons, delta) } : {}),
@@ -196,9 +198,36 @@ interface ItemInput {
   veg?: boolean | null;
   tags?: string[];
   allergens?: string[];
+  dietary?: unknown;
+  nutrition?: unknown;
   recommended?: boolean;
   variations?: unknown;
   addons?: unknown;
+}
+
+/** Structured dietary tags a customer can filter by (the EU/UK compliance + discovery set). */
+export const DIETARY_TAGS = ["VEGETARIAN", "VEGAN", "HALAL", "KOSHER", "GLUTEN_FREE", "DAIRY_FREE", "NUT_FREE", "ORGANIC", "SPICY"] as const;
+/** The 14 EU major allergens; a dish's `allergens` are validated against this set when provided. */
+export const EU_ALLERGENS = ["gluten", "crustaceans", "eggs", "fish", "peanuts", "soybeans", "milk", "nuts", "celery", "mustard", "sesame", "sulphites", "lupin", "molluscs"] as const;
+const NUTRITION_KEYS = ["kcal", "protein_g", "carbs_g", "fat_g", "sugar_g", "salt_g"] as const;
+
+function dietaryTags(value: unknown): string[] {
+  if (!Array.isArray(value)) throw badRequest("DIETARY_INVALID", "dietary is a list of tags");
+  const out = value.map((t) => String(t).toUpperCase().trim()).filter(Boolean);
+  for (const t of out) if (!(DIETARY_TAGS as readonly string[]).includes(t)) throw badRequest("DIETARY_UNKNOWN", `Unknown dietary tag "${t}"; allowed: ${DIETARY_TAGS.join(", ")}`);
+  return [...new Set(out)];
+}
+
+function nutritionFacts(value: unknown): Record<string, number> {
+  if (value === null || typeof value !== "object") throw badRequest("NUTRITION_INVALID", "nutrition is an object of per-serving figures");
+  const out: Record<string, number> = {};
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    if (!(NUTRITION_KEYS as readonly string[]).includes(k)) throw badRequest("NUTRITION_KEY_UNKNOWN", `Unknown nutrition field "${k}"; allowed: ${NUTRITION_KEYS.join(", ")}`);
+    const n = Number(v);
+    if (!Number.isFinite(n) || n < 0) throw badRequest("NUTRITION_VALUE_INVALID", `${k} must be a number of 0 or more`);
+    out[k] = Math.round(n * 10) / 10;
+  }
+  return out;
 }
 
 interface ImportRow extends ItemInput {
@@ -216,6 +245,8 @@ function publicItem(i: MenuItemRow) {
     veg: i.veg,
     tags: i.tags,
     allergens: i.allergens,
+    dietary: i.dietary,
+    nutrition: i.nutrition,
     available: i.available,
     recommended: i.recommended,
     // Variation/add-on prices are minor units in the market's settlement currency (the client knows it).

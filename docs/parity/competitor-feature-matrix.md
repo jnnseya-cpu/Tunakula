@@ -295,7 +295,7 @@ The superset below merges all four actors into build epics. **Each epic notes wh
 |---|---|---|---|
 | ✅ P0 | **Paid subscription membership** (free delivery + perks + late-credit) — **BUILT** (Tunakula Plus: admin plans, customer subscribe/cancel, quote+checkout benefit, platform-funded settlement that stays balanced) | DashPass, Uber One, Deliveroo Plus/Diamond | Biggest customer-retention gap |
 | P0 | **Group ordering + bill-split** (shared cart link, deadline, auto/manual checkout) | Uber Eats, DoorDash | Flagship social-order feature |
-| P0 | **Rich dietary/allergen filtering + structured nutrition/calorie** | Uber Eats, Deliveroo, Just Eat (14 EU allergens) | Compliance (UK/EU) + accessibility |
+| ✅ P0 | **Rich dietary/allergen filtering + structured nutrition/calorie** — **BUILT** (validated dietary tags + EU-14 allergens + per-serving nutrition on each dish; merchant editor, API validation, storefront badges + diet chip filter) | Uber Eats, Deliveroo, Just Eat (14 EU allergens) | Compliance (UK/EU) + accessibility |
 | P1 | **Driver performance tiers + incentives/quests** (Top Dasher, Uber Pro, Boost) | DoorDash, Uber | Courier supply retention |
 | P1 | **Driver safety toolkit / SOS** (reassurance call, 911 escalation, trip-share) | DoorDash SafeDash, Uber Safety Toolkit | Courier safety + liability |
 | P1 | **Instant/fast driver cash-out + per-offer earnings breakdown** | DoorDash Fast Pay, Uber Instant Pay | Courier supply, earnings transparency |

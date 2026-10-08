@@ -13,7 +13,8 @@ Legend: **Built** works end to end · **Partial** the engine or a screen exists,
 | Home: banners, categories, nearby restaurants, popular dishes | Built (preview): the real Kinshasa restaurants with their names, menus, logos, covers and dish photos; the home grid and every storefront read the live catalogue API in the browser and fall back to a committed snapshot offline |
 | Distance (km) and delivery time per restaurant | Built (API and website) |
 | Sign up / sign in by phone code | Built (SMS or WhatsApp code; delivery needs the messaging adapter) |
-| Search with filters (veg, rating, price, cuisine, distance) | Partial: text search and sort only |
+| Search with filters (veg, rating, price, cuisine, distance) | Partial: text search and sort; **dietary/allergen filtering built** — a live storefront chip filter (vegetarian, vegan, halal, gluten-free, dairy-free, nut-free) over structured per-dish dietary tags |
+| Structured dietary tags, allergens (EU 14) and nutrition per dish | Built: merchants set validated dietary tags + per-serving nutrition (kcal, protein, carbs, fat) in the menu editor; the API validates and serves them; the storefront shows dietary badges, calories and allergens, and filters by diet (the Uber Eats / Deliveroo / Just Eat compliance feature) |
 | Restaurant page with menu | Built: live menu, availability, allergens, distance, time, fee |
 | Food details: variations, add-ons, notes | Built on the live storefront: an option picker (required/optional variations, single or multiple choice, add-ons) with a live price; the chosen options and their prices flow through the cart and checkout into the order. Notes still missing |
 | Cart and checkout: delivery, takeaway, dine-in, scheduled | Built for delivery and takeaway (live quote, directions, tip); dine-in and scheduled missing |

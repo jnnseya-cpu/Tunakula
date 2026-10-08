@@ -11,7 +11,13 @@ import { PlateArt, recipeFor } from "./plate-art";
 
 interface VOption { id: string; name: string; price: string }
 interface Variation { id: string; name: string; type: "SINGLE" | "MULTI"; required: boolean; min: number; max: number; options: VOption[] }
-interface MenuItem { id: string; names: Record<string, string>; prices: Record<string, MoneyWire>; tags: string[]; allergens: string[]; available: boolean; variations?: Variation[]; addons?: VOption[] }
+interface MenuItem { id: string; names: Record<string, string>; prices: Record<string, MoneyWire>; tags: string[]; allergens: string[]; available: boolean; variations?: Variation[]; addons?: VOption[]; veg?: boolean | null; dietary?: string[]; nutrition?: Record<string, number> }
+
+const DIETARY_LABEL: Record<string, string> = { VEGETARIAN: "Vegetarian", VEGAN: "Vegan", HALAL: "Halal", KOSHER: "Kosher", GLUTEN_FREE: "Gluten-free", DAIRY_FREE: "Dairy-free", NUT_FREE: "Nut-free", ORGANIC: "Organic", SPICY: "Spicy" };
+/** The dietary tags the storefront offers as quick filters. */
+const DIETARY_FILTERS = ["VEGETARIAN", "VEGAN", "HALAL", "GLUTEN_FREE", "DAIRY_FREE", "NUT_FREE"] as const;
+/** A dish's effective dietary tags, treating the legacy `veg` flag as VEGETARIAN. */
+const dietaryOf = (i: MenuItem): string[] => [...new Set([...(i.dietary ?? []), ...(i.veg === true ? ["VEGETARIAN"] : [])])];
 interface Menu { branch: { id: string; name: string; commune: string | null; status: string }; items: MenuItem[] }
 const hasOptions = (i: MenuItem) => (i.variations?.length ?? 0) > 0 || (i.addons?.length ?? 0) > 0;
 interface Eta { distance_km: string; eta: { low: number; high: number; basis: string }; delivery_fee: MoneyWire; open: boolean }
@@ -29,6 +35,7 @@ export function LiveStore() {
   const [eta, setEta] = useState<Eta | null>(null);
   const [cart, setCart] = useState<Cart | null>(null);
   const [q, setQ] = useState("");
+  const [diet, setDiet] = useState<string[]>([]);
   const [picking, setPicking] = useState<MenuItem | null>(null);
   const { place } = useLocationCtx();
 
@@ -82,7 +89,13 @@ export function LiveStore() {
   if (!menu || !cart) return <main className="app-page"><div className="skeleton-cover" /><div className="skeleton-line" /><div className="skeleton-line short" /></main>;
 
   const [bg, accent] = toneFor(menu.branch.id);
-  const visible = menu.items.filter((i) => !q.trim() || nameOf(i.names).toLowerCase().includes(q.trim().toLowerCase()));
+  // A dish shows when it matches the search and carries every selected dietary tag.
+  const dietaryAvailable = [...new Set(menu.items.flatMap(dietaryOf))];
+  const filters = DIETARY_FILTERS.filter((d) => dietaryAvailable.includes(d));
+  const visible = menu.items.filter((i) =>
+    (!q.trim() || nameOf(i.names).toLowerCase().includes(q.trim().toLowerCase())) &&
+    diet.every((d) => dietaryOf(i).includes(d)),
+  );
   const open = menu.branch.status === "OPEN" && (eta?.open ?? true);
   const dishes = menu.items.slice(0, 3).map((i) => recipeFor(nameOf(i.names)));
 
@@ -114,6 +127,15 @@ export function LiveStore() {
       <div className="wrap live-body">
         <div>
           <label className="menu-search"><span className="sr">Search this menu</span><input placeholder={`Search ${menu.branch.name}`} value={q} onChange={(e) => setQ(e.target.value)} /></label>
+          {filters.length ? (
+            <div className="diet-filter" role="group" aria-label="Filter by diet">
+              {filters.map((d) => {
+                const on = diet.includes(d);
+                return <button type="button" key={d} className={`diet-chip ${on ? "on" : ""}`} aria-pressed={on} onClick={() => setDiet(on ? diet.filter((x) => x !== d) : [...diet, d])}>{DIETARY_LABEL[d] ?? d}</button>;
+              })}
+              {diet.length ? <button type="button" className="diet-chip clear" onClick={() => setDiet([])}>Clear</button> : null}
+            </div>
+          ) : null}
           <div className="live-items">
             {visible.map((i) => {
               const name = nameOf(i.names);
@@ -127,6 +149,12 @@ export function LiveStore() {
                     <h3>{name}</h3>
                     {nameOf(i.names, "en") !== name ? <p className="muted">{nameOf(i.names, "en")}</p> : null}
                     {optioned ? <p className="muted small">{(i.variations?.length ?? 0) > 0 ? "Choices" : "Add-ons"} available</p> : null}
+                    {dietaryOf(i).length || i.nutrition?.kcal !== undefined ? (
+                      <p className="diet-badges">
+                        {dietaryOf(i).map((d) => <span key={d} className="diet-tag">{DIETARY_LABEL[d] ?? d}</span>)}
+                        {i.nutrition?.kcal !== undefined ? <span className="kcal">{i.nutrition.kcal} kcal</span> : null}
+                      </p>
+                    ) : null}
                     {i.allergens.length ? <p className="allergen">Contains {i.allergens.join(", ")}</p> : null}
                     <p className="li-price num">{price ? money(price) : "—"}{optioned ? "+" : ""}</p>
                   </div>

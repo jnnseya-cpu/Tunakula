@@ -1139,3 +1139,12 @@ section.tight { padding: 44px 0; }
 .plus-current { border: 1px solid var(--ok, #0a7d33); border-radius: var(--radius); padding: 20px; margin: 16px 0; background: color-mix(in srgb, var(--ok, #0a7d33) 6%, var(--card)); }
 .plus-current h2 { margin: 8px 0; }
 .price-lines .member-save dt, .price-lines .member-save dd { color: var(--ok, #0a7d33); font-weight: 600; }
+
+/* Dietary filter + badges on the storefront (additive) */
+.diet-filter { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 4px; }
+.diet-chip { border: 1px solid var(--rule); background: var(--card); border-radius: 999px; padding: 6px 13px; font-size: 13px; font-weight: 600; cursor: pointer; color: var(--ink); }
+.diet-chip.on { background: var(--navy); color: #fff; border-color: var(--navy); }
+.diet-chip.clear { color: var(--muted); font-weight: 500; }
+.diet-badges { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0; }
+.diet-tag { font-size: 11px; font-weight: 700; letter-spacing: .02em; text-transform: uppercase; color: var(--ok, #0a7d33); background: color-mix(in srgb, var(--ok, #0a7d33) 10%, transparent); border-radius: 6px; padding: 2px 7px; }
+.kcal { font-size: 11px; font-weight: 600; color: var(--muted); background: var(--tint); border-radius: 6px; padding: 2px 7px; }

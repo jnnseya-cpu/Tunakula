@@ -1488,3 +1488,51 @@ describe("paid membership (the Plus subscription)", () => {
     assert.ok(!plans.body.data.some((p: { id: string }) => p.id === plan.id), "inactive plans are not offered");
   });
 });
+
+describe("dietary tags and nutrition on dishes", () => {
+  let dishId: string;
+
+  test("the owner sets structured dietary tags and nutrition; they round-trip", async () => {
+    const r = await call("POST", `/v1/branches/${branchId}/items`, {
+      token: restaurantOwner.token, country: "CD",
+      body: {
+        names: { fr: "Bowl végétalien", en: "Vegan bowl" }, prices: { USD: "8.00" },
+        dietary: ["vegan", "vegetarian", "gluten_free"], allergens: ["soybeans"],
+        nutrition: { kcal: 520, protein_g: 18.5, carbs_g: 60, fat_g: 22 },
+      },
+    });
+    assert.equal(r.status, 201, JSON.stringify(r.body));
+    dishId = r.body.id;
+    assert.deepEqual([...r.body.dietary].sort(), ["GLUTEN_FREE", "VEGAN", "VEGETARIAN"]);
+    assert.equal(r.body.nutrition.kcal, 520);
+    assert.equal(r.body.nutrition.protein_g, 18.5);
+    // It comes back on the public menu too.
+    const menu = await call("GET", `/v1/branches/${branchId}/menu`, { country: "CD" });
+    const onMenu = menu.body.items.find((i: { id: string }) => i.id === dishId);
+    assert.ok(onMenu.dietary.includes("VEGAN"));
+    assert.equal(onMenu.nutrition.kcal, 520);
+  });
+
+  test("an unknown dietary tag or a negative calorie is refused", async () => {
+    const bad = await call("POST", `/v1/branches/${branchId}/items`, {
+      token: restaurantOwner.token, country: "CD",
+      body: { names: { fr: "X" }, prices: { USD: "1.00" }, dietary: ["paleo"] },
+    });
+    assert.equal(bad.body.code, "DIETARY_UNKNOWN");
+    const badN = await call("POST", `/v1/branches/${branchId}/items`, {
+      token: restaurantOwner.token, country: "CD",
+      body: { names: { fr: "Y" }, prices: { USD: "1.00" }, nutrition: { kcal: -5 } },
+    });
+    assert.equal(badN.body.code, "NUTRITION_VALUE_INVALID");
+  });
+
+  test("editing a dish updates its dietary tags and nutrition", async () => {
+    const r = await call("POST", `/v1/branches/${branchId}/items/${dishId}`, {
+      token: restaurantOwner.token, country: "CD",
+      body: { names: { fr: "Bowl végétalien", en: "Vegan bowl" }, prices: { USD: "8.00" }, dietary: ["vegan"], nutrition: { kcal: 500 } },
+    });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.deepEqual(r.body.dietary, ["VEGAN"]);
+    assert.equal(r.body.nutrition.kcal, 500);
+  });
+});

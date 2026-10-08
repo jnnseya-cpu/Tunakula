@@ -19,7 +19,13 @@ interface Item {
   prices: Record<string, MoneyWire>; category: string | null; veg: boolean | null;
   tags: string[]; allergens: string[]; available: boolean; recommended: boolean;
   variations: ApiVariation[]; addons: ApiOption[];
+  dietary?: string[]; nutrition?: Record<string, number>;
 }
+const DIETARY = ["VEGETARIAN", "VEGAN", "HALAL", "KOSHER", "GLUTEN_FREE", "DAIRY_FREE", "NUT_FREE", "ORGANIC", "SPICY"] as const;
+const DIETARY_LABEL: Record<string, [string, string]> = {
+  VEGETARIAN: ["Végétarien", "Vegetarian"], VEGAN: ["Végétalien", "Vegan"], HALAL: ["Halal", "Halal"], KOSHER: ["Casher", "Kosher"],
+  GLUTEN_FREE: ["Sans gluten", "Gluten-free"], DAIRY_FREE: ["Sans lactose", "Dairy-free"], NUT_FREE: ["Sans fruits à coque", "Nut-free"], ORGANIC: ["Bio", "Organic"], SPICY: ["Épicé", "Spicy"],
+};
 interface Config { money: { currencies: { settlement: string; accepted: { code: string }[] } } }
 
 interface FormVariation { name: string; type: "SINGLE" | "MULTI"; required: boolean; options: { name: string; price: string }[] }
@@ -32,7 +38,7 @@ export default function MenuPage() {
 }
 
 const nameOf = (names: Record<string, string>, lang: string) => names[lang] || names.fr || names.en || Object.values(names)[0] || "";
-const blankForm = () => ({ id: "", name_fr: "", name_en: "", desc_fr: "", category: "", price: "", veg: "" as "" | "veg" | "non", recommended: false, tags: "", allergens: "", variations: [] as FormVariation[], addons: [] as FormAddon[] });
+const blankForm = () => ({ id: "", name_fr: "", name_en: "", desc_fr: "", category: "", price: "", veg: "" as "" | "veg" | "non", recommended: false, tags: "", allergens: "", dietary: [] as string[], kcal: "", protein_g: "", carbs_g: "", fat_g: "", variations: [] as FormVariation[], addons: [] as FormAddon[] });
 type Form = ReturnType<typeof blankForm>;
 
 function Menu() {
@@ -76,6 +82,9 @@ function Menu() {
     id: it.id, name_fr: it.names.fr ?? "", name_en: it.names.en ?? "", desc_fr: it.description?.fr ?? "",
     category: it.category ?? "", price: it.prices[settlement] ? decimal(it.prices[settlement]!.amount_minor, settlement) : "",
     veg: it.veg === true ? "veg" : it.veg === false ? "non" : "", recommended: it.recommended, tags: it.tags.join(", "), allergens: it.allergens.join(", "),
+    dietary: [...(it.dietary ?? [])],
+    kcal: it.nutrition?.kcal !== undefined ? String(it.nutrition.kcal) : "", protein_g: it.nutrition?.protein_g !== undefined ? String(it.nutrition.protein_g) : "",
+    carbs_g: it.nutrition?.carbs_g !== undefined ? String(it.nutrition.carbs_g) : "", fat_g: it.nutrition?.fat_g !== undefined ? String(it.nutrition.fat_g) : "",
     variations: (it.variations ?? []).map((v) => ({ name: v.name, type: v.type, required: v.required, options: v.options.map((o) => ({ name: o.name, price: decimal(o.price, settlement) })) })),
     addons: (it.addons ?? []).map((a) => ({ name: a.name, price: decimal(a.price, settlement) })),
   });
@@ -144,6 +153,8 @@ function Menu() {
       recommended: form.recommended,
       tags: form.tags.split(",").map((t) => t.trim()).filter(Boolean),
       allergens: form.allergens.split(",").map((t) => t.trim()).filter(Boolean),
+      dietary: form.dietary,
+      nutrition: Object.fromEntries((["kcal", "protein_g", "carbs_g", "fat_g"] as const).flatMap((k) => (form[k].trim() ? [[k, Number(form[k])]] : []))),
       variations: form.variations.filter((v) => v.name.trim() && v.options.some((o) => o.name.trim())).map((v) => ({
         name: v.name.trim(), type: v.type, required: v.required,
         options: v.options.filter((o) => o.name.trim()).map((o) => ({ name: o.name.trim(), price: o.price.trim() || "0" })),
@@ -214,6 +225,25 @@ function Menu() {
               <label className="chk"><input type="checkbox" checked={form.recommended} onChange={(e) => setForm({ ...form, recommended: e.target.checked })} /> {L("Recommandé", "Recommended")}</label>
               <label>{L("Balises (séparées par des virgules)", "Tags (comma-separated)")}<input className="input" value={form.tags} onChange={(e) => setForm({ ...form, tags: e.target.value })} /></label>
               <label>{L("Allergènes (virgules)", "Allergens (commas)")}<input className="input" value={form.allergens} onChange={(e) => setForm({ ...form, allergens: e.target.value })} /></label>
+              <div className="wide">
+                <span className="ff-label">{L("Régimes", "Dietary")}</span>
+                <div className="chips">
+                  {DIETARY.map((d) => {
+                    const on = form.dietary.includes(d);
+                    return <button type="button" key={d} className={`chip ${on ? "on" : ""}`} aria-pressed={on} onClick={() => setForm({ ...form, dietary: on ? form.dietary.filter((x) => x !== d) : [...form.dietary, d] })}>{DIETARY_LABEL[d]?.[lang === "fr" ? 0 : 1] ?? d}</button>;
+                  })}
+                </div>
+              </div>
+              <div className="wide">
+                <span className="ff-label">{L("Valeurs nutritionnelles (par portion)", "Nutrition (per serving)")}</span>
+                <div className="nutri">
+                  {(["kcal", "protein_g", "carbs_g", "fat_g"] as const).map((k) => (
+                    <label key={k} className="nutri-f">{k === "kcal" ? "kcal" : k === "protein_g" ? L("Protéines g", "Protein g") : k === "carbs_g" ? L("Glucides g", "Carbs g") : L("Lipides g", "Fat g")}
+                      <input className="input" inputMode="decimal" value={form[k]} onChange={(e) => setForm({ ...form, [k]: e.target.value.replace(/[^0-9.]/g, "") })} />
+                    </label>
+                  ))}
+                </div>
+              </div>
             </div>
 
             <OptionsEditor form={form} setForm={setForm} settlement={settlement} L={L} />
