@@ -53,6 +53,7 @@ Legend: **Built** works end to end · **Partial** the engine or a screen exists,
 | Feature | Status |
 | --- | --- |
 | Go online / offline, shifts | Built: online/offline with GPS (position shared only while online or carrying an order); shifts missing |
+| Safety / SOS | Built: an in-app SOS button (I need help / unsafe / accident / vehicle) that sends the rider's location to an operations safety queue on the dispatch board, where ops acknowledge and resolve it with a map link — the DoorDash SafeDash / Uber Safety Toolkit equivalent |
 | Job offers, accept, navigation, pick up, deliver with code and photo | Built: automatic nearest-rider offers (30 s, earnings shown first, no penalty for saying no), navigation links, bag check at pickup, code + GPS + photo at the door, failed-delivery report |
 | Earnings, wallet, cash in hand, remittance | Built: today's earnings, a **per-delivery breakdown** (base + tip per order), cash in hand, cash hand-in at the hub, and **instant cash-out** — the rider withdraws their earned balance to mobile money on demand (ledger: rider_payable → psp_clearing, balanced and idempotent), the DoorDash Fast Pay / Uber Instant Pay feature |
 | Vehicles, documents, self-registration | Built: apply with ID, selfie and licence photos, automatic checks (age, ID format, duplicate ID, licence and plate), review and approval by operations |

@@ -458,3 +458,8 @@ tr.sel td { background: rgba(250, 210, 14, 0.12); }
 .score.good { background: color-mix(in srgb, #0a7d33 15%, transparent); color: #0a7d33; }
 .score.ok { background: color-mix(in srgb, #b5560a 15%, transparent); color: #b5560a; }
 .score.bad { background: color-mix(in srgb, #c01818 15%, transparent); color: #c01818; }
+
+/* Rider safety alerts on the dispatch board (additive) */
+.dsp-safety ul { list-style: none; padding: 0; margin: 8px 0 0; display: flex; flex-direction: column; gap: 6px; }
+.dsp-safety li { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.dsp-safety-act { display: flex; gap: 10px; }

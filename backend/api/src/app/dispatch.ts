@@ -243,6 +243,68 @@ export class DispatchService {
     });
   }
 
+  /** POST /v1/rider/sos: a rider raises a safety alert; ops see it at once in the incidents queue. */
+  async raiseSos(principal: Principal, country: string, input: { kind?: string; lat?: number; lng?: number; note?: string; orderId?: string }) {
+    if (DispatchService.riderZones(principal).length === 0) throw forbidden("Only riders raise safety alerts");
+    const kind = ["SOS", "ACCIDENT", "UNSAFE", "VEHICLE", "OTHER"].includes(input.kind ?? "") ? input.kind : "SOS";
+    return this.db.tx({ country }, async (sql) => {
+      const [row] = await sql.query<{ id: string; created_at: Date }>(
+        `INSERT INTO dispatch.safety_incident (country_iso2, rider_id, order_id, kind, lat, lng, note)
+         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, created_at`,
+        [country, principal.userId, input.orderId ?? null, kind, input.lat ?? null, input.lng ?? null, input.note?.slice(0, 500) ?? null],
+      );
+      await audit(sql, { actor: principal.userId, action: "safety.sos_raised", target: `incident:${row?.id}`, country, detail: { kind } });
+      return {
+        id: row?.id,
+        status: "OPEN",
+        message: "Help is on the way. Move to a safe place if you can. Operations has been alerted and will call you.",
+      };
+    });
+  }
+
+  /** GET /v1/ops/incidents: the open (and recently resolved) safety queue for operations. */
+  async incidents(principal: Principal, country: string) {
+    if (!(await this.#opsAllowed(principal, country, ["dispatch:manage", "exception:manage"]))) throw forbidden("The safety queue is for operations staff");
+    return this.db.tx({ country }, async (sql) => {
+      const rows = await sql.query<{ id: string; rider_id: string; rider: string | null; order_id: string | null; kind: string; lat: number | null; lng: number | null; note: string | null; status: string; created_at: Date; acknowledged_at: Date | null }>(
+        `SELECT i.id, i.rider_id, u.display_name AS rider, i.order_id, i.kind, i.lat, i.lng, i.note, i.status, i.created_at, i.acknowledged_at
+           FROM dispatch.safety_incident i LEFT JOIN identity.app_user u ON u.id = i.rider_id
+          WHERE i.status <> 'RESOLVED' OR i.updated_at >= $1
+          ORDER BY (i.status = 'OPEN') DESC, i.created_at DESC LIMIT 100`,
+        [new Date(this.now().getTime() - 86_400_000)],
+      );
+      return {
+        incidents: rows.map((r) => ({
+          id: r.id, rider: { id: r.rider_id, name: r.rider ?? "Rider" }, order_id: r.order_id, kind: r.kind,
+          location: r.lat !== null && r.lng !== null ? { lat: r.lat, lng: r.lng } : null,
+          note: r.note, status: r.status, created_at: new Date(r.created_at).toISOString(),
+          acknowledged_at: r.acknowledged_at ? new Date(r.acknowledged_at).toISOString() : null,
+        })),
+      };
+    });
+  }
+
+  /** POST /v1/ops/incidents/:id: operations acknowledges or resolves a safety alert. */
+  async updateIncident(principal: Principal, country: string, id: string, status: string) {
+    if (!["ACKNOWLEDGED", "RESOLVED"].includes(status)) throw badRequest("STATUS_INVALID", "Status is ACKNOWLEDGED or RESOLVED");
+    if (!(await this.#opsAllowed(principal, country, ["dispatch:manage", "exception:manage"]))) throw forbidden("The safety queue is for operations staff");
+    return this.db.tx({ country }, async (sql) => {
+      const [row] = await sql.query<{ id: string; status: string }>(
+        `UPDATE dispatch.safety_incident
+            SET status = $2,
+                acknowledged_by = CASE WHEN $2 = 'ACKNOWLEDGED' THEN $3::uuid ELSE acknowledged_by END,
+                acknowledged_at = CASE WHEN $2 = 'ACKNOWLEDGED' AND acknowledged_at IS NULL THEN $4::timestamptz ELSE acknowledged_at END,
+                resolved_at = CASE WHEN $2 = 'RESOLVED' THEN $4::timestamptz ELSE resolved_at END,
+                updated_at = $4::timestamptz
+          WHERE id = $1 RETURNING id, status`,
+        [id, status, principal.userId, this.now()],
+      );
+      if (!row) throw notFound("Incident");
+      await audit(sql, { actor: principal.userId, action: `safety.${status.toLowerCase()}`, target: `incident:${id}`, country });
+      return { id: row.id, status: row.status };
+    });
+  }
+
   async #jobDetail(sql: Sql, orderId: string) {
     const [o] = await sql.query<{
       order_id: string; state: string; type: string; payment_mode: string; total_minor: string; currency: string;

@@ -11,6 +11,7 @@ import { api, ApiError } from "../../lib/api";
 import { money } from "../../lib/format";
 import type { Lang } from "../../lib/i18n";
 
+interface Incident { id: string; rider: { id: string; name: string }; order_id: string | null; kind: string; location: { lat: number; lng: number } | null; note: string | null; status: string; created_at: string }
 interface Rider {
   id: string; name: string; phone: string | null; zones: string[]; vehicle: string; status: "AVAILABLE" | "OFFERED" | "BUSY" | "OFFLINE" | "SIGNAL_LOST";
   position: { lat: number; lng: number } | null; last_seen: string | null; online_minutes: number;
@@ -53,10 +54,18 @@ function Dispatch() {
   const [assign, setAssign] = useState<Order | null>(null);
   const [cashIn, setCashIn] = useState<Rider | null>(null);
   const [filter, setFilter] = useState<"active" | "all">("active");
+  const [incidents, setIncidents] = useState<Incident[]>([]);
 
   const load = useCallback(async () => {
-    try { setBoard(await api<Board>("/v1/ops/dispatch", { country })); setError(null); } catch (e) { setError((e as Error).message); }
+    try {
+      setBoard(await api<Board>("/v1/ops/dispatch", { country }));
+      setError(null);
+      api<{ incidents: Incident[] }>("/v1/ops/incidents", { country }).then((r) => setIncidents(r.incidents)).catch(() => undefined);
+    } catch (e) { setError((e as Error).message); }
   }, [country]);
+  const resolveIncident = async (id: string, status: "ACKNOWLEDGED" | "RESOLVED") => {
+    try { await api(`/v1/ops/incidents/${id}`, { method: "POST", country, body: { status } }); void load(); } catch { /* shown next poll */ }
+  };
   useEffect(() => { void load(); const t = setInterval(load, 5000); return () => clearInterval(t); }, [load]);
 
   const pins = useMemo<MapPin[]>(() => {
@@ -85,6 +94,23 @@ function Dispatch() {
         <div className="tile"><div className="label">{L("Signal perdu", "Signal lost")}</div><div className="value">{count("SIGNAL_LOST")}</div></div>
       </div>
       {error ? <div className="banner error">{error}</div> : null}
+      {incidents.length ? (
+        <div className="banner error dsp-safety">
+          <b>🆘 {L("Alertes sécurité livreur", "Rider safety alerts")} ({incidents.length})</b>
+          <ul>
+            {incidents.map((i) => (
+              <li key={i.id}>
+                <span><b>{i.rider.name}</b> · {i.kind}{i.note ? ` — ${i.note}` : ""} · <span className="muted">{new Date(i.created_at).toLocaleTimeString()}</span> · {i.status}</span>
+                <span className="dsp-safety-act">
+                  {i.location ? <a className="link-btn" href={`https://www.google.com/maps?q=${i.location.lat},${i.location.lng}`} target="_blank" rel="noreferrer">{L("Carte", "Map")}</a> : null}
+                  {i.status === "OPEN" ? <button type="button" className="link-btn" onClick={() => resolveIncident(i.id, "ACKNOWLEDGED")}>{L("Pris en charge", "Acknowledge")}</button> : null}
+                  <button type="button" className="link-btn" onClick={() => resolveIncident(i.id, "RESOLVED")}>{L("Résolu", "Resolve")}</button>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
       {board.refunds_failing?.length ? (
         <details className="banner error dsp-refunds">
           <summary>{L(`${board.refunds_failing.length} remboursement(s) refusé(s) par le prestataire de paiement`, `${board.refunds_failing.length} refund(s) refused by the payment provider`)} · {L("relance automatique 5 fois, puis action manuelle", "retried automatically 5 times, then a person must act")}</summary>

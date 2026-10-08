@@ -1187,3 +1187,8 @@ section.tight { padding: 44px 0; }
 .r-earn-list li { display: flex; justify-content: space-between; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--rule); }
 .r-earn-list small { display: block; color: var(--muted); font-size: 12px; }
 .r-earn-nums { text-align: right; }
+
+/* Rider SOS / safety (additive) */
+.r-sos { position: fixed; right: 16px; bottom: 90px; z-index: 40; background: #c01818; color: #fff; border: none; border-radius: 999px; padding: 12px 18px; font-weight: 800; letter-spacing: .04em; box-shadow: 0 4px 16px rgba(192,24,24,.4); cursor: pointer; }
+.r-sos-opts { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+.r-btn.danger { background: #c01818; color: #fff; }

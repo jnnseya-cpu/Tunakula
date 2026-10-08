@@ -1668,3 +1668,31 @@ describe("merchant performance scorecards", () => {
     assert.ok(r.body.scorecards.some((c: { branch_id: string }) => c.branch_id === branchId));
   });
 });
+
+describe("rider safety / SOS", () => {
+  let incidentId: string;
+  test("a rider raises an SOS; ops see it and acknowledge then resolve it", async () => {
+    const sos = await call("POST", "/v1/rider/sos", { token: rider.token, country: "CD", body: { kind: "UNSAFE", lat: KINSHASA.lat, lng: KINSHASA.lng, note: "Followed on Avenue X" } });
+    assert.equal(sos.status, 201, JSON.stringify(sos.body));
+    assert.equal(sos.body.status, "OPEN");
+    assert.ok(sos.body.message.length > 0, "the rider gets reassurance");
+    incidentId = sos.body.id;
+    // A customer cannot raise an SOS (not a rider) and cannot see the queue.
+    assert.equal((await call("POST", "/v1/rider/sos", { token: customer.token, country: "CD", body: { kind: "SOS" } })).status, 403);
+    assert.equal((await call("GET", "/v1/ops/incidents", { token: customer.token, country: "CD" })).status, 403);
+    // Ops see the open incident.
+    const queue = await call("GET", "/v1/ops/incidents", { token: ops.token, country: "CD" });
+    assert.equal(queue.status, 200, JSON.stringify(queue.body));
+    const inc = queue.body.incidents.find((i: { id: string }) => i.id === incidentId);
+    assert.ok(inc, "the incident is in the ops queue");
+    assert.equal(inc.status, "OPEN");
+    assert.equal(inc.kind, "UNSAFE");
+    assert.equal(inc.rider.id, rider.userId);
+    assert.ok(inc.location && inc.location.lat === KINSHASA.lat);
+    // Acknowledge, then resolve.
+    assert.equal((await call("POST", `/v1/ops/incidents/${incidentId}`, { token: ops.token, country: "CD", body: { status: "ACKNOWLEDGED" } })).body.status, "ACKNOWLEDGED");
+    assert.equal((await call("POST", `/v1/ops/incidents/${incidentId}`, { token: ops.token, country: "CD", body: { status: "RESOLVED" } })).body.status, "RESOLVED");
+    // A bad status is refused.
+    assert.equal((await call("POST", `/v1/ops/incidents/${incidentId}`, { token: ops.token, country: "CD", body: { status: "CLOSED" } })).body.code, "STATUS_INVALID");
+  });
+});

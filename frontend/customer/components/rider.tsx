@@ -199,7 +199,43 @@ export function RiderApp() {
       </div>
       <button type="button" className="r-earn-link" onClick={() => setShowEarn(true)}>Earnings &amp; instant cash-out →</button>
       {showEarn ? <EarningsPanel onClose={() => setShowEarn(false)} /> : null}
+      <SosButton pos={pos} orderId={job?.order_id ?? null} />
     </Frame>
+  );
+}
+
+function SosButton({ pos, orderId }: { pos: Pos | null; orderId: string | null }) {
+  const [open, setOpen] = useState(false);
+  const [sent, setSent] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const raise = async (kind: string) => {
+    setBusy(true);
+    try {
+      const r = await api<{ message: string }>("/v1/rider/sos", { method: "POST", body: { kind, ...(pos ? { lat: pos.lat, lng: pos.lng } : {}), ...(orderId ? { order_id: orderId } : {}) } });
+      setSent(r.message);
+    } catch { setSent("Alert sent. If you are in danger, call local emergency services now."); } finally { setBusy(false); }
+  };
+  return (
+    <>
+      <button type="button" className="r-sos" onClick={() => { setOpen(true); setSent(null); }} aria-label="Safety — get help">● SOS</button>
+      {open ? (
+        <div className="r-sheet" role="dialog" aria-modal="true" aria-label="Safety" onClick={(e) => { if (e.target === e.currentTarget) setOpen(false); }}>
+          <div className="r-sheet-card">
+            <div className="r-sheet-head"><h2>Safety</h2><button type="button" className="picker-x" onClick={() => setOpen(false)} aria-label="Close">✕</button></div>
+            {sent ? <p className="form-notice" role="status">{sent}</p> : (
+              <>
+                <p className="muted">Tell operations what's happening. They see your location and will call you. If you're in immediate danger, call local emergency services first.</p>
+                <div className="r-sos-opts">
+                  {[["SOS", "I need help now"], ["UNSAFE", "I feel unsafe"], ["ACCIDENT", "I had an accident"], ["VEHICLE", "Vehicle problem"]].map(([k, label]) => (
+                    <button type="button" key={k} className={`r-btn ${k === "SOS" ? "danger" : ""}`} disabled={busy} onClick={() => raise(k)}>{label}</button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      ) : null}
+    </>
   );
 }
 

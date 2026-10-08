@@ -321,6 +321,12 @@ export class RiderController {
     return this.dispatch.cashout(principal, country(req), body?.amount_minor, key);
   }
 
+  @Post("sos")
+  async sos(@Req() req: FastifyRequest, @Body() body: { kind?: string; lat?: number; lng?: number; note?: string; order_id?: string }) {
+    const principal = await this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+    return this.dispatch.raiseSos(principal, country(req), { ...(body?.kind ? { kind: body.kind } : {}), ...(body?.lat !== undefined ? { lat: Number(body.lat) } : {}), ...(body?.lng !== undefined ? { lng: Number(body.lng) } : {}), ...(body?.note ? { note: body.note } : {}), ...(body?.order_id ? { orderId: body.order_id } : {}) });
+  }
+
   @Post("offers/:id/accept")
   @HttpCode(200)
   async accept(@Req() req: FastifyRequest, @Param("id") id: string) {
@@ -365,6 +371,17 @@ export class OpsController {
   @HttpCode(200)
   async cashIn(@Req() req: FastifyRequest, @Param("id") id: string, @Body() body: { amount_minor?: string; note?: string }) {
     return this.dispatch.cashIn(await this.#me(req), country(req), id, String(body?.amount_minor ?? ""), body?.note);
+  }
+
+  @Get("incidents")
+  async incidents(@Req() req: FastifyRequest) {
+    return this.dispatch.incidents(await this.#me(req), country(req));
+  }
+
+  @Post("incidents/:id")
+  @HttpCode(200)
+  async updateIncident(@Req() req: FastifyRequest, @Param("id") id: string, @Body() body: { status?: string }) {
+    return this.dispatch.updateIncident(await this.#me(req), country(req), id, body?.status ?? "");
   }
 
   @Get("rider-applications")
