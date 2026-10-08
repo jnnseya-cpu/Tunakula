@@ -144,6 +144,14 @@ export const saveAddress = (a: { label: string; lat: number; lng: number; landma
 export const setDefaultAddress = (id: string) => api(`/v1/me/addresses/${id}/default`, { method: "POST" });
 export const deleteAddress = (id: string) => api(`/v1/me/addresses/${id}`, { method: "DELETE" });
 
+// ── Table bookings (dine-in reservations) ──
+export type BookingStatus = "REQUESTED" | "CONFIRMED" | "SEATED" | "COMPLETED" | "CANCELLED" | "NO_SHOW";
+export interface Booking { id: string; status: BookingStatus; party_size: number; seating_at: string; duration_min: number; created_at: string; branch?: { id: string; name: string | null } }
+export const bookTable = (b: { branch_id: string; party_size: number; at: string; name?: string; phone?: string; note?: string }) =>
+  api<{ id: string; status: BookingStatus; party_size: number; seating_at: string }>("/v1/reservations", { method: "POST", body: b });
+export const myBookings = () => api<{ bookings: Booking[] }>("/v1/me/reservations").then((r) => r.bookings);
+export const cancelBooking = (id: string) => api<{ id: string; status: BookingStatus }>(`/v1/reservations/${id}/cancel`, { method: "POST" });
+
 // ── Group ordering (shared cart) ──
 export interface GroupMember { user_id: string; name: string; is_host: boolean }
 export interface GroupLine { id: string; member_user_id: string; item_id: string; name: string; quantity: number; options?: CartLineOption[]; addons?: string[]; line_total: MoneyWire }

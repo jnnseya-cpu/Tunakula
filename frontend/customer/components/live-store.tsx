@@ -8,6 +8,7 @@ import { useEffect, useMemo, useState } from "react";
 import { api, ApiError, getSession, listFavourites, loadCart, lineSig, money, mulMinor, addMinor, saveCart, toggleFavourite, type Cart, type CartLine, type CartLineOption, type MoneyWire } from "../lib/api";
 import { ClockIcon, PinIcon, useLocationCtx } from "./location";
 import { PlateArt, recipeFor } from "./plate-art";
+import { BookTable } from "./book-table";
 
 interface VOption { id: string; name: string; price: string }
 interface Variation { id: string; name: string; type: "SINGLE" | "MULTI"; required: boolean; min: number; max: number; options: VOption[] }
@@ -139,6 +140,7 @@ export function LiveStore() {
         <div>
           <label className="menu-search"><span className="sr">Search this menu</span><input placeholder={`Search ${menu.branch.name}`} value={q} onChange={(e) => setQ(e.target.value)} /></label>
           <Link className="group-cta" href={`/group/?branch=${menu.branch.id}&start=1`}>👥 Start a group order — everyone adds their own dishes, the bill splits</Link>
+          <BookTable branchId={menu.branch.id} branchName={menu.branch.name} />
           {filters.length ? (
             <div className="diet-filter" role="group" aria-label="Filter by diet">
               {filters.map((d) => {

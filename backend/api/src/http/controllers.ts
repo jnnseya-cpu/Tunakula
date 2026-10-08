@@ -15,6 +15,7 @@ import type { GroupOrderService } from "../app/group.ts";
 import type { CouponService } from "../app/coupons.ts";
 import type { ReviewService } from "../app/reviews.ts";
 import type { AddressService } from "../app/addresses.ts";
+import type { ReservationService, BookingStatus } from "../app/reservations.ts";
 import type { NotificationService } from "../app/comms.ts";
 import { serialiseQuote, type CommerceService, type PlaceOrderInput, type QuoteInput } from "../app/commerce.ts";
 import { badRequest, notFound } from "../app/errors.ts";
@@ -937,6 +938,57 @@ export class ReviewController {
   @HttpCode(200)
   async reply(@Req() req: FastifyRequest, @Param("id") id: string, @Body() body: { reply?: string }) {
     return this.reviews.reply(country(req), await this.#p(req), id, body?.reply ?? "");
+  }
+}
+
+/** Table bookings (dine-in reservations). Customers book a table for 1+ people; restaurants confirm, seat and complete. */
+@Controller("v1")
+export class ReservationController {
+  constructor(
+    @Inject(TOKENS.db) private readonly db: Db,
+    @Inject(TOKENS.tokens) private readonly tokens: TokenService,
+    @Inject(TOKENS.reservations) private readonly reservations: ReservationService,
+  ) {}
+
+  #p(req: FastifyRequest) {
+    return this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+  }
+
+  /** Customer: book a table. */
+  @Post("reservations")
+  async book(@Req() req: FastifyRequest, @Body() body: { branch_id?: string; party_size?: number; at?: string; duration_min?: number; name?: string; phone?: string; note?: string }) {
+    if (!body?.branch_id || !body?.at) throw badRequest("BODY_INVALID", "Send branch_id, party_size and at (seating time)");
+    return this.reservations.book(country(req), await this.#p(req), {
+      branchId: String(body.branch_id), partySize: Number(body.party_size), at: String(body.at),
+      ...(body.duration_min !== undefined ? { durationMin: Number(body.duration_min) } : {}),
+      ...(body.name ? { name: String(body.name) } : {}), ...(body.phone ? { phone: String(body.phone) } : {}), ...(body.note ? { note: String(body.note) } : {}),
+    });
+  }
+
+  /** Customer: their own bookings. */
+  @Get("me/reservations")
+  async mine(@Req() req: FastifyRequest, @Query("limit") limit?: string) {
+    return this.reservations.mine(country(req), await this.#p(req), limit ? Number(limit) : undefined);
+  }
+
+  /** Customer: cancel their own booking. */
+  @Post("reservations/:id/cancel")
+  @HttpCode(200)
+  async cancel(@Req() req: FastifyRequest, @Param("id") id: string) {
+    return this.reservations.cancelMine(country(req), await this.#p(req), id);
+  }
+
+  /** Merchant: bookings for a branch they manage. */
+  @Get("admin/branches/:id/reservations")
+  async forBranch(@Req() req: FastifyRequest, @Param("id") id: string, @Query("limit") limit?: string) {
+    return this.reservations.forBranch(country(req), await this.#p(req), id, limit ? Number(limit) : undefined);
+  }
+
+  /** Merchant: confirm, seat, complete, decline or no-show a booking. */
+  @Post("admin/reservations/:id/status")
+  @HttpCode(200)
+  async setStatus(@Req() req: FastifyRequest, @Param("id") id: string, @Body() body: { status?: string }) {
+    return this.reservations.setStatus(country(req), await this.#p(req), id, String(body?.status ?? "") as BookingStatus);
   }
 }
 

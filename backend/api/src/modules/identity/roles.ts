@@ -60,6 +60,8 @@ export const ACTIONS = [
   "order:accept",
   "order:prepare",
   "order:handover",
+  /** Front-of-house: confirm, seat, complete or decline table bookings for a branch. */
+  "reservation:manage",
   // Fleet and rider
   "fleet_rider:manage",
   "earnings:read",
@@ -82,6 +84,8 @@ export const ACTIONS = [
   "xbo:send",
   /** Subscribe to, and cancel, one's own paid membership. */
   "membership:subscribe",
+  /** Book a table (dine-in reservation) at a restaurant, and cancel one's own booking. */
+  "reservation:book",
 ] as const;
 export type Action = (typeof ACTIONS)[number];
 
@@ -150,11 +154,12 @@ export const ROLES = {
       "order:accept",
       "order:prepare",
       "order:handover",
+      "reservation:manage",
     ),
   },
   BRANCH_MANAGER: {
     scopes: ["BRANCH"],
-    grants: all("availability:write", "shift:manage", "pos:operate", "order:read", "order:accept", "order:prepare", "order:handover"),
+    grants: all("availability:write", "shift:manage", "pos:operate", "order:read", "order:accept", "order:prepare", "order:handover", "reservation:manage"),
   },
   KITCHEN_STAFF: { scopes: ["BRANCH"], grants: all("order:accept", "order:prepare", "order:handover") },
   FLEET_PARTNER: {
@@ -167,7 +172,7 @@ export const ROLES = {
   },
   CUSTOMER: {
     scopes: ["GLOBAL_IDENTITY"],
-    grants: [...when(["MARKET_OPEN"], "order:place", "xbo:send", "membership:subscribe"), ...when(["OWN_RESOURCE"], "order:read", "wallet:manage")],
+    grants: [...when(["MARKET_OPEN"], "order:place", "xbo:send", "membership:subscribe", "reservation:book"), ...when(["OWN_RESOURCE"], "order:read", "wallet:manage")],
   },
 } as const satisfies Record<string, RoleDefinition>;
 

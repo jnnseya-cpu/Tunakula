@@ -26,6 +26,7 @@ export const TOKENS = {
   coupons: "COUPON_SERVICE",
   reviews: "REVIEW_SERVICE",
   addresses: "ADDRESS_SERVICE",
+  reservations: "RESERVATION_SERVICE",
   logger: "LOGGER",
 } as const;
 

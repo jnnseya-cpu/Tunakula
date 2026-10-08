@@ -1973,6 +1973,53 @@ describe("order notes (per-dish + kitchen)", () => {
     const board = await call("GET", "/v1/kitchen/orders", { token: kitchen.token, country: "CD" });
     const onBoard = board.body.orders.find((o: { order_id: string }) => o.order_id === place.body.order_id) as { kitchen_note?: string; lines: { note?: string }[] };
     assert.equal(onBoard.kitchen_note, "Extra napkins, no cutlery");
-    assert.equal(onBoard.lines[0].note, "No onions please");
+    assert.equal(onBoard.lines[0]?.note, "No onions please");
+  });
+});
+
+describe("table bookings (dine-in reservations)", () => {
+  let bookingId: string;
+  const soon = () => new Date(Date.now() + 3 * 3_600_000).toISOString();
+
+  test("a customer books a table and the restaurant confirms and seats it", async () => {
+    // Customer books a table for four.
+    const book = await call("POST", "/v1/reservations", { token: customer.token, country: "CD", body: { branch_id: branchId, party_size: 4, at: soon(), name: "Amara", phone: "+243810000099", note: "Window seat please" } });
+    assert.equal(book.status, 201, JSON.stringify(book.body));
+    assert.equal(book.body.status, "REQUESTED");
+    assert.equal(book.body.party_size, 4);
+    bookingId = book.body.id;
+    // The customer sees it in their own list.
+    const mine = await call("GET", "/v1/me/reservations", { token: customer.token, country: "CD" });
+    assert.ok(mine.body.bookings.some((b: { id: string }) => b.id === bookingId));
+    // The restaurant sees it and confirms, then seats it.
+    const board = await call("GET", `/v1/admin/branches/${branchId}/reservations`, { token: restaurantOwner.token, country: "CD" });
+    const mineOnBoard = board.body.bookings.find((b: { id: string }) => b.id === bookingId) as { customer: string; party_size: number };
+    assert.equal(mineOnBoard.party_size, 4);
+    assert.equal((await call("POST", `/v1/admin/reservations/${bookingId}/status`, { token: restaurantOwner.token, country: "CD", body: { status: "CONFIRMED" } })).body.status, "CONFIRMED");
+    assert.equal((await call("POST", `/v1/admin/reservations/${bookingId}/status`, { token: restaurantOwner.token, country: "CD", body: { status: "SEATED" } })).body.status, "SEATED");
+  });
+
+  test("a party of one is allowed; zero is refused", async () => {
+    assert.equal((await call("POST", "/v1/reservations", { token: customer.token, country: "CD", body: { branch_id: branchId, party_size: 1, at: soon() } })).status, 201);
+    assert.equal((await call("POST", "/v1/reservations", { token: customer.token, country: "CD", body: { branch_id: branchId, party_size: 0, at: soon() } })).body.code, "PARTY_SIZE_INVALID");
+  });
+
+  test("a seating time in the past is refused", async () => {
+    const past = new Date(Date.now() - 3_600_000).toISOString();
+    assert.equal((await call("POST", "/v1/reservations", { token: customer.token, country: "CD", body: { branch_id: branchId, party_size: 2, at: past } })).body.code, "TIME_IN_PAST");
+  });
+
+  test("a customer cancels their own booking; a seated one cannot be cancelled", async () => {
+    const book = await call("POST", "/v1/reservations", { token: customer.token, country: "CD", body: { branch_id: branchId, party_size: 2, at: soon() } });
+    const id = book.body.id;
+    assert.equal((await call("POST", `/v1/reservations/${id}/cancel`, { token: customer.token, country: "CD" })).body.status, "CANCELLED");
+    // The already-seated booking from the first test cannot be cancelled by the customer.
+    assert.equal((await call("POST", `/v1/reservations/${bookingId}/cancel`, { token: customer.token, country: "CD" })).body.code, "NOT_CANCELLABLE");
+  });
+
+  test("only the restaurant can manage its bookings", async () => {
+    const book = await call("POST", "/v1/reservations", { token: customer.token, country: "CD", body: { branch_id: branchId, party_size: 2, at: soon() } });
+    assert.equal((await call("POST", `/v1/admin/reservations/${book.body.id}/status`, { token: customer.token, country: "CD", body: { status: "CONFIRMED" } })).status, 403);
+    assert.equal((await call("GET", `/v1/admin/branches/${branchId}/reservations`, { token: customer.token, country: "CD" })).status, 403);
   });
 });

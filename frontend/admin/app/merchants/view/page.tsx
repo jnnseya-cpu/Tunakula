@@ -80,8 +80,68 @@ function MerchantMenu() {
         {notice ? <div className="banner" style={{ marginTop: 10 }}>{notice}</div> : null}
       </section>
       <Hours branchId={id} country={country} L={L} />
+      <Reservations branchId={id} country={country} lang={lang} L={L} />
       <Reviews branchId={id} country={country} lang={lang} L={L} />
     </>
+  );
+}
+
+type Booking = { id: string; status: string; party_size: number; seating_at: string; duration_min: number; customer: string; contact_phone: string | null; note: string | null };
+const BOOKING_ACTIONS: Record<string, [string, string, string][]> = {
+  REQUESTED: [["CONFIRMED", "Confirmer", "Confirm"], ["CANCELLED", "Refuser", "Decline"]],
+  CONFIRMED: [["SEATED", "Installé", "Seated"], ["NO_SHOW", "Absent", "No-show"], ["CANCELLED", "Annuler", "Cancel"]],
+  SEATED: [["COMPLETED", "Terminé", "Completed"]],
+};
+const BOOKING_STATUS: Record<string, [string, string]> = {
+  REQUESTED: ["À confirmer", "To confirm"], CONFIRMED: ["Confirmé", "Confirmed"], SEATED: ["Installé", "Seated"],
+  COMPLETED: ["Terminé", "Completed"], CANCELLED: ["Annulé", "Cancelled"], NO_SHOW: ["Absent", "No-show"],
+};
+
+function Reservations({ branchId, country, lang, L }: { branchId: string; country: string; lang: "fr" | "en"; L: (fr: string, en: string) => string }) {
+  const [bookings, setBookings] = useState<Booking[] | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const load = () => api<{ bookings: Booking[] }>(`/v1/admin/branches/${branchId}/reservations`, { country }).then((r) => setBookings(r.bookings)).catch(() => setBookings([]));
+  useEffect(() => { load(); }, [branchId, country]);
+
+  const move = async (id: string, status: string) => {
+    setBusy(id);
+    try { await api(`/v1/admin/reservations/${id}/status`, { method: "POST", country, body: { status } }); await load(); }
+    catch (e) { setNotice((e as Error).message); } finally { setBusy(null); }
+  };
+
+  const upcoming = (bookings ?? []).filter((b) => !["COMPLETED", "CANCELLED", "NO_SHOW"].includes(b.status));
+  const past = (bookings ?? []).filter((b) => ["COMPLETED", "CANCELLED", "NO_SHOW"].includes(b.status));
+
+  return (
+    <section className="card">
+      <div className="card-head"><div><h2>{L("Réservations de table", "Table bookings")}</h2><p>{L("Les clients réservent une table pour une ou plusieurs personnes ; confirmez, installez ou refusez.", "Customers book a table for one or more people; confirm, seat or decline.")}</p></div></div>
+      {notice ? <div className="banner" style={{ marginBottom: 10 }}>{notice}</div> : null}
+      {bookings === null ? <p className="muted">{L("Chargement…", "Loading…")}</p> : !bookings.length ? <p className="muted">{L("Aucune réservation.", "No bookings yet.")}</p> : (
+        <div className="table-wrap">
+          <table className="table">
+            <thead><tr><th>{L("Quand", "When")}</th><th>{L("Personnes", "People")}</th><th>{L("Client", "Customer")}</th><th>{L("Note", "Note")}</th><th>{L("Statut", "Status")}</th><th></th></tr></thead>
+            <tbody>
+              {[...upcoming, ...past].map((b) => {
+                const when = new Date(b.seating_at);
+                const actions = BOOKING_ACTIONS[b.status] ?? [];
+                return (
+                  <tr key={b.id}>
+                    <td>{when.toLocaleDateString(lang === "fr" ? "fr-FR" : "en-GB", { weekday: "short", day: "numeric", month: "short" })} {when.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</td>
+                    <td className="num">{b.party_size}</td>
+                    <td>{b.customer}{b.contact_phone ? <span className="muted"> · {b.contact_phone}</span> : null}</td>
+                    <td>{b.note || <span className="muted">—</span>}</td>
+                    <td><span className={`pill s-${b.status.toLowerCase()}`}>{(BOOKING_STATUS[b.status] ?? [b.status, b.status])[lang === "fr" ? 0 : 1]}</span></td>
+                    <td>{actions.map(([s, fr, en]) => <button key={s} className={`btn ${s === "CANCELLED" || s === "NO_SHOW" ? "danger" : "ghost"}`} type="button" disabled={busy === b.id} onClick={() => move(b.id, s)} style={{ marginRight: 6 }}>{L(fr, en)}</button>)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
   );
 }
 
