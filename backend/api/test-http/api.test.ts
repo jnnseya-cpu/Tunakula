@@ -1905,3 +1905,26 @@ describe("favourites", () => {
     assert.equal((await call("POST", `/v1/me/favourites/${randomUUID()}`, { token: customer.token, country: "CD" })).status, 404);
   });
 });
+
+describe("opening hours", () => {
+  test("a merchant sets hours; a closed day refuses orders, then reopening allows them", async () => {
+    const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Kinshasa", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+    // A customer cannot set hours; the owner can.
+    assert.equal((await call("POST", `/v1/admin/branches/${branchId}/hours`, { token: customer.token, country: "CD", body: { hours: {} } })).status, 403);
+    assert.equal((await call("POST", `/v1/admin/branches/${branchId}/hours`, { token: restaurantOwner.token, country: "CD", body: { hours: { "9": [] } } })).body.code, "HOURS_INVALID");
+    // Close the branch all day today via a special-hours override.
+    const set = await call("POST", `/v1/admin/branches/${branchId}/hours`, { token: restaurantOwner.token, country: "CD", body: { hours: {}, special_hours: { [today]: [] } } });
+    assert.equal(set.status, 200, JSON.stringify(set.body));
+    // Ordering is now refused.
+    assert.equal((await call("POST", "/v1/carts/quote", { token: customer.token, country: "CD", body: cart() })).body.code, "BRANCH_CLOSED");
+    // The storefront shows it closed.
+    const eta = await call("GET", `/v1/branches/${branchId}/eta?lat=${DROP.lat}&lng=${DROP.lng}`, { country: "CD" });
+    assert.equal(eta.body.open, false);
+    // Reopen (clear the schedule) and ordering works again.
+    assert.equal((await call("POST", `/v1/admin/branches/${branchId}/hours`, { token: restaurantOwner.token, country: "CD", body: { hours: {}, special_hours: {} } })).status, 200);
+    assert.equal((await call("POST", "/v1/carts/quote", { token: customer.token, country: "CD", body: cart() })).status, 200);
+    // The owner can read the saved hours back.
+    const got = await call("GET", `/v1/admin/branches/${branchId}/hours`, { token: restaurantOwner.token, country: "CD" });
+    assert.deepEqual(got.body.special_hours, {});
+  });
+});

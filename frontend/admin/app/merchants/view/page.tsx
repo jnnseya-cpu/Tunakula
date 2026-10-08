@@ -79,8 +79,67 @@ function MerchantMenu() {
         </form>
         {notice ? <div className="banner" style={{ marginTop: 10 }}>{notice}</div> : null}
       </section>
+      <Hours branchId={id} country={country} L={L} />
       <Reviews branchId={id} country={country} lang={lang} L={L} />
     </>
+  );
+}
+
+const DAYS: [number, string, string][] = [[1, "Lundi", "Monday"], [2, "Mardi", "Tuesday"], [3, "Mercredi", "Wednesday"], [4, "Jeudi", "Thursday"], [5, "Vendredi", "Friday"], [6, "Samedi", "Saturday"], [0, "Dimanche", "Sunday"]];
+type DayForm = { closed: boolean; open: string; close: string };
+
+function Hours({ branchId, country, L }: { branchId: string; country: string; L: (fr: string, en: string) => string }) {
+  const [days, setDays] = useState<Record<number, DayForm>>(() => Object.fromEntries(DAYS.map(([d]) => [d, { closed: false, open: "08:00", close: "22:00" }])));
+  const [always, setAlways] = useState(true);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    api<{ hours: Record<string, [string, string][]> }>(`/v1/admin/branches/${branchId}/hours`, { country }).then((r) => {
+      const h = r.hours ?? {};
+      if (Object.keys(h).length === 0) { setAlways(true); return; }
+      setAlways(false);
+      setDays((prev) => {
+        const next = { ...prev };
+        for (const [d] of DAYS) {
+          const w = h[String(d)];
+          next[d] = w && w.length ? { closed: false, open: w[0]![0], close: w[0]![1] } : { closed: true, open: "08:00", close: "22:00" };
+        }
+        return next;
+      });
+    }).catch(() => undefined);
+  }, [branchId, country]);
+
+  const save = async () => {
+    const hours = always ? {} : Object.fromEntries(DAYS.filter(([d]) => !days[d]!.closed).map(([d]) => [String(d), [[days[d]!.open, days[d]!.close]]]));
+    try { await api(`/v1/admin/branches/${branchId}/hours`, { method: "POST", country, body: { hours, special_hours: {} } }); setNotice(L("Horaires enregistrés.", "Hours saved.")); }
+    catch (e) { setNotice((e as Error).message); }
+  };
+  const set = (d: number, patch: Partial<DayForm>) => setDays((prev) => ({ ...prev, [d]: { ...prev[d]!, ...patch } }));
+
+  return (
+    <section className="card">
+      <div className="card-head"><div><h2>{L("Heures d'ouverture", "Opening hours")}</h2><p>{L("Les clients ne peuvent commander que pendant les heures d'ouverture.", "Customers can only order during opening hours.")}</p></div></div>
+      {notice ? <div className="banner">{notice}</div> : null}
+      <label className="check" style={{ padding: "0 16px" }}><input type="checkbox" checked={always} onChange={(e) => setAlways(e.target.checked)} /> {L("Toujours ouvert", "Always open")}</label>
+      {!always ? (
+        <div className="hours-grid">
+          {DAYS.map(([d, fr, en]) => (
+            <div key={d} className="hours-row">
+              <span className="hours-day">{L(fr, en)}</span>
+              <label className="check"><input type="checkbox" checked={days[d]!.closed} onChange={(e) => set(d, { closed: e.target.checked })} /> {L("Fermé", "Closed")}</label>
+              {!days[d]!.closed ? (
+                <span className="hours-times">
+                  <input type="time" className="input" value={days[d]!.open} onChange={(e) => set(d, { open: e.target.value })} />
+                  <span>→</span>
+                  <input type="time" className="input" value={days[d]!.close} onChange={(e) => set(d, { close: e.target.value })} />
+                </span>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      ) : null}
+      <div className="card-foot"><button type="button" className="btn primary" onClick={save}>{L("Enregistrer les horaires", "Save hours")}</button></div>
+    </section>
   );
 }
 

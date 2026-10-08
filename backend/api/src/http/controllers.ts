@@ -560,6 +560,17 @@ export class AdminController {
   async scorecards(@Req() req: FastifyRequest, @Query("days") days?: string) {
     return this.admin.scorecards(await this.#principal(req), country(req), days ? Number(days) : undefined);
   }
+
+  @Get("branches/:id/hours")
+  async getHours(@Req() req: FastifyRequest, @Param("id") id: string) {
+    return this.admin.branchHours(await this.#principal(req), country(req), id);
+  }
+
+  @Post("branches/:id/hours")
+  @HttpCode(200)
+  async setHours(@Req() req: FastifyRequest, @Param("id") id: string, @Body() body: { hours?: unknown; special_hours?: unknown }) {
+    return this.admin.setBranchHours(await this.#principal(req), country(req), id, body ?? {});
+  }
 }
 
 /** Country Profile administration (§17): drafts, dual-controlled publishes, rollback, history and diff. */

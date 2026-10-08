@@ -13,6 +13,7 @@ import type { CountryConfigRegistry } from "../modules/config/config-registry.ts
 import { authorize, type Principal, type ResourceContext } from "../modules/identity/policy.ts";
 import { assertValidBinding, ROLES, type Action, type Role, type RoleBinding, type Scope } from "../modules/identity/roles.ts";
 import { addBinding, audit, createUser, userByPhone, verifyAuditChain } from "../persistence/identity.ts";
+import { parseSpecial, parseWeekly, type SpecialHours, type WeeklyHours } from "../modules/catalogue/hours.ts";
 import { badRequest, conflict, forbidden, notFound } from "./errors.ts";
 
 export interface BranchInfo {
@@ -620,6 +621,34 @@ export class AdminService {
           created_at: new Date(o.created_at).toISOString(),
         })),
       };
+    });
+  }
+
+  /** GET /v1/admin/branches/:id/hours — the branch's weekly schedule and date overrides. */
+  async branchHours(principal: Principal, country: string, branchId: string) {
+    const profile = this.#profile(country);
+    return this.db.tx({ country }, async (sql) => {
+      const [b] = await sql.query<{ hours: unknown; special_hours: unknown }>("SELECT hours, special_hours FROM catalogue.branch WHERE id = $1", [branchId]);
+      if (!b) throw notFound("Branch");
+      const branch = (await this.#branches(sql)).find((x) => x.id === branchId);
+      if (!branch || !this.#can(principal, "order:read", this.#branchResource(country, branch), profile)) throw forbidden("You cannot see this restaurant");
+      return { hours: b.hours ?? {}, special_hours: b.special_hours ?? {} };
+    });
+  }
+
+  /** POST /v1/admin/branches/:id/hours — set the weekly schedule (and optional date overrides). */
+  async setBranchHours(principal: Principal, country: string, branchId: string, input: { hours?: unknown; special_hours?: unknown }) {
+    const profile = this.#profile(country);
+    let hours: WeeklyHours, special: SpecialHours;
+    try { hours = parseWeekly(input.hours ?? {}); special = parseSpecial(input.special_hours ?? {}); }
+    catch (e) { throw badRequest("HOURS_INVALID", (e as Error).message); }
+    return this.db.tx({ country }, async (sql) => {
+      const branch = (await this.#branches(sql)).find((b) => b.id === branchId);
+      if (!branch) throw notFound("Branch");
+      if (!this.#can(principal, "availability:write", this.#branchResource(country, branch), profile)) throw forbidden("Setting hours needs a manager or the owner");
+      await sql.query("UPDATE catalogue.branch SET hours = $2, special_hours = $3, updated_at = now() WHERE id = $1", [branchId, JSON.stringify(hours), JSON.stringify(special)]);
+      await audit(sql, { actor: principal.userId, action: "branch.hours_set", target: `branch:${branchId}`, country });
+      return { id: branchId, hours, special_hours: special };
     });
   }
 

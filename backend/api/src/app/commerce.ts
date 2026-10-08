@@ -14,6 +14,7 @@ import { evidenceBundle } from "../modules/ordering/evidence.ts";
 import { OrderRuleError, replay, type OrderCommand } from "../modules/ordering/order-aggregate.ts";
 import { RIDER_ORDER_TYPES, type Actor, type OrderLine, type OrderSnapshot, type OrderType } from "../modules/ordering/order-types.ts";
 import { priceOrder, PricingError, type PriceBreakdown } from "../modules/pricing/pricing.ts";
+import { isOpenNow } from "../modules/catalogue/hours.ts";
 import { membershipDiscount, type MembershipLookup } from "./membership.ts";
 import type { CouponLookup, CouponPrice } from "./coupons.ts";
 import { getBranch, menuOf, type BranchRow, type MenuItemRow } from "../persistence/catalogue.ts";
@@ -142,6 +143,8 @@ export class CommerceService {
     const branch = await getBranch(sql, input.branchId);
     if (!branch) throw notFound("Branch");
     if (branch.status !== "OPEN") throw unprocessable("BRANCH_CLOSED", `${branch.name} is not taking orders right now`);
+    const tz = profile.country.timezones[0] ?? "UTC";
+    if (!isOpenNow(branch.hours ?? {}, branch.special_hours ?? {}, this.now(), tz)) throw unprocessable("BRANCH_CLOSED", `${branch.name} is closed right now`);
     const menu = new Map((await menuOf(sql, branch.id)).map((m) => [m.id, m]));
 
     let goods = Money.zero(ccy);

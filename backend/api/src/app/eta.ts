@@ -17,6 +17,7 @@ import type { GeoPoint } from "../modules/ordering/order-types.ts";
 import { deliveryFee } from "../modules/pricing/pricing.ts";
 import { badRequest, notFound } from "./errors.ts";
 import { DEFAULT_PICKUP_MIN, etaRange, HANDOVER_MIN, localHour, modelSeconds, ROAD_FACTOR } from "@tunakula/ts-contracts/eta-model";
+import { isOpenNow, type SpecialHours, type WeeklyHours } from "../modules/catalogue/hours.ts";
 import type { RoutingProvider } from "./routing.ts";
 
 const LOOKBACK_DAYS = 30;
@@ -57,7 +58,7 @@ interface Learned {
   readonly marketRatio: number | null;
 }
 
-type BranchRow = { id: string; name: string; commune: string | null; status: string; lat: string; lng: string; active: string };
+type BranchRow = { id: string; name: string; commune: string | null; status: string; lat: string; lng: string; active: string; hours?: WeeklyHours; special_hours?: SpecialHours };
 
 export { etaRange };
 
@@ -147,7 +148,7 @@ export class EtaService {
         id: b.id,
         name: b.name,
         commune: b.commune,
-        open: b.status === "OPEN",
+        open: b.status === "OPEN" && isOpenNow(b.hours ?? {}, b.special_hours ?? {}, departAt, tz),
         distance_meters: r.meters,
         distance_km: (Math.round(r.meters / 100) / 10).toFixed(1),
         eta: { minutes, ...etaRange(minutes), pickup_minutes: pickup, travel_minutes: travel, basis: r.traffic ? "traffic" : corrected ? "learned" : "estimate" },
@@ -220,7 +221,7 @@ function checkPoint(p: GeoPoint) {
 
 async function branchesWithLoad(sql: Sql, branchId?: string): Promise<BranchRow[]> {
   return sql.query<BranchRow>(
-    `SELECT b.id, b.name, b.commune, b.status, b.lat::text AS lat, b.lng::text AS lng,
+    `SELECT b.id, b.name, b.commune, b.status, b.lat::text AS lat, b.lng::text AS lng, b.hours, b.special_hours,
             (SELECT count(*) FROM ordering.order_view o WHERE o.branch_id = b.id AND o.state = ANY($1)) AS active
        FROM catalogue.branch b WHERE ($2::uuid IS NULL OR b.id = $2::uuid)`,
     [ACTIVE_STATES, branchId ?? null],

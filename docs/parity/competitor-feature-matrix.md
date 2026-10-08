@@ -305,7 +305,7 @@ The superset below merges all four actors into build epics. **Each epic notes wh
 | P2 | **Batched/stacked orders + merchant pay-at-counter card** | DoorDash, Uber extra-stops | Delivery efficiency |
 | P2 | **Merchant self-serve ads/sponsored placement + BOGO/happy-hour builder** | DoorDash Sponsored, Just Eat Promoted, Deliveroo Marketer | Merchant revenue, platform take-rate |
 | P2 | **PIN/OTP delivery confirmation for driver** (hand-to-customer) | Uber Eats PIN | Delivery integrity/anti-fraud |
-| P2 | **Order throttling / busy-mode + special/holiday hours** | all big-4 | Merchant ops during peaks |
+| ✅ P2 (hours) | **Order throttling / busy-mode + special/holiday hours** — **special/holiday + weekly hours BUILT** (per-restaurant weekly schedule + date overrides; ordering refused when closed; storefront reflects it); busy-mode pause/resume already built | all big-4 | Merchant ops during peaks |
 | P3 | **Grocery/convenience vertical + parcel delivery mode** | DoorDash, Uber, Deliveroo, Takeaway | Basket expansion (6amMart covers separately) |
 | P3 | **Alcohol/age-verification flow** (ID scan, 18+ gates) | Deliveroo | Regulated-goods expansion |
 | P3 | **Gift cards + corporate/business accounts** | DoorDash, Uber for Business | B2B + gifting revenue |

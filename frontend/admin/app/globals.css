@@ -472,3 +472,10 @@ tr.sel td { background: rgba(250, 210, 14, 0.12); }
 .review-reply { margin: 6px 0; padding: 8px 10px; background: var(--tint, #eef1f6); border-radius: 8px; }
 .review-reply-form { display: flex; gap: 8px; margin-top: 6px; }
 .review-reply-form .input { flex: 1; }
+
+/* Opening hours editor (additive) */
+.hours-grid { padding: 10px 16px; display: flex; flex-direction: column; gap: 8px; }
+.hours-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.hours-day { width: 110px; font-weight: 600; }
+.hours-times { display: flex; align-items: center; gap: 8px; }
+.hours-times .input { width: auto; }

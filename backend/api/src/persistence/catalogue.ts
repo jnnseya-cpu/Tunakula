@@ -12,6 +12,8 @@ export interface BranchRow {
   lat: string;
   lng: string;
   status: "OPEN" | "CLOSED" | "PAUSED";
+  hours?: Record<string, [string, string][]>;
+  special_hours?: Record<string, [string, string][]>;
 }
 
 export interface VariationOption { id: string; name: string; price: string }
@@ -64,7 +66,7 @@ export async function createBranch(sql: Sql, b: Omit<BranchRow, "id" | "status">
 
 export async function getBranch(sql: Sql, id: string): Promise<BranchRow | undefined> {
   const rows = await sql.query<BranchRow & Record<string, unknown>>(
-    "SELECT id, country_iso2, brand_id, restaurant_group_id, name, city, commune, lat::text, lng::text, status FROM catalogue.branch WHERE id = $1",
+    "SELECT id, country_iso2, brand_id, restaurant_group_id, name, city, commune, lat::text, lng::text, status, hours, special_hours FROM catalogue.branch WHERE id = $1",
     [id],
   );
   return rows[0];
