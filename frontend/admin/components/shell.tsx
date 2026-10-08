@@ -51,6 +51,7 @@ const ICON: Record<string, string> = {
   markets: "M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm6.9 9h-3a15 15 0 0 0-1.3-6 8 8 0 0 1 4.3 6ZM12 4c.9 1.2 1.8 3.7 1.9 7h-3.8c.1-3.3 1-5.8 1.9-7ZM9.4 5a15 15 0 0 0-1.3 6h-3a8 8 0 0 1 4.3-6Zm-4.3 8h3a15 15 0 0 0 1.3 6 8 8 0 0 1-4.3-6ZM12 20c-.9-1.2-1.8-3.7-1.9-7h3.8c-.1 3.3-1 5.8-1.9 7Zm2.6-1a15 15 0 0 0 1.3-6h3a8 8 0 0 1-4.3 6Z",
   audit: "M12 2 4 5v6c0 5 3.4 9.7 8 11 4.6-1.3 8-6 8-11V5l-8-3Zm-1.2 14.2-3.5-3.5 1.4-1.4 2.1 2.1 4.6-4.6 1.4 1.4-6 6Z",
   comms: "M4 4h16a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H9l-5 4v-4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Zm3 5v2h10V9H7Zm0 4v2h7v-2H7Z",
+  menu: "M4 3h11a2 2 0 0 1 2 2v16l-7-3-7 3V5a2 2 0 0 1 1-2Zm16 2h1v16l-3-1.3V5a2 2 0 0 0-2-2h2a2 2 0 0 1 2 2ZM6 7v2h7V7H6Zm0 4v2h7v-2H6Z",
 };
 const Icon = ({ k }: { k: string }) => <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden className="nav-ico"><path fill="currentColor" d={ICON[k] ?? ""} /></svg>;
 
@@ -65,6 +66,7 @@ const NAV: { group: Key; items: NavItem[] }[] = [
   ] },
   { group: "g_business", items: [
     { href: "/merchants/", key: "merchants", cap: "catalogue" },
+    { href: "/menu/", key: "menu", cap: "catalogue" },
     { href: "/zones/", key: "zones", soon: true },
     { href: "/promotions/", key: "promotions", soon: true },
     { href: "/customers/", key: "customers", soon: true },

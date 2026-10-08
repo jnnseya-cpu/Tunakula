@@ -249,6 +249,26 @@ describe("catalogue (CAT-002/003) under scoped permissions", () => {
     assert.equal(noSettlement.body.code, "SETTLEMENT_PRICE_REQUIRED");
   });
 
+  test("the owner edits a dish: category, veg, recommended and description persist", async () => {
+    const body = { names: { fr: "Poulet à la moambe", en: "Chicken moambe" }, description: { fr: "Sauce aux noix de palme" }, prices: { USD: "12.50", CDF: "35000" }, category: "Cuisine Locale", veg: false, recommended: true, tags: ["signature"], allergens: ["peanuts"] };
+    const up = await call("POST", `/v1/branches/${branchId}/items/${itemId}`, { token: restaurantOwner.token, country: "CD", body });
+    assert.equal(up.status, 200, JSON.stringify(up.body));
+    assert.equal(up.body.category, "Cuisine Locale");
+    assert.equal(up.body.recommended, true);
+    assert.equal(up.body.veg, false);
+    assert.equal(up.body.description.fr, "Sauce aux noix de palme");
+    assert.deepEqual(up.body.prices.USD, { amount_minor: "1250", currency: "USD" }, "price unchanged");
+    // A customer cannot edit the menu.
+    assert.equal((await call("POST", `/v1/branches/${branchId}/items/${itemId}`, { token: customer.token, country: "CD", body: { names: { fr: "x" }, prices: { USD: "1.00" } } })).status, 403);
+    // Editing a dish that is not there is 404.
+    assert.equal((await call("POST", `/v1/branches/${branchId}/items/00000000-0000-0000-0000-000000000000`, { token: restaurantOwner.token, country: "CD", body: { names: { fr: "x" }, prices: { USD: "1.00" } } })).status, 404);
+    // The menu reflects the edit.
+    const menu = await call("GET", `/v1/branches/${branchId}/menu`, { country: "CD" });
+    const moambe = menu.body.items.find((i: { id: string }) => i.id === itemId) as { category: string; recommended: boolean };
+    assert.equal(moambe.category, "Cuisine Locale");
+    assert.equal(moambe.recommended, true);
+  });
+
   test("§9.5 RLS: the branch does not exist from the GB market", async () => {
     assert.equal((await call("GET", `/v1/branches/${branchId}/menu`, { country: "CD" })).status, 200);
     assert.equal((await call("GET", `/v1/branches/${branchId}/menu`, { country: "GB" })).status, 404);

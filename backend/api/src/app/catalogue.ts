@@ -1,9 +1,10 @@
 /** Catalogue management (§22.2 CAT-002/003) under scoped permissions. */
 import { Money } from "@tunakula/ts-money";
+import type { CountryProfile } from "@tunakula/ts-contracts";
 import type { Db } from "../db/db.ts";
 import type { CountryConfigRegistry } from "../modules/config/config-registry.ts";
 import type { Principal } from "../modules/identity/policy.ts";
-import { addMenuItem, createBranch, getBranch, menuOf, setAvailability, type MenuItemRow } from "../persistence/catalogue.ts";
+import { addMenuItem, createBranch, getBranch, menuOf, setAvailability, updateMenuItem, type MenuItemInput, type MenuItemRow } from "../persistence/catalogue.ts";
 import { audit } from "../persistence/identity.ts";
 import { badRequest, notFound } from "./errors.ts";
 import { require } from "./principal.ts";
@@ -44,25 +45,48 @@ export class CatalogueService {
     });
   }
 
-  async addItem(country: string, principal: Principal, branchId: string, input: { names: Record<string, string>; prices: Record<string, string>; tags?: string[]; allergens?: string[] }) {
+  #priced(profile: CountryProfile, country: string, input: ItemInput): MenuItemInput {
+    if (!input.names || Object.keys(input.names).filter((k) => (input.names[k] ?? "").trim()).length === 0) throw badRequest("NAME_REQUIRED", "An item needs a name in at least one language");
+    const prices: Record<string, string> = {};
+    for (const [ccy, major] of Object.entries(input.prices ?? {})) {
+      if (!profile.money.currencies.includes(ccy)) throw badRequest("CURRENCY_NOT_ACCEPTED", `${ccy} is not accepted in ${country}`);
+      // Prices arrive in major units and are stored exactly in minor units (MR-1); excess precision is rejected.
+      try {
+        prices[ccy] = Money.of(major, ccy).minor.toString();
+      } catch (error) {
+        throw badRequest("PRICE_INVALID", `${ccy} ${major}: ${(error as Error).message}`);
+      }
+    }
+    if (!prices[profile.money.settlement_currency]) throw badRequest("SETTLEMENT_PRICE_REQUIRED", `Give a ${profile.money.settlement_currency} price`);
+    return {
+      names: input.names, prices,
+      ...(input.description ? { description: input.description } : {}),
+      ...(input.category !== undefined ? { category: input.category ? String(input.category).slice(0, 80) : null } : {}),
+      ...(input.veg !== undefined ? { veg: input.veg === null ? null : Boolean(input.veg) } : {}),
+      ...(input.tags ? { tags: input.tags } : {}),
+      ...(input.allergens ? { allergens: input.allergens } : {}),
+      ...(input.recommended !== undefined ? { recommended: Boolean(input.recommended) } : {}),
+    };
+  }
+
+  async addItem(country: string, principal: Principal, branchId: string, input: ItemInput) {
     const profile = this.#profile(country);
     return this.db.tx({ country }, async (sql) => {
       const branch = await getBranch(sql, branchId);
       if (!branch) throw notFound("Branch");
       require(principal, "menu:write", { type: "menu", country, branchId, restaurantGroupId: branch.restaurant_group_id }, { activeCountry: country, profile });
-      if (!input.names || Object.keys(input.names).length === 0) throw badRequest("NAME_REQUIRED", "An item needs a name in at least one language");
-      const prices: Record<string, string> = {};
-      for (const [ccy, major] of Object.entries(input.prices ?? {})) {
-        if (!profile.money.currencies.includes(ccy)) throw badRequest("CURRENCY_NOT_ACCEPTED", `${ccy} is not accepted in ${country}`);
-        // Prices arrive in major units and are stored exactly in minor units (MR-1); excess precision is rejected.
-        try {
-          prices[ccy] = Money.of(major, ccy).minor.toString();
-        } catch (error) {
-          throw badRequest("PRICE_INVALID", `${ccy} ${major}: ${(error as Error).message}`);
-        }
-      }
-      if (!prices[profile.money.settlement_currency]) throw badRequest("SETTLEMENT_PRICE_REQUIRED", `Give a ${profile.money.settlement_currency} price`);
-      const item = await addMenuItem(sql, { branch, names: input.names, prices, tags: input.tags ?? [], allergens: input.allergens ?? [] });
+      return publicItem(await addMenuItem(sql, branch, this.#priced(profile, country, input)));
+    });
+  }
+
+  async updateItem(country: string, principal: Principal, branchId: string, itemId: string, input: ItemInput) {
+    const profile = this.#profile(country);
+    return this.db.tx({ country }, async (sql) => {
+      const branch = await getBranch(sql, branchId);
+      if (!branch) throw notFound("Branch");
+      require(principal, "menu:write", { type: "menu", country, branchId, restaurantGroupId: branch.restaurant_group_id }, { activeCountry: country, profile });
+      const item = await updateMenuItem(sql, branchId, itemId, this.#priced(profile, country, input));
+      if (!item) throw notFound("Item");
       return publicItem(item);
     });
   }
@@ -87,13 +111,28 @@ export class CatalogueService {
   }
 }
 
+interface ItemInput {
+  names: Record<string, string>;
+  description?: Record<string, string>;
+  prices: Record<string, string>;
+  category?: string | null;
+  veg?: boolean | null;
+  tags?: string[];
+  allergens?: string[];
+  recommended?: boolean;
+}
+
 function publicItem(i: MenuItemRow) {
   return {
     id: i.id,
     names: i.names,
+    description: i.description,
     prices: Object.fromEntries(Object.entries(i.prices).map(([c, m]) => [c, { amount_minor: m, currency: c }])),
+    category: i.category,
+    veg: i.veg,
     tags: i.tags,
     allergens: i.allergens,
     available: i.available,
+    recommended: i.recommended,
   };
 }

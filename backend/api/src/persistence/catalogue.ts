@@ -18,11 +18,28 @@ export interface MenuItemRow {
   id: string;
   branch_id: string;
   names: Record<string, string>;
+  description: Record<string, string>;
   prices: Record<string, string>;
+  category: string | null;
+  veg: boolean | null;
   tags: string[];
   allergens: string[];
   available: boolean;
+  recommended: boolean;
 }
+
+export interface MenuItemInput {
+  names: Record<string, string>;
+  description?: Record<string, string>;
+  prices: Record<string, string>;
+  category?: string | null;
+  veg?: boolean | null;
+  tags?: string[];
+  allergens?: string[];
+  recommended?: boolean;
+}
+
+const ITEM_COLUMNS = "id, branch_id, names, description, prices, category, veg, tags, allergens, available, recommended";
 
 export async function createBranch(sql: Sql, b: Omit<BranchRow, "id" | "status">): Promise<BranchRow> {
   const [row] = await sql.query<BranchRow & Record<string, unknown>>(
@@ -41,16 +58,24 @@ export async function getBranch(sql: Sql, id: string): Promise<BranchRow | undef
   return rows[0];
 }
 
-export async function addMenuItem(
-  sql: Sql,
-  i: { branch: BranchRow; names: Record<string, string>; prices: Record<string, string>; tags?: string[]; allergens?: string[] },
-): Promise<MenuItemRow> {
+export async function addMenuItem(sql: Sql, branch: BranchRow, i: MenuItemInput): Promise<MenuItemRow> {
   const [row] = await sql.query<MenuItemRow & Record<string, unknown>>(
-    `INSERT INTO catalogue.menu_item (branch_id, country_iso2, brand_id, names, prices, tags, allergens)
-     VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id, branch_id, names, prices, tags, allergens, available`,
-    [i.branch.id, i.branch.country_iso2, i.branch.brand_id, JSON.stringify(i.names), JSON.stringify(i.prices), i.tags ?? [], i.allergens ?? []],
+    `INSERT INTO catalogue.menu_item (branch_id, country_iso2, brand_id, names, description, prices, category, veg, tags, allergens, recommended)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING ${ITEM_COLUMNS}`,
+    [branch.id, branch.country_iso2, branch.brand_id, JSON.stringify(i.names), JSON.stringify(i.description ?? {}), JSON.stringify(i.prices), i.category ?? null, i.veg ?? null, i.tags ?? [], i.allergens ?? [], i.recommended ?? false],
   );
   return row as MenuItemRow;
+}
+
+/** Updates the given fields of one item; returns the new row, or undefined if it is not in this branch. */
+export async function updateMenuItem(sql: Sql, branchId: string, itemId: string, i: MenuItemInput): Promise<MenuItemRow | undefined> {
+  const [row] = await sql.query<MenuItemRow & Record<string, unknown>>(
+    `UPDATE catalogue.menu_item
+       SET names = $3, description = $4, prices = $5, category = $6, veg = $7, tags = $8, allergens = $9, recommended = $10, updated_at = now()
+     WHERE id = $1 AND branch_id = $2 RETURNING ${ITEM_COLUMNS}`,
+    [itemId, branchId, JSON.stringify(i.names), JSON.stringify(i.description ?? {}), JSON.stringify(i.prices), i.category ?? null, i.veg ?? null, i.tags ?? [], i.allergens ?? [], i.recommended ?? false],
+  );
+  return row as MenuItemRow | undefined;
 }
 
 export async function setAvailability(sql: Sql, itemId: string, available: boolean): Promise<boolean> {
@@ -60,7 +85,7 @@ export async function setAvailability(sql: Sql, itemId: string, available: boole
 
 export async function menuOf(sql: Sql, branchId: string): Promise<MenuItemRow[]> {
   return sql.query<MenuItemRow & Record<string, unknown>>(
-    "SELECT id, branch_id, names, prices, tags, allergens, available FROM catalogue.menu_item WHERE branch_id = $1 ORDER BY created_at",
+    `SELECT ${ITEM_COLUMNS} FROM catalogue.menu_item WHERE branch_id = $1 ORDER BY category NULLS LAST, created_at`,
     [branchId],
   );
 }

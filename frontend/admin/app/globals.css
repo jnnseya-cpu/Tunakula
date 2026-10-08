@@ -397,3 +397,29 @@ tr.sel td { background: rgba(250, 210, 14, 0.12); }
 .chan-email { background: #3b82f6; } .chan-inapp { background: #6b7280; } .chan-sms { background: #8b5cf6; } .chan-push { background: #0ea5e9; } .chan-whatsapp { background: #25d366; }
 .deliv-status.suppressed { color: #e0a100; }
 .deliv-status.failed { color: #e5484d; }
+
+/* ── Menu management (/menu) ── */
+.menu { display: flex; flex-direction: column; gap: 14px; }
+.menu-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.menu-bar .input { flex: 1; min-width: 180px; }
+.menu-branch { font-size: 16px; font-weight: 650; margin-right: auto; }
+.menu-tbl { width: 100%; border-collapse: collapse; }
+.menu-tbl th, .menu-tbl td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 13.5px; vertical-align: middle; }
+.menu-tbl th { font-size: 12px; color: var(--muted); font-weight: 600; }
+.menu-tbl td.num, .menu-tbl th:last-child { text-align: right; }
+.dot.veg { display: inline-block; width: 8px; height: 8px; border-radius: 2px; background: #1f9d55; margin-left: 6px; vertical-align: middle; }
+.pill.on { color: #e0a100; font-weight: 700; }
+.sw { width: 40px; height: 22px; border-radius: 999px; background: var(--border); border: 0; position: relative; cursor: pointer; padding: 0; transition: background .15s; }
+.sw.on { background: #1f9d55; }
+.sw span { position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: left .15s; }
+.sw.on span { left: 20px; }
+.btn.sm { padding: 4px 10px; font-size: 12.5px; }
+
+.menu-form-wrap { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: flex; align-items: flex-start; justify-content: center; padding: 40px 16px; overflow: auto; z-index: 50; }
+.menu-form { width: min(680px, 100%); }
+.ff { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 14px 0; }
+.ff label { display: flex; flex-direction: column; gap: 5px; font-size: 12.5px; color: var(--muted); }
+.ff label.wide { grid-column: 1 / -1; }
+.ff label.chk { flex-direction: row; align-items: center; gap: 8px; color: var(--text); }
+.ff .input, .ff .select { font-size: 13.5px; }
+.menu-form-foot { display: flex; justify-content: flex-end; gap: 10px; }

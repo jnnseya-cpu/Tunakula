@@ -108,9 +108,16 @@ export class CatalogueController {
   }
 
   @Post("branches/:id/items")
-  async addItem(@Req() req: FastifyRequest, @Param("id") id: string, @Body() body: { names: Record<string, string>; prices: Record<string, string>; tags?: string[]; allergens?: string[] }) {
+  async addItem(@Req() req: FastifyRequest, @Param("id") id: string, @Body() body: ItemBody) {
     const principal = await this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
     return this.catalogue.addItem(country(req), principal, id, body ?? ({} as never));
+  }
+
+  @Post("branches/:id/items/:item")
+  @HttpCode(200)
+  async updateItem(@Req() req: FastifyRequest, @Param("id") id: string, @Param("item") item: string, @Body() body: ItemBody) {
+    const principal = await this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+    return this.catalogue.updateItem(country(req), principal, id, item, body ?? ({} as never));
   }
 
   @Post("branches/:id/items/:item/availability")
@@ -122,6 +129,7 @@ export class CatalogueController {
   }
 }
 
+type ItemBody = { names: Record<string, string>; description?: Record<string, string>; prices: Record<string, string>; category?: string | null; veg?: boolean | null; tags?: string[]; allergens?: string[]; recommended?: boolean };
 type QuoteBody = { branch_id: string; items: { item_id: string; quantity: number }[]; order_type: QuoteInput["orderType"]; delivery?: { lat: number; lng: number; rural?: boolean }; tip?: string };
 
 const toQuoteInput = (b: QuoteBody): QuoteInput => {
