@@ -10,7 +10,7 @@ import { useLocationCtx } from "./location";
 
 interface Quote {
   branch: { id: string; name: string };
-  lines: { item_id: string; name: string; quantity: number; total: MoneyWire }[];
+  lines: { item_id: string; name: string; quantity: number; total: MoneyWire; options?: string[] }[];
   price_lines: { code: string; amount: MoneyWire }[];
   total: MoneyWire;
   distance_meters?: number;
@@ -56,7 +56,7 @@ export function Checkout() {
 
   const body = useMemo(() => cart && {
     branch_id: cart.branch_id,
-    items: cart.lines.map((l) => ({ item_id: l.item_id, quantity: l.qty })),
+    items: cart.lines.map((l) => ({ item_id: l.item_id, quantity: l.qty, ...(l.options?.length ? { options: l.options } : {}), ...(l.addons?.length ? { addons: l.addons } : {}) })),
     order_type: mode,
     ...(mode === "DELIVERY" && place ? { delivery: { lat: place.lat, lng: place.lng } } : {}),
     ...(mode === "DELIVERY" && tip !== "0" ? { tip } : {}),
@@ -191,8 +191,8 @@ export function Checkout() {
       <aside className="co-summary">
         <h2>Summary</h2>
         <ul className="cart-lines">
-          {(quote?.lines ?? cart.lines.map((l) => ({ item_id: l.item_id, name: l.name, quantity: l.qty, total: null as MoneyWire | null }))).map((l) => (
-            <li key={l.item_id}><span className="q">{l.quantity}×</span><span className="cl-name">{l.name}</span><span className="num">{l.total ? money(l.total) : "…"}</span></li>
+          {(quote?.lines ?? cart.lines.map((l) => ({ item_id: l.item_id, name: l.name, quantity: l.qty, total: null as MoneyWire | null, options: l.descriptors }))).map((l, i) => (
+            <li key={i}><span className="q">{l.quantity}×</span><span className="cl-name">{l.name}{l.options?.length ? <small className="cl-opts">{l.options.join(" · ")}</small> : null}</span><span className="num">{l.total ? money(l.total) : "…"}</span></li>
           ))}
         </ul>
         {quote ? (

@@ -5,12 +5,15 @@
  */
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { api, ApiError, loadCart, money, mulMinor, addMinor, saveCart, type Cart, type MoneyWire } from "../lib/api";
+import { api, ApiError, loadCart, lineSig, money, mulMinor, addMinor, saveCart, type Cart, type CartLine, type CartLineOption, type MoneyWire } from "../lib/api";
 import { ClockIcon, PinIcon, useLocationCtx } from "./location";
 import { PlateArt, recipeFor } from "./plate-art";
 
-interface MenuItem { id: string; names: Record<string, string>; prices: Record<string, MoneyWire>; tags: string[]; allergens: string[]; available: boolean }
+interface VOption { id: string; name: string; price: string }
+interface Variation { id: string; name: string; type: "SINGLE" | "MULTI"; required: boolean; min: number; max: number; options: VOption[] }
+interface MenuItem { id: string; names: Record<string, string>; prices: Record<string, MoneyWire>; tags: string[]; allergens: string[]; available: boolean; variations?: Variation[]; addons?: VOption[] }
 interface Menu { branch: { id: string; name: string; commune: string | null; status: string }; items: MenuItem[] }
+const hasOptions = (i: MenuItem) => (i.variations?.length ?? 0) > 0 || (i.addons?.length ?? 0) > 0;
 interface Eta { distance_km: string; eta: { low: number; high: number; basis: string }; delivery_fee: MoneyWire; open: boolean }
 
 const TONES = [["#7e2a10", "#e9a24a"], ["#27402a", "#d9b24a"], ["#2a1d16", "#e0643a"], ["#8a5a22", "#f2c46a"], ["#1f5a50", "#f2b84b"], ["#1f305d", "#fad20e"]] as const;
@@ -26,12 +29,19 @@ export function LiveStore() {
   const [eta, setEta] = useState<Eta | null>(null);
   const [cart, setCart] = useState<Cart | null>(null);
   const [q, setQ] = useState("");
+  const [picking, setPicking] = useState<MenuItem | null>(null);
   const { place } = useLocationCtx();
 
   useEffect(() => { setId(new URLSearchParams(window.location.search).get("id")); }, []);
   useEffect(() => {
     if (!id) return;
-    api<Menu>(`/v1/branches/${id}/menu`, { auth: false }).then((m) => { setMenu(m); setCart(loadCart(id) ?? { branch_id: id, branch_name: m.branch.name, lines: [] }); }).catch((e: ApiError) => setError(e.message));
+    api<Menu>(`/v1/branches/${id}/menu`, { auth: false }).then((m) => {
+      setMenu(m);
+      const saved = loadCart(id);
+      // Backfill a line key for carts saved before options existed.
+      if (saved) saved.lines = saved.lines.map((l) => (l.key ? l : { ...l, key: crypto.randomUUID() }));
+      setCart(saved ?? { branch_id: id, branch_name: m.branch.name, lines: [] });
+    }).catch((e: ApiError) => setError(e.message));
   }, [id]);
   useEffect(() => {
     if (!id || !place) return;
@@ -40,16 +50,26 @@ export function LiveStore() {
 
   const ccy = "USD";
   const update = (next: Cart) => { setCart({ ...next, lines: [...next.lines] }); saveCart(next); };
-  const add = (item: MenuItem) => {
+
+  /** Add a dish. With options, `sel` carries the chosen variations/add-ons and the per-unit price. */
+  const addLine = (item: MenuItem, sel?: { options: CartLineOption[]; addons: string[]; descriptors: string[]; unit: MoneyWire }) => {
     if (!cart) return;
-    const line = cart.lines.find((l) => l.item_id === item.id);
-    if (line) line.qty = Math.min(99, line.qty + 1);
-    else cart.lines.push({ item_id: item.id, name: nameOf(item.names), unit: item.prices[ccy] ?? Object.values(item.prices)[0]!, qty: 1 });
+    const draft: CartLine = {
+      key: crypto.randomUUID(), item_id: item.id, name: nameOf(item.names),
+      unit: sel?.unit ?? item.prices[ccy] ?? Object.values(item.prices)[0]!, qty: 1,
+      ...(sel && sel.options.length ? { options: sel.options } : {}),
+      ...(sel && sel.addons.length ? { addons: sel.addons } : {}),
+      ...(sel && sel.descriptors.length ? { descriptors: sel.descriptors } : {}),
+    };
+    const same = cart.lines.find((l) => lineSig(l) === lineSig(draft));
+    if (same) same.qty = Math.min(99, same.qty + 1);
+    else cart.lines.push(draft);
     update(cart);
   };
-  const change = (itemId: string, d: number) => {
+  const add = (item: MenuItem) => { if (hasOptions(item)) setPicking(item); else addLine(item); };
+  const change = (key: string, d: number) => {
     if (!cart) return;
-    const line = cart.lines.find((l) => l.item_id === itemId);
+    const line = cart.lines.find((l) => l.key === key);
     if (!line) return;
     line.qty += d;
     update({ ...cart, lines: cart.lines.filter((l) => l.qty > 0) });
@@ -98,21 +118,24 @@ export function LiveStore() {
             {visible.map((i) => {
               const name = nameOf(i.names);
               const price = i.prices[ccy] ?? Object.values(i.prices)[0];
-              const inCart = cart.lines.find((l) => l.item_id === i.id)?.qty ?? 0;
+              const plainLine = cart.lines.find((l) => l.item_id === i.id && !l.options && !l.addons);
+              const inCart = cart.lines.filter((l) => l.item_id === i.id).reduce((n, l) => n + l.qty, 0);
+              const optioned = hasOptions(i);
               return (
                 <article key={i.id} className={`live-item ${i.available ? "" : "off"}`} data-reveal>
                   <div className="li-text">
                     <h3>{name}</h3>
                     {nameOf(i.names, "en") !== name ? <p className="muted">{nameOf(i.names, "en")}</p> : null}
+                    {optioned ? <p className="muted small">{(i.variations?.length ?? 0) > 0 ? "Choices" : "Add-ons"} available</p> : null}
                     {i.allergens.length ? <p className="allergen">Contains {i.allergens.join(", ")}</p> : null}
-                    <p className="li-price num">{price ? money(price) : "—"}</p>
+                    <p className="li-price num">{price ? money(price) : "—"}{optioned ? "+" : ""}</p>
                   </div>
                   <div className="li-pic" style={{ background: bg }}>
                     <PlateArt className="pic" recipe={recipeFor(name)} seed={i.id} />
                     {i.available ? (
-                      inCart ? (
-                        <span className="qty-pill"><button type="button" onClick={() => change(i.id, -1)} aria-label={`One less ${name}`}>−</button><b>{inCart}</b><button type="button" onClick={() => add(i)} aria-label={`One more ${name}`}>+</button></span>
-                      ) : <button type="button" className="add-btn" onClick={() => add(i)} aria-label={`Add ${name}`} disabled={!open}>+</button>
+                      !optioned && plainLine ? (
+                        <span className="qty-pill"><button type="button" onClick={() => change(plainLine.key, -1)} aria-label={`One less ${name}`}>−</button><b>{inCart}</b><button type="button" onClick={() => add(i)} aria-label={`One more ${name}`}>+</button></span>
+                      ) : <button type="button" className="add-btn" onClick={() => add(i)} aria-label={optioned ? `Choose ${name}` : `Add ${name}`} disabled={!open}>{inCart > 0 ? inCart : "+"}</button>
                     ) : <span className="sold-out">Sold out</span>}
                   </div>
                 </article>
@@ -127,9 +150,9 @@ export function LiveStore() {
             <>
               <ul className="cart-lines">
                 {cart.lines.map((l) => (
-                  <li key={l.item_id}>
-                    <span className="qty-pill sm"><button type="button" onClick={() => change(l.item_id, -1)} aria-label={`One less ${l.name}`}>−</button><b>{l.qty}</b><button type="button" onClick={() => change(l.item_id, 1)} aria-label={`One more ${l.name}`}>+</button></span>
-                    <span className="cl-name">{l.name}</span>
+                  <li key={l.key}>
+                    <span className="qty-pill sm"><button type="button" onClick={() => change(l.key, -1)} aria-label={`One less ${l.name}`}>−</button><b>{l.qty}</b><button type="button" onClick={() => change(l.key, 1)} aria-label={`One more ${l.name}`}>+</button></span>
+                    <span className="cl-name">{l.name}{l.descriptors?.length ? <small className="cl-opts">{l.descriptors.join(" · ")}</small> : null}</span>
                     <span className="num">{money({ amount_minor: mulMinor(l.unit.amount_minor, l.qty), currency: l.unit.currency })}</span>
                   </li>
                 ))}
@@ -146,7 +169,83 @@ export function LiveStore() {
           <span className="n">{count}</span><span>View order</span><b className="num">{money({ amount_minor: subtotal, currency: ccy })}</b>
         </Link>
       ) : null}
+      {picking ? <OptionPicker item={picking} ccy={ccy} onClose={() => setPicking(null)} onAdd={(sel) => { addLine(picking, sel); setPicking(null); }} /> : null}
     </>
+  );
+}
+
+/** The customer's option picker: choose variations and add-ons for a dish; the price updates live. */
+function OptionPicker({ item, ccy, onClose, onAdd }: { item: MenuItem; ccy: string; onClose: () => void; onAdd: (sel: { options: CartLineOption[]; addons: string[]; descriptors: string[]; unit: MoneyWire }) => void }) {
+  const [chosen, setChosen] = useState<Record<string, string[]>>({});
+  const [addons, setAddons] = useState<string[]>([]);
+  const base = BigInt(item.prices[ccy]?.amount_minor ?? Object.values(item.prices)[0]?.amount_minor ?? "0");
+  const variations = item.variations ?? [];
+  const addonList = item.addons ?? [];
+
+  const pickSingle = (g: Variation, optId: string) => setChosen((c) => ({ ...c, [g.id]: [optId] }));
+  const toggleMulti = (g: Variation, optId: string) => setChosen((c) => {
+    const cur = c[g.id] ?? [];
+    if (cur.includes(optId)) return { ...c, [g.id]: cur.filter((x) => x !== optId) };
+    if (cur.length >= g.max) return c; // at the limit
+    return { ...c, [g.id]: [...cur, optId] };
+  });
+  const toggleAddon = (id: string) => setAddons((a) => a.includes(id) ? a.filter((x) => x !== id) : [...a, id]);
+
+  const missing = variations.filter((g) => g.required && (chosen[g.id]?.length ?? 0) < Math.max(1, g.min));
+  let surcharge = 0n;
+  const descriptors: string[] = [];
+  for (const g of variations) for (const oid of chosen[g.id] ?? []) { const o = g.options.find((x) => x.id === oid); if (o) { surcharge += BigInt(o.price); descriptors.push(`${g.name}: ${o.name}`); } }
+  for (const id of addons) { const a = addonList.find((x) => x.id === id); if (a) { surcharge += BigInt(a.price); descriptors.push(`+ ${a.name}`); } }
+  const unit: MoneyWire = { amount_minor: (base + surcharge).toString(), currency: ccy };
+
+  const confirm = () => {
+    if (missing.length) return;
+    const options: CartLineOption[] = variations.filter((g) => (chosen[g.id]?.length ?? 0) > 0).map((g) => ({ group: g.id, choices: chosen[g.id]! }));
+    onAdd({ options, addons, descriptors, unit });
+  };
+
+  return (
+    <div className="picker-wrap" role="dialog" aria-modal="true" aria-label={`Options for ${nameOf(item.names)}`} onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="picker">
+        <div className="picker-head"><h2>{nameOf(item.names)}</h2><button type="button" className="picker-x" onClick={onClose} aria-label="Close">✕</button></div>
+        <div className="picker-body">
+          {variations.map((g) => (
+            <fieldset className="pk-group" key={g.id}>
+              <legend>{g.name} {g.required ? <span className="pk-req">Required</span> : <span className="muted small">Optional</span>}{g.type === "MULTI" && g.max ? <span className="muted small"> · up to {g.max}</span> : null}</legend>
+              {g.options.map((o) => {
+                const on = (chosen[g.id] ?? []).includes(o.id);
+                return (
+                  <label className={`pk-opt ${on ? "on" : ""}`} key={o.id}>
+                    <input type={g.type === "SINGLE" ? "radio" : "checkbox"} name={g.id} checked={on} onChange={() => (g.type === "SINGLE" ? pickSingle(g, o.id) : toggleMulti(g, o.id))} />
+                    <span className="pk-name">{o.name}</span>
+                    <span className="pk-price num">{o.price === "0" ? "" : `+ ${money({ amount_minor: o.price, currency: ccy })}`}</span>
+                  </label>
+                );
+              })}
+            </fieldset>
+          ))}
+          {addonList.length ? (
+            <fieldset className="pk-group">
+              <legend>Add-ons <span className="muted small">Optional</span></legend>
+              {addonList.map((a) => {
+                const on = addons.includes(a.id);
+                return (
+                  <label className={`pk-opt ${on ? "on" : ""}`} key={a.id}>
+                    <input type="checkbox" checked={on} onChange={() => toggleAddon(a.id)} />
+                    <span className="pk-name">{a.name}</span>
+                    <span className="pk-price num">{a.price === "0" ? "" : `+ ${money({ amount_minor: a.price, currency: ccy })}`}</span>
+                  </label>
+                );
+              })}
+            </fieldset>
+          ) : null}
+        </div>
+        <div className="picker-foot">
+          {missing.length ? <p className="muted small">Choose {missing.map((g) => g.name).join(", ")}</p> : null}
+          <button type="button" className="btn accent wide" disabled={missing.length > 0} onClick={confirm}>Add · {money(unit)}</button>
+        </div>
+      </div>
+    </div>
   );
 }
 

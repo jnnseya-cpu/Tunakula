@@ -15,7 +15,7 @@ Legend: **Built** works end to end · **Partial** the engine or a screen exists,
 | Sign up / sign in by phone code | Built (SMS or WhatsApp code; delivery needs the messaging adapter) |
 | Search with filters (veg, rating, price, cuisine, distance) | Partial: text search and sort only |
 | Restaurant page with menu | Built: live menu, availability, allergens, distance, time, fee |
-| Food details: variations, add-ons, notes | Missing |
+| Food details: variations, add-ons, notes | Built on the live storefront: an option picker (required/optional variations, single or multiple choice, add-ons) with a live price; the chosen options and their prices flow through the cart and checkout into the order. Notes still missing |
 | Cart and checkout: delivery, takeaway, dine-in, scheduled | Built for delivery and takeaway (live quote, directions, tip); dine-in and scheduled missing |
 | Pay: mobile money, card, cash, wallet, partial payment | Built: mobile money, card, cash on delivery; wallet and partial payment missing |
 | Coupons, cashback, campaigns | Missing |

@@ -72,8 +72,24 @@ export const addMinor = (a: string, b: string) => (BigInt(a) + BigInt(b)).toStri
 export const mulMinor = (a: string, n: number) => (BigInt(a) * BigInt(n)).toString();
 
 // ── Cart, one per storefront, kept in this browser ──
-export interface CartLine { readonly item_id: string; readonly name: string; readonly unit: MoneyWire; qty: number }
+export interface CartLineOption { readonly group: string; readonly choices: string[] }
+export interface CartLine {
+  /** Unique per line: the same dish with different options is a separate line. */
+  readonly key: string;
+  readonly item_id: string;
+  readonly name: string;
+  /** Per-unit price including the chosen options (a client estimate; the quote is authoritative). */
+  readonly unit: MoneyWire;
+  qty: number;
+  readonly options?: CartLineOption[];
+  readonly addons?: string[];
+  /** Human-readable chosen options, e.g. ["Taille: Grande", "+ Fromage"]. */
+  readonly descriptors?: string[];
+}
 export interface Cart { readonly branch_id: string; readonly branch_name: string; lines: CartLine[] }
+/** Canonical signature of a line's options, to merge identical selections. */
+export const lineSig = (l: { item_id: string; options?: CartLineOption[]; addons?: string[] }) =>
+  JSON.stringify([l.item_id, (l.options ?? []).map((o) => [o.group, [...o.choices].sort()]).sort(), [...(l.addons ?? [])].sort()]);
 const cartKey = (branchId: string) => `tk-cart:${branchId}`;
 export function loadCart(branchId: string): Cart | null {
   try { return JSON.parse(localStorage.getItem(cartKey(branchId)) ?? "null"); } catch { return null; }

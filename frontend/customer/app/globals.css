@@ -1103,3 +1103,24 @@ section.tight { padding: 44px 0; }
   .or-main { flex: 1 1 100%; }
 }
 .state-chip.s-refunded { background: #e6ecfa; color: #1f305d; }
+
+/* ── Customer option picker (live storefront) ── */
+.cl-opts { display: block; font-size: 12px; color: var(--muted); margin-top: 2px; }
+.picker-wrap { position: fixed; inset: 0; background: rgba(15,20,30,.5); display: flex; align-items: flex-end; justify-content: center; z-index: 60; }
+@media (min-width: 560px) { .picker-wrap { align-items: center; } }
+.picker { background: var(--card, #fff); width: min(520px, 100%); max-height: 86vh; display: flex; flex-direction: column; border-radius: 18px 18px 0 0; overflow: hidden; }
+@media (min-width: 560px) { .picker { border-radius: 18px; } }
+.picker-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 18px; border-bottom: 1px solid var(--line, #eee); }
+.picker-head h2 { font-size: 18px; font-weight: 700; margin: 0; }
+.picker-x { border: 0; background: var(--chip, #f1f3f7); width: 32px; height: 32px; border-radius: 50%; font-size: 15px; cursor: pointer; }
+.picker-body { overflow: auto; padding: 8px 18px 4px; }
+.pk-group { border: 0; margin: 14px 0; padding: 0; }
+.pk-group legend { font-size: 14px; font-weight: 650; padding: 0; margin-bottom: 8px; display: flex; gap: 8px; align-items: baseline; }
+.pk-req { font-size: 11px; font-weight: 700; color: #b23b2e; background: rgba(178,59,46,.1); padding: 1px 7px; border-radius: 999px; }
+.pk-opt { display: flex; align-items: center; gap: 12px; padding: 11px 12px; border: 1px solid var(--line, #eee); border-radius: 12px; margin-bottom: 8px; cursor: pointer; }
+.pk-opt.on { border-color: var(--navy, #1f305d); background: rgba(31,48,93,.04); }
+.pk-opt input { width: 18px; height: 18px; accent-color: var(--navy, #1f305d); }
+.pk-name { flex: 1; font-size: 14px; }
+.pk-price { color: var(--muted); font-size: 13px; }
+.picker-foot { padding: 14px 18px; border-top: 1px solid var(--line, #eee); display: flex; flex-direction: column; gap: 8px; }
+.picker-foot .muted { text-align: center; }
