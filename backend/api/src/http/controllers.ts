@@ -11,6 +11,7 @@ import type { DispatchService } from "../app/dispatch.ts";
 import type { EtaService } from "../app/eta.ts";
 import type { OnboardingService } from "../app/onboarding.ts";
 import type { MembershipService } from "../app/membership.ts";
+import type { GroupOrderService } from "../app/group.ts";
 import type { NotificationService } from "../app/comms.ts";
 import { serialiseQuote, type CommerceService, type PlaceOrderInput, type QuoteInput } from "../app/commerce.ts";
 import { badRequest, notFound } from "../app/errors.ts";
@@ -658,6 +659,75 @@ export class MembershipController {
   @HttpCode(200)
   async updatePlan(@Req() req: FastifyRequest, @Param("id") id: string, @Body() body: Record<string, unknown>) {
     return this.membership.savePlan(country(req), await this.#principal(req), id, body ?? {});
+  }
+}
+
+/** Group ordering — a shared cart several people fill via an invite code; the host places and the bill splits. */
+@Controller("v1/group-carts")
+export class GroupController {
+  constructor(
+    @Inject(TOKENS.db) private readonly db: Db,
+    @Inject(TOKENS.tokens) private readonly tokens: TokenService,
+    @Inject(TOKENS.group) private readonly group: GroupOrderService,
+  ) {}
+
+  #p(req: FastifyRequest) {
+    return this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+  }
+
+  @Post()
+  async create(@Req() req: FastifyRequest, @Body() body: { branch_id?: string; order_type?: "DELIVERY" | "TAKEAWAY"; split_mode?: "HOST_PAYS" | "EACH_PAYS"; deadline_minutes?: number }) {
+    if (!body?.branch_id) throw badRequest("BRANCH_REQUIRED", "Send branch_id");
+    return this.group.create(country(req), await this.#p(req), { branchId: body.branch_id, ...(body.order_type ? { orderType: body.order_type } : {}), ...(body.split_mode ? { splitMode: body.split_mode } : {}), ...(body.deadline_minutes ? { deadlineMinutes: Number(body.deadline_minutes) } : {}) });
+  }
+
+  @Post("join")
+  @HttpCode(200)
+  async join(@Req() req: FastifyRequest, @Body() body: { code?: string }) {
+    if (!body?.code) throw badRequest("CODE_REQUIRED", "Send the invite code");
+    return this.group.join(country(req), await this.#p(req), body.code);
+  }
+
+  @Get(":id")
+  async get(@Req() req: FastifyRequest, @Param("id") id: string) {
+    return this.group.get(country(req), await this.#p(req), id);
+  }
+
+  @Post(":id/lines")
+  async addItem(@Req() req: FastifyRequest, @Param("id") id: string, @Body() body: { item_id?: string; quantity?: number; options?: unknown; addons?: unknown }) {
+    if (!body?.item_id) throw badRequest("ITEM_REQUIRED", "Send item_id and quantity");
+    return this.group.addItem(country(req), await this.#p(req), id, { itemId: body.item_id, quantity: Number(body.quantity ?? 1), options: body.options, addons: body.addons });
+  }
+
+  @Delete(":id/lines/:line")
+  @HttpCode(200)
+  async removeItem(@Req() req: FastifyRequest, @Param("id") id: string, @Param("line") line: string) {
+    return this.group.removeItem(country(req), await this.#p(req), id, line);
+  }
+
+  @Post(":id/lock")
+  @HttpCode(200)
+  async lock(@Req() req: FastifyRequest, @Param("id") id: string, @Body() body: { locked?: boolean }) {
+    return this.group.lock(country(req), await this.#p(req), id, body?.locked !== false);
+  }
+
+  @Post(":id/quote")
+  @HttpCode(200)
+  async quote(@Req() req: FastifyRequest, @Param("id") id: string, @Body() body: { delivery?: { lat: number; lng: number }; tip?: string }) {
+    return this.group.quote(country(req), await this.#p(req), id, { ...(body?.delivery ? { delivery: body.delivery } : {}), ...(body?.tip ? { tip: body.tip } : {}) });
+  }
+
+  @Post(":id/place")
+  async place(@Req() req: FastifyRequest, @Param("id") id: string, @Body() body: { payment_mode?: "PREPAID" | "CASH_ON_DELIVERY"; expected_total?: { amount_minor: string; currency: string }; delivery?: { lat: number; lng: number }; tip?: string; address?: { landmark?: string } }) {
+    if (!body?.expected_total) throw badRequest("EXPECTED_TOTAL_REQUIRED", "Send the total you confirmed");
+    const key = req.headers["idempotency-key"] as string;
+    return this.group.place(country(req), await this.#p(req), id, {
+      paymentMode: body.payment_mode ?? "PREPAID",
+      expectedTotal: body.expected_total,
+      ...(body.delivery ? { delivery: body.delivery } : {}),
+      ...(body.tip ? { tip: body.tip } : {}),
+      ...(body.address ? { address: body.address } : {}),
+    }, key);
   }
 }
 

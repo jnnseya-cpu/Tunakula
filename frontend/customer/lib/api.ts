@@ -132,6 +132,31 @@ export const myMembership = () => api<{ membership: MyMembership | null }>("/v1/
 export const subscribePlan = (planId: string) => api<{ membership: MyMembership }>("/v1/me/membership", { method: "POST", body: { plan_id: planId } }).then((r) => r.membership);
 export const cancelMembership = () => api<{ membership: MyMembership | null }>("/v1/me/membership", { method: "DELETE" }).then((r) => r.membership);
 
+// ── Group ordering (shared cart) ──
+export interface GroupMember { user_id: string; name: string; is_host: boolean }
+export interface GroupLine { id: string; member_user_id: string; item_id: string; name: string; quantity: number; options?: CartLineOption[]; addons?: string[]; line_total: MoneyWire }
+export interface GroupCart {
+  id: string; code: string; status: "OPEN" | "LOCKED" | "PLACED" | "CANCELLED";
+  order_type: "DELIVERY" | "TAKEAWAY"; split_mode: "HOST_PAYS" | "EACH_PAYS"; host_user_id: string;
+  branch: { id: string; name: string }; deadline: string | null; placed_order_id: string | null;
+  members: GroupMember[]; lines: GroupLine[];
+}
+export interface GroupSplit { user_id: string; name: string; items_minor: string; share_minor: string; currency: string }
+export interface GroupQuote { order_type: string; breakdown: { goods: MoneyWire; service_charge: MoneyWire; delivery_fee: MoneyWire; tip: MoneyWire; total: MoneyWire }; split_mode: string; split: GroupSplit[] }
+
+export const groupCreate = (branchId: string, orderType: "DELIVERY" | "TAKEAWAY" = "DELIVERY") =>
+  api<GroupCart>("/v1/group-carts", { method: "POST", body: { branch_id: branchId, order_type: orderType } });
+export const groupJoin = (code: string) => api<GroupCart>("/v1/group-carts/join", { method: "POST", body: { code } });
+export const groupGet = (id: string) => api<GroupCart>(`/v1/group-carts/${id}`);
+export const groupAddItem = (id: string, line: { item_id: string; quantity: number; options?: CartLineOption[]; addons?: string[] }) =>
+  api<GroupCart>(`/v1/group-carts/${id}/lines`, { method: "POST", body: line });
+export const groupRemoveItem = (id: string, lineId: string) => api<GroupCart>(`/v1/group-carts/${id}/lines/${lineId}`, { method: "DELETE" });
+export const groupLock = (id: string, locked: boolean) => api<GroupCart>(`/v1/group-carts/${id}/lock`, { method: "POST", body: { locked } });
+export const groupQuote = (id: string, body: { delivery?: { lat: number; lng: number }; tip?: string }) =>
+  api<GroupQuote>(`/v1/group-carts/${id}/quote`, { method: "POST", body });
+export const groupPlace = (id: string, body: { payment_mode: "PREPAID" | "CASH_ON_DELIVERY"; expected_total: MoneyWire; delivery?: { lat: number; lng: number }; tip?: string; address?: { landmark?: string } }) =>
+  api<{ order_id: string; state: string; recipient_code: string }>(`/v1/group-carts/${id}/place`, { method: "POST", body });
+
 export const STATE_LABEL: Record<string, string> = {
   DRAFT: "Order created", PENDING_PAYMENT: "Waiting for payment", PAYMENT_FAILED: "Payment failed", PLACED: "Sent to the kitchen",
   ACCEPTED: "Kitchen accepted", PREPARING: "Being prepared", PACKED: "Packed and sealed", READY: "Ready for pickup",

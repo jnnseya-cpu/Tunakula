@@ -1536,3 +1536,67 @@ describe("dietary tags and nutrition on dishes", () => {
     assert.equal(r.body.nutrition.kcal, 500);
   });
 });
+
+describe("group ordering (shared cart, bill split)", () => {
+  let host: { token: string; userId: string };
+  let guest: { token: string; userId: string };
+  let cartId: string;
+  let code: string;
+
+  test("a host starts a group cart and a friend joins by code", async () => {
+    host = await signIn("+243810000070");
+    guest = await signIn("+243810000071");
+    await backdate(host.userId, 30); // so the host can pay cash on delivery
+    const created = await call("POST", "/v1/group-carts", { token: host.token, country: "CD", body: { branch_id: branchId, order_type: "DELIVERY" } });
+    assert.equal(created.status, 201, JSON.stringify(created.body));
+    cartId = created.body.id;
+    code = created.body.code;
+    assert.equal(created.body.members.length, 1);
+    assert.equal(created.body.members[0].is_host, true);
+    const joined = await call("POST", "/v1/group-carts/join", { token: guest.token, country: "CD", body: { code } });
+    assert.equal(joined.status, 200, JSON.stringify(joined.body));
+    assert.equal(joined.body.members.length, 2);
+    // A stranger cannot see the cart.
+    assert.equal((await call("GET", `/v1/group-carts/${cartId}`, { token: rider.token, country: "CD" })).status, 403);
+  });
+
+  test("each member adds their own items", async () => {
+    const a = await call("POST", `/v1/group-carts/${cartId}/lines`, { token: host.token, country: "CD", body: { item_id: itemId, quantity: 2 } });
+    assert.equal(a.status, 201, JSON.stringify(a.body));
+    const b = await call("POST", `/v1/group-carts/${cartId}/lines`, { token: guest.token, country: "CD", body: { item_id: itemId, quantity: 1 } });
+    assert.equal(b.status, 201, JSON.stringify(b.body));
+    const view = await call("GET", `/v1/group-carts/${cartId}`, { token: guest.token, country: "CD" });
+    assert.equal(view.body.lines.length, 2);
+    assert.ok(view.body.lines.some((l: { member_user_id: string }) => l.member_user_id === host.userId));
+    assert.ok(view.body.lines.some((l: { member_user_id: string }) => l.member_user_id === guest.userId));
+  });
+
+  test("the quote splits the bill across members and the shares sum to the total", async () => {
+    const q = await call("POST", `/v1/group-carts/${cartId}/quote`, { token: host.token, country: "CD", body: { delivery: DROP } });
+    assert.equal(q.status, 200, JSON.stringify(q.body));
+    assert.equal(q.body.split.length, 2, "one share per member who ordered");
+    const total = BigInt(q.body.breakdown.total.amount_minor);
+    const sum = q.body.split.reduce((s: bigint, m: { share_minor: string }) => s + BigInt(m.share_minor), 0n);
+    assert.equal(sum, total, "the per-person shares add up to the whole bill, to the cent");
+    // Each member's share is at least their own food.
+    for (const s of q.body.split) assert.ok(BigInt(s.share_minor) >= BigInt(s.items_minor));
+  });
+
+  test("only the host can lock and place; placing makes one real order", async () => {
+    assert.equal((await call("POST", `/v1/group-carts/${cartId}/lock`, { token: guest.token, country: "CD", body: { locked: true } })).status, 403);
+    assert.equal((await call("POST", `/v1/group-carts/${cartId}/lock`, { token: host.token, country: "CD", body: { locked: true } })).body.status, "LOCKED");
+    // A guest cannot add once locked.
+    assert.equal((await call("POST", `/v1/group-carts/${cartId}/lines`, { token: guest.token, country: "CD", body: { item_id: itemId, quantity: 1 } })).body.code, "GROUP_LOCKED");
+    const q = await call("POST", `/v1/group-carts/${cartId}/quote`, { token: host.token, country: "CD", body: { delivery: DROP } });
+    const placed = await call("POST", `/v1/group-carts/${cartId}/place`, { token: host.token, country: "CD", body: { payment_mode: "CASH_ON_DELIVERY", expected_total: q.body.breakdown.total, delivery: DROP } });
+    assert.equal(placed.status, 201, JSON.stringify(placed.body));
+    assert.ok(placed.body.order_id);
+    // The group cart is now placed and points at the order.
+    const after = await call("GET", `/v1/group-carts/${cartId}`, { token: host.token, country: "CD" });
+    assert.equal(after.body.status, "PLACED");
+    assert.equal(after.body.placed_order_id, placed.body.order_id);
+    // The order carries the whole group's lines (2 lines, host + guest).
+    const order = await call("GET", `/v1/orders/${placed.body.order_id}`, { token: host.token, country: "CD" });
+    assert.equal(order.body.lines.length, 2);
+  });
+});
