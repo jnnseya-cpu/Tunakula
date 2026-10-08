@@ -143,14 +143,14 @@ export class CatalogueController {
 }
 
 type ItemBody = { names: Record<string, string>; description?: Record<string, string>; prices: Record<string, string>; category?: string | null; veg?: boolean | null; tags?: string[]; allergens?: string[]; recommended?: boolean; variations?: unknown; addons?: unknown };
-type QuoteItemBody = { item_id: string; quantity: number; options?: { group: string; choices: string[] }[]; addons?: string[] };
+type QuoteItemBody = { item_id: string; quantity: number; options?: { group: string; choices: string[] }[]; addons?: string[]; note?: string };
 type QuoteBody = { branch_id: string; items: QuoteItemBody[]; order_type: QuoteInput["orderType"]; delivery?: { lat: number; lng: number; rural?: boolean }; tip?: string; coupon_code?: string };
 
 const toQuoteInput = (b: QuoteBody): QuoteInput => {
   if (!b || typeof b.branch_id !== "string" || !Array.isArray(b.items)) throw badRequest("BODY_INVALID", "Send branch_id, items and order_type");
   return {
     branchId: b.branch_id,
-    items: b.items.map((i) => ({ itemId: i.item_id, quantity: i.quantity, ...(Array.isArray(i.options) ? { options: i.options } : {}), ...(Array.isArray(i.addons) ? { addons: i.addons } : {}) })),
+    items: b.items.map((i) => ({ itemId: i.item_id, quantity: i.quantity, ...(Array.isArray(i.options) ? { options: i.options } : {}), ...(Array.isArray(i.addons) ? { addons: i.addons } : {}), ...(typeof i.note === "string" && i.note.trim() ? { note: i.note } : {}) })),
     orderType: b.order_type ?? "DELIVERY",
     ...(b.delivery ? { delivery: b.delivery } : {}),
     ...(b.tip ? { tip: b.tip } : {}),
@@ -181,7 +181,7 @@ export class OrdersController {
   }
 
   @Post("orders")
-  async place(@Req() req: FastifyRequest, @Body() body: QuoteBody & { payment_mode: PlaceOrderInput["paymentMode"]; expected_total: PlaceOrderInput["expectedTotal"]; recipient?: PlaceOrderInput["recipient"]; gifted?: boolean; contactless?: boolean; age_confirmed?: boolean; address?: { landmark?: string; voice_note_url?: string } }) {
+  async place(@Req() req: FastifyRequest, @Body() body: QuoteBody & { payment_mode: PlaceOrderInput["paymentMode"]; expected_total: PlaceOrderInput["expectedTotal"]; recipient?: PlaceOrderInput["recipient"]; gifted?: boolean; contactless?: boolean; age_confirmed?: boolean; kitchen_note?: string; address?: { landmark?: string; voice_note_url?: string } }) {
     const uid = userId(req, this.tokens);
     const principal = await this.db.tx({}, (sql) => loadPrincipal(sql, uid));
     const key = req.headers["idempotency-key"] as string;
@@ -193,6 +193,7 @@ export class OrdersController {
       ...(body.gifted ? { gifted: true } : {}),
       ...(body.contactless ? { contactless: true } : {}),
       ...(body.age_confirmed ? { ageConfirmed: true } : {}),
+      ...(typeof body.kitchen_note === "string" && body.kitchen_note.trim() ? { kitchenNote: body.kitchen_note } : {}),
       ...(body.address?.landmark ? { address: { landmark: String(body.address.landmark) } } : {}),
     }, key);
     return { order_id: r.orderId, state: r.state, recipient_code: r.recipientCode, quote: serialiseQuote(r.quote) };
@@ -949,7 +950,9 @@ function orderView(o: OrderAggregate) {
     total: wire(Money.fromJSON(s.total)),
     payment_mode: s.paymentMode,
     rider_id: o.riderId ?? null,
-    lines: s.lines.map((l) => ({ name: l.name, quantity: l.quantity, allergens: l.allergenFlags, options: l.options })),
+    lines: s.lines.map((l) => ({ name: l.name, quantity: l.quantity, allergens: l.allergenFlags, options: l.options, ...(l.note ? { note: l.note } : {}) })),
+    ...(s.kitchenNote ? { kitchen_note: s.kitchenNote } : {}),
+    ...(s.deliveryNote ? { delivery_note: s.deliveryNote } : {}),
     flagged_for_review: o.flaggedForReview,
     version: o.version,
   };

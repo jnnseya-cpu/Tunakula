@@ -126,6 +126,8 @@ export interface OrderSnapshot {
   readonly dropLocation?: GeoPoint;
   /** Directions for the rider ("blue gate opposite the pharmacy"). Free text: never allergen or payment data. */
   readonly deliveryNote?: string;
+  /** A free-text note for the kitchen ("no cutlery", "extra spicy"). Free text: never allergen or payment data. */
+  readonly kitchenNote?: string;
   readonly geofenceRadiusM: number;
 }
 

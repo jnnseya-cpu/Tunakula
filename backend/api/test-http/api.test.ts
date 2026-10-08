@@ -1951,3 +1951,28 @@ describe("age-restricted items (18+)", () => {
     assert.equal(plain.body.age_restricted, undefined);
   });
 });
+
+describe("order notes (per-dish + kitchen)", () => {
+  test("a dish note and a kitchen note flow onto the order and the kitchen board", async () => {
+    const q = await call("POST", "/v1/carts/quote", { token: customer.token, country: "CD", body: cart() });
+    const place = await call("POST", "/v1/orders", {
+      token: customer.token, country: "CD",
+      body: {
+        branch_id: branchId,
+        items: [{ item_id: itemId, quantity: 2, note: "No onions please" }],
+        order_type: "DELIVERY", delivery: DROP, payment_mode: "CASH_ON_DELIVERY", expected_total: q.body.total,
+        kitchen_note: "Extra napkins, no cutlery",
+      },
+    });
+    assert.equal(place.status, 201, JSON.stringify(place.body));
+    // The customer sees the notes back on their order.
+    const view = await call("GET", `/v1/orders/${place.body.order_id}`, { token: customer.token, country: "CD" });
+    assert.equal(view.body.kitchen_note, "Extra napkins, no cutlery");
+    assert.equal(view.body.lines[0].note, "No onions please");
+    // The kitchen board shows them too.
+    const board = await call("GET", "/v1/kitchen/orders", { token: kitchen.token, country: "CD" });
+    const onBoard = board.body.orders.find((o: { order_id: string }) => o.order_id === place.body.order_id) as { kitchen_note?: string; lines: { note?: string }[] };
+    assert.equal(onBoard.kitchen_note, "Extra napkins, no cutlery");
+    assert.equal(onBoard.lines[0].note, "No onions please");
+  });
+});

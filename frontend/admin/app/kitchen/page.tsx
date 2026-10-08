@@ -14,7 +14,7 @@ interface Line { id: string; name: string; quantity: number; options: string[]; 
 interface KOrder {
   order_id: string; ref: string; state: string; type: string; payment_mode: string; total: { amount_minor: string; currency: string };
   branch_id: string; customer: string | null; rider: { id: string; name: string } | null; lines: Line[]; times: Record<string, string>; created_at: string;
-  packages: number | null; labels: string[]; confirmation_model: string;
+  packages: number | null; labels: string[]; confirmation_model: string; kitchen_note?: string;
 }
 interface Board { now: string; branches: { id: string; name: string; commune: string | null; status: string; can_pause: boolean }[]; orders: KOrder[] }
 
@@ -177,6 +177,7 @@ function Kitchen() {
                       ))}
                     </ul>
                     {allergens.length ? <p className="k-allergen">⚠ {L("Allergènes", "Allergens")}: {allergens.join(", ")}</p> : null}
+                    {o.kitchen_note ? <p className="k-kitchen-note">📝 {o.kitchen_note}</p> : null}
                     <p className="k-meta">
                       {o.customer ?? L("Client", "Customer")} · {L("passée à", "placed")} {clock(o.times.PLACED ?? o.created_at)}
                       {o.payment_mode === "CASH_ON_DELIVERY" ? <> · <b>{L("Espèces", "Cash")} {money(lang, o.total.amount_minor, o.total.currency)}</b></> : null}

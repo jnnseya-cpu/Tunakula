@@ -42,6 +42,7 @@ export function Checkout() {
   const [cart, setCart] = useState<Cart | null>(null);
   const [mode, setMode] = useState<Mode>("DELIVERY");
   const [landmark, setLandmark] = useState("");
+  const [kitchenNote, setKitchenNote] = useState("");
   const [tip, setTip] = useState("0");
   const [quote, setQuote] = useState<Quote | null>(null);
   const [quoteError, setQuoteError] = useState<string | null>(null);
@@ -153,7 +154,7 @@ export function Checkout() {
         setBusy("Placing your order…");
         const r = await api<{ order_id: string; recipient_code: string; state: string }>("/v1/orders", {
           method: "POST", key: attempt.current.key,
-          body: { ...body, payment_mode: pay === "CASH_ON_DELIVERY" ? "CASH_ON_DELIVERY" : "PREPAID", expected_total: due, ...(quote.age_restricted ? { age_confirmed: true } : {}), ...(landmark.trim() ? { address: { landmark: landmark.trim() } } : {}) },
+          body: { ...body, payment_mode: pay === "CASH_ON_DELIVERY" ? "CASH_ON_DELIVERY" : "PREPAID", expected_total: due, ...(quote.age_restricted ? { age_confirmed: true } : {}), ...(kitchenNote.trim() ? { kitchen_note: kitchenNote.trim() } : {}), ...(landmark.trim() ? { address: { landmark: landmark.trim() } } : {}) },
         });
         orderId = r.order_id;
         placed.current = orderId;
@@ -225,6 +226,11 @@ export function Checkout() {
             </div>
           </section>
         ) : null}
+
+        <section className="co-sec">
+          <h2>Note for the kitchen</h2>
+          <label className="field"><span>Anything the kitchen should know</span><textarea rows={2} value={kitchenNote} onChange={(e) => setKitchenNote(e.target.value)} placeholder="e.g. no cutlery, extra spicy, no onions" maxLength={280} /></label>
+        </section>
 
         <section className="co-sec">
           <h2>Pay with</h2>

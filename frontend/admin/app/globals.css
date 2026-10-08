@@ -214,6 +214,7 @@ dl.kv dt { color: var(--muted); }
 .k-lines small { color: var(--muted); }
 .k-note { display: block; font-size: 13.5px; color: #8a4b00; margin-left: 32px; }
 .k-allergen { font-weight: 750; color: var(--critical); font-size: 14px; background: rgba(208, 59, 59, 0.08); border-radius: 8px; padding: 6px 8px; }
+.k-kitchen-note { font-size: 13.5px; color: var(--ink); background: var(--tint, rgba(0,0,0,0.05)); border-radius: 8px; padding: 6px 8px; overflow-wrap: anywhere; }
 .k-meta, .k-rider, .k-step { font-size: 13.5px; color: var(--muted); }
 .k-rider { color: var(--ink-2); font-weight: 600; }
 .k-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }

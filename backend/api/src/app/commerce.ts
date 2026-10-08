@@ -28,7 +28,7 @@ import type { RoutingProvider } from "./routing.ts";
 export interface LineOptionSelection { readonly group: string; readonly choices: readonly string[] }
 export interface QuoteInput {
   readonly branchId: string;
-  readonly items: readonly { readonly itemId: string; readonly quantity: number; readonly options?: readonly LineOptionSelection[]; readonly addons?: readonly string[] }[];
+  readonly items: readonly { readonly itemId: string; readonly quantity: number; readonly options?: readonly LineOptionSelection[]; readonly addons?: readonly string[]; readonly note?: string }[];
   readonly orderType: OrderType;
   readonly delivery?: { readonly lat: number; readonly lng: number; readonly rural?: boolean };
   readonly tip?: string;
@@ -48,6 +48,8 @@ export interface PlaceOrderInput extends QuoteInput {
   readonly contactless?: boolean;
   /** The customer's confirmation that they are 18+ (required when the cart has an age-restricted item). */
   readonly ageConfirmed?: boolean;
+  /** A free-text note for the kitchen ("no cutlery", "extra napkins"). Never allergen or payment data. */
+  readonly kitchenNote?: string;
 }
 
 export interface Quote {
@@ -249,14 +251,18 @@ export class CommerceService {
       const orderId = (row as { id: string }).id;
       const recipientCode = String(randomInt(0, 10_000)).padStart(4, "0");
       const menu = new Map((await menuOf(sql, branch.id)).map((m) => [m.id, m]));
-      const lines: OrderLine[] = quote.lines.map((l, i) => ({
-        id: `l${i + 1}`,
-        itemId: l.itemId,
-        name: l.name,
-        quantity: l.quantity,
-        options: l.options,
-        allergenFlags: menu.get(l.itemId)?.allergens ?? [],
-      }));
+      const lines: OrderLine[] = quote.lines.map((l, i) => {
+        const note = input.items[i]?.note?.trim();
+        return {
+          id: `l${i + 1}`,
+          itemId: l.itemId,
+          name: l.name,
+          quantity: l.quantity,
+          options: l.options,
+          allergenFlags: menu.get(l.itemId)?.allergens ?? [],
+          ...(note ? { note: note.slice(0, 280) } : {}),
+        };
+      });
       const configured = profile.operations.confirmation_model;
       const b = quote.breakdown;
       const snapshot: OrderSnapshot = {
@@ -296,6 +302,7 @@ export class CommerceService {
         recipientCodeHash: createHash("sha256").update(recipientCode).digest("hex"),
         ...(input.delivery ? { dropLocation: { lat: input.delivery.lat, lng: input.delivery.lng } } : {}),
         ...(input.address?.landmark?.trim() ? { deliveryNote: input.address.landmark.trim().slice(0, 280) } : {}),
+        ...(input.kitchenNote?.trim() ? { kitchenNote: input.kitchenNote.trim().slice(0, 280) } : {}),
         geofenceRadiusM: GEOFENCE_M,
       };
       const actor: Actor = { kind: "CUSTOMER", id: principal.userId };
