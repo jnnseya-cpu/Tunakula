@@ -3,7 +3,7 @@
  * Commune centres are approximate (the populated centre of each of Kinshasa's 24 communes); a GPS fix
  * or a dropped pin at checkout always replaces them.
  */
-export interface Place { readonly label: string; readonly lat: number; readonly lng: number; readonly source: "gps" | "commune" }
+export interface Place { readonly label: string; readonly lat: number; readonly lng: number; readonly source: "gps" | "commune" | "saved" }
 
 export const COMMUNES: readonly [string, number, number][] = [
   ["Bandalungwa", -4.343, 15.287], ["Barumbu", -4.313, 15.325], ["Bumbu", -4.367, 15.287], ["Gombe", -4.306, 15.305],

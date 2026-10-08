@@ -1859,3 +1859,31 @@ describe("reviews and ratings", () => {
     assert.ok(card.reviews >= 1);
   });
 });
+
+describe("saved addresses", () => {
+  test("a customer saves, lists, re-defaults and deletes addresses", async () => {
+    const list0 = await call("GET", "/v1/me/addresses", { token: customer.token, country: "CD" });
+    assert.equal(list0.status, 200, JSON.stringify(list0.body));
+    const base = list0.body.data.length;
+    // First address becomes the default automatically.
+    const home = await call("POST", "/v1/me/addresses", { token: customer.token, country: "CD", body: { label: "Home", lat: -4.3215, lng: 15.2947, landmark: "Blue gate" } });
+    assert.equal(home.status, 201, JSON.stringify(home.body));
+    assert.equal(home.body.is_default, base === 0);
+    const work = await call("POST", "/v1/me/addresses", { token: customer.token, country: "CD", body: { label: "Work", lat: -4.33, lng: 15.30, is_default: true } });
+    assert.equal(work.body.is_default, true);
+    // Setting Work default unset Home's default.
+    const list = await call("GET", "/v1/me/addresses", { token: customer.token, country: "CD" });
+    assert.equal(list.body.data.filter((a: { is_default: boolean }) => a.is_default).length, 1, "exactly one default");
+    assert.ok(list.body.data.find((a: { id: string; is_default: boolean }) => a.id === work.body.id).is_default);
+    // Re-default Home.
+    assert.equal((await call("POST", `/v1/me/addresses/${home.body.id}/default`, { token: customer.token, country: "CD" })).body.is_default, true);
+    // A bad pin is refused.
+    assert.equal((await call("POST", "/v1/me/addresses", { token: customer.token, country: "CD", body: { label: "X", lat: 999, lng: 0 } })).body.code, "PIN_REQUIRED");
+    // Another customer cannot see these.
+    const other = await signIn("+243810000090");
+    assert.equal((await call("GET", "/v1/me/addresses", { token: other.token, country: "CD" })).body.data.length, 0);
+    // Delete.
+    assert.equal((await call("DELETE", `/v1/me/addresses/${work.body.id}`, { token: customer.token, country: "CD" })).body.deleted, true);
+    assert.ok(!(await call("GET", "/v1/me/addresses", { token: customer.token, country: "CD" })).body.data.some((a: { id: string }) => a.id === work.body.id));
+  });
+});

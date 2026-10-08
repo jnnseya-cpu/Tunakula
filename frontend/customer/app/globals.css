@@ -1222,3 +1222,9 @@ section.tight { padding: 44px 0; }
 .stars { display: inline-flex; gap: 2px; }
 .star { background: none; border: none; font-size: 24px; line-height: 1; color: var(--rule-strong, #cbd2dd); cursor: pointer; padding: 0 1px; }
 .star.on { color: #f5a623; }
+
+/* Saved addresses at checkout (additive) */
+.saved-addr { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; align-items: center; }
+.saved-chip { border: 1px solid var(--rule); background: var(--card); border-radius: 999px; padding: 7px 13px; font-size: 13px; font-weight: 600; cursor: pointer; color: var(--ink); }
+.saved-chip.on { background: var(--navy); color: #fff; border-color: var(--navy); }
+.saved-chip.add { border-style: dashed; color: var(--muted); font-weight: 500; }

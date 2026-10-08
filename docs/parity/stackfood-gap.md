@@ -27,7 +27,7 @@ Legend: **Built** works end to end · **Partial** the engine or a screen exists,
 | Reviews and ratings | Built: after a delivered order the customer rates the restaurant (1–5 stars) and optionally the rider, with a comment; the rating shows on the storefront (average + count) and feeds the performance scorecard; the restaurant replies from the merchant panel |
 | Chat with restaurant and rider; push and SMS notifications | Missing |
 | Wallet, loyalty points, referral | Missing |
-| Saved addresses with map pin | Missing |
+| Saved addresses with map pin | Built: a customer keeps several named map pins (Home, Work…), sets a default, and picks one at checkout as quick-pick chips; a one-tap "Save this address" stores the current pin |
 | Favourites | Missing |
 | Subscription (repeat) orders | Missing |
 | Languages FR / EN / LN / SW, dark mode | Missing (English only) |

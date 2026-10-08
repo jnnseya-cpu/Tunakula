@@ -14,6 +14,7 @@ import type { MembershipService } from "../app/membership.ts";
 import type { GroupOrderService } from "../app/group.ts";
 import type { CouponService } from "../app/coupons.ts";
 import type { ReviewService } from "../app/reviews.ts";
+import type { AddressService } from "../app/addresses.ts";
 import type { NotificationService } from "../app/comms.ts";
 import { serialiseQuote, type CommerceService, type PlaceOrderInput, type QuoteInput } from "../app/commerce.ts";
 import { badRequest, notFound } from "../app/errors.ts";
@@ -820,6 +821,42 @@ export class CouponController {
   @HttpCode(200)
   async update(@Req() req: FastifyRequest, @Param("id") id: string, @Body() body: Record<string, unknown>) {
     return this.coupons.save(country(req), await this.#p(req), id, body ?? {});
+  }
+}
+
+/** Saved delivery addresses for the signed-in customer. */
+@Controller("v1/me/addresses")
+export class AddressController {
+  constructor(
+    @Inject(TOKENS.db) private readonly db: Db,
+    @Inject(TOKENS.tokens) private readonly tokens: TokenService,
+    @Inject(TOKENS.addresses) private readonly addresses: AddressService,
+  ) {}
+
+  #p(req: FastifyRequest) {
+    return this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+  }
+
+  @Get()
+  async list(@Req() req: FastifyRequest) {
+    return this.addresses.list(country(req), await this.#p(req));
+  }
+
+  @Post()
+  async create(@Req() req: FastifyRequest, @Body() body: { label?: string; lat?: number; lng?: number; landmark?: string; contact_phone?: string; is_default?: boolean }) {
+    return this.addresses.create(country(req), await this.#p(req), { label: body?.label, lat: body?.lat, lng: body?.lng, ...(body?.landmark ? { landmark: body.landmark } : {}), ...(body?.contact_phone ? { contactPhone: body.contact_phone } : {}), ...(body?.is_default ? { isDefault: true } : {}) });
+  }
+
+  @Post(":id/default")
+  @HttpCode(200)
+  async setDefault(@Req() req: FastifyRequest, @Param("id") id: string) {
+    return this.addresses.setDefault(country(req), await this.#p(req), id);
+  }
+
+  @Delete(":id")
+  @HttpCode(200)
+  async remove(@Req() req: FastifyRequest, @Param("id") id: string) {
+    return this.addresses.remove(country(req), await this.#p(req), id);
   }
 }
 

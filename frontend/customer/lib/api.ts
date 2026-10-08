@@ -132,6 +132,13 @@ export const myMembership = () => api<{ membership: MyMembership | null }>("/v1/
 export const subscribePlan = (planId: string) => api<{ membership: MyMembership }>("/v1/me/membership", { method: "POST", body: { plan_id: planId } }).then((r) => r.membership);
 export const cancelMembership = () => api<{ membership: MyMembership | null }>("/v1/me/membership", { method: "DELETE" }).then((r) => r.membership);
 
+// ── Saved addresses ──
+export interface SavedAddress { id: string; label: string; lat: number; lng: number; landmark: string | null; contact_phone: string | null; is_default: boolean }
+export const listAddresses = () => api<{ data: SavedAddress[] }>("/v1/me/addresses").then((r) => r.data);
+export const saveAddress = (a: { label: string; lat: number; lng: number; landmark?: string; is_default?: boolean }) => api<SavedAddress>("/v1/me/addresses", { method: "POST", body: a });
+export const setDefaultAddress = (id: string) => api(`/v1/me/addresses/${id}/default`, { method: "POST" });
+export const deleteAddress = (id: string) => api(`/v1/me/addresses/${id}`, { method: "DELETE" });
+
 // ── Group ordering (shared cart) ──
 export interface GroupMember { user_id: string; name: string; is_host: boolean }
 export interface GroupLine { id: string; member_user_id: string; item_id: string; name: string; quantity: number; options?: CartLineOption[]; addons?: string[]; line_total: MoneyWire }

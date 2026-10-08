@@ -25,6 +25,7 @@ export const TOKENS = {
   group: "GROUP_SERVICE",
   coupons: "COUPON_SERVICE",
   reviews: "REVIEW_SERVICE",
+  addresses: "ADDRESS_SERVICE",
   logger: "LOGGER",
 } as const;
 

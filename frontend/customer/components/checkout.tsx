@@ -5,7 +5,7 @@
  */
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { api, ApiError, getSession, live, loadCart, money, rememberCode, saveCart, type Cart, type MoneyWire } from "../lib/api";
+import { api, ApiError, getSession, listAddresses, live, loadCart, money, rememberCode, saveAddress, saveCart, type Cart, type MoneyWire, type SavedAddress } from "../lib/api";
 import { useLocationCtx } from "./location";
 
 interface Quote {
@@ -33,7 +33,9 @@ const PAY_LABEL: Record<string, [string, string]> = {
 const TIPS = ["0", "0.50", "1.00", "2.00"];
 
 export function Checkout() {
-  const { place, setPickerOpen } = useLocationCtx();
+  const { place, setPlace, setPickerOpen } = useLocationCtx();
+  const [addresses, setAddresses] = useState<SavedAddress[]>([]);
+  const [savedMsg, setSavedMsg] = useState<string | null>(null);
   const [branchId, setBranchId] = useState<string | null>(null);
   const [cart, setCart] = useState<Cart | null>(null);
   const [mode, setMode] = useState<Mode>("DELIVERY");
@@ -60,8 +62,26 @@ export function Checkout() {
     if (id) setCart(loadCart(id));
     const s = getSession();
     setSignedIn(!!s);
-    if (s) setMsisdn(s.phone);
-  }, []);
+    if (s) {
+      setMsisdn(s.phone);
+      listAddresses().then((a) => { setAddresses(a); const d = a.find((x) => x.is_default); if (d && !place) pickAddress(d); }).catch(() => undefined);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const pickAddress = (a: SavedAddress) => {
+    setPlace({ lat: a.lat, lng: a.lng, label: a.label, source: "saved" });
+    if (a.landmark) setLandmark(a.landmark);
+  };
+  const saveCurrent = async () => {
+    if (!place) return;
+    try {
+      const label = window.prompt("Name this address (e.g. Home, Work)", place.label ?? "Home");
+      if (!label) return;
+      const a = await saveAddress({ label, lat: place.lat, lng: place.lng, ...(landmark.trim() ? { landmark: landmark.trim() } : {}) });
+      setAddresses((prev) => [a, ...prev.filter((x) => x.id !== a.id)]);
+      setSavedMsg("Saved to your addresses.");
+    } catch (e) { setSavedMsg((e as ApiError).message); }
+  };
 
   const body = useMemo(() => cart && {
     branch_id: cart.branch_id,
@@ -183,9 +203,18 @@ export function Checkout() {
           <section className="co-sec">
             <h2>Where to?</h2>
             <div className="addr">
-              <div><b>{place?.label ?? "…"}</b><small>{place?.source === "gps" ? "Your current location" : "Commune centre — use your exact location for a precise fee"}</small></div>
+              <div><b>{place?.label ?? "…"}</b><small>{place?.source === "gps" ? "Your current location" : place?.source === "saved" ? "Saved address" : "Commune centre — use your exact location for a precise fee"}</small></div>
               <button type="button" className="btn light" onClick={() => setPickerOpen(true)}>Change</button>
             </div>
+            {signedIn ? (
+              <div className="saved-addr">
+                {addresses.map((a) => (
+                  <button type="button" key={a.id} className={`saved-chip ${place?.label === a.label ? "on" : ""}`} onClick={() => pickAddress(a)}>📍 {a.label}{a.is_default ? " ·default" : ""}</button>
+                ))}
+                {place && !addresses.some((a) => a.label === place.label) ? <button type="button" className="saved-chip add" onClick={saveCurrent}>+ Save this address</button> : null}
+                {savedMsg ? <span className="muted small">{savedMsg}</span> : null}
+              </div>
+            ) : null}
             <label className="field"><span>Directions for the rider</span><textarea rows={2} value={landmark} onChange={(e) => setLandmark(e.target.value)} placeholder="Avenue, number, landmark — e.g. blue gate opposite the Sainte-Anne pharmacy" /></label>
             <div className="tips" role="radiogroup" aria-label="Tip for your rider">
               <span>Tip your rider</span>
