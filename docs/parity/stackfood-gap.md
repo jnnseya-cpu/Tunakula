@@ -74,7 +74,7 @@ Legend: **Built** works end to end · **Partial** the engine or a screen exists,
 | Deliverymen: list, vehicles, shifts, reviews, bonuses, join requests | Partial: rider list with status and cash, join requests with ID review; shifts, reviews and bonuses missing |
 | Employees and roles | Built |
 | Transactions: collect cash, withdrawals, disbursements | Partial: ledger and payments views |
-| Reports: transactions, orders, foods, restaurants, tax, expenses | Partial: dashboard charts only |
+| Reports: transactions, orders, foods, restaurants, tax, expenses | Partial: dashboard charts + **per-restaurant performance scorecards** (acceptance/fulfilment/cancellation rates, avg prep time, GMV and a 0–100 score over 7/30/90 days, scoped to the branches the viewer can see) at Commerce → Performance des restaurants — the Uber Top Eats / Just Eat Performance Score equivalent StackFood lacks |
 | Business settings (order, refund, restaurant, rider, customer rules, maintenance) | Partial: country profile, no settings screens |
 | Third-party setup: payment, SMS, mail, map, push, social login | Partial: payment connectors in code |
 | Landing page, pages and social media, languages, theme | Missing |

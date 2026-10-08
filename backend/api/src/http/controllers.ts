@@ -511,6 +511,11 @@ export class AdminController {
   async revoke(@Req() req: FastifyRequest, @Param("id") id: string) {
     return this.admin.revoke(await this.#principal(req), country(req), id);
   }
+
+  @Get("scorecards")
+  async scorecards(@Req() req: FastifyRequest, @Query("days") days?: string) {
+    return this.admin.scorecards(await this.#principal(req), country(req), days ? Number(days) : undefined);
+  }
 }
 
 /** Country Profile administration (§17): drafts, dual-controlled publishes, rollback, history and diff. */

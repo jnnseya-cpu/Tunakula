@@ -636,6 +636,76 @@ export class AdminService {
       return { id: branchId, status: row?.status ?? status };
     });
   }
+
+  /**
+   * GET /v1/admin/scorecards: a per-restaurant performance scorecard over the last N days — the Uber
+   * Top Eats / Just Eat Performance Score / Deliveroo Hub metrics a merchant self-optimises with.
+   * Scoped to the branches the caller can see.
+   */
+  async scorecards(principal: Principal, country: string, days = 30) {
+    const profile = this.#profile(country);
+    const window = Math.min(Math.max(Math.trunc(days) || 30, 1), 365);
+    const ccy = profile.money.settlement_currency;
+    return this.db.tx({ country }, async (sql) => {
+      // Visible to anyone who can read these orders: a country admin sees every branch, an owner their own.
+      const vis = await this.#visibility(sql, principal, country, profile, "order:read");
+      const ids = vis.branches.map((b) => b.id);
+      if (ids.length === 0) throw forbidden("No restaurants you can see performance for");
+      const since = new Date(this.now().getTime() - window * 86_400_000);
+      const rows = await sql.query<{
+        branch_id: string; name: string; total: string; accepted: string; rejected: string; cancelled: string;
+        delivered: string; failed: string; prep_secs: string | null; gmv: string | null;
+      }>(
+        `WITH ev AS (
+           SELECT o.branch_id, o.order_id, o.state, o.total_minor,
+                  bool_or(e.type = 'STATE_CHANGED' AND e.payload->>'to' = 'ACCEPTED') AS accepted,
+                  max(e.at) FILTER (WHERE e.type = 'STATE_CHANGED' AND e.payload->>'to' = 'ACCEPTED') AS accepted_at,
+                  max(e.at) FILTER (WHERE e.type = 'STATE_CHANGED' AND e.payload->>'to' = 'READY') AS ready_at
+             FROM ordering.order_view o
+             LEFT JOIN ordering.order_event e ON e.order_id = o.order_id
+            WHERE o.branch_id = ANY($1::uuid[]) AND o.created_at >= $2
+            GROUP BY o.branch_id, o.order_id, o.state, o.total_minor
+         )
+         SELECT b.id AS branch_id, b.name,
+                count(ev.order_id)::text AS total,
+                count(*) FILTER (WHERE ev.accepted)::text AS accepted,
+                count(*) FILTER (WHERE ev.state = 'REJECTED')::text AS rejected,
+                count(*) FILTER (WHERE ev.state = 'CANCELLED')::text AS cancelled,
+                count(*) FILTER (WHERE ev.state = 'DELIVERED')::text AS delivered,
+                count(*) FILTER (WHERE ev.state = 'DELIVERY_FAILED')::text AS failed,
+                avg(EXTRACT(EPOCH FROM (ev.ready_at - ev.accepted_at))) FILTER (WHERE ev.ready_at IS NOT NULL AND ev.accepted_at IS NOT NULL)::text AS prep_secs,
+                sum(ev.total_minor) FILTER (WHERE ev.state = 'DELIVERED')::text AS gmv
+           FROM catalogue.branch b LEFT JOIN ev ON ev.branch_id = b.id
+          WHERE b.id = ANY($1::uuid[])
+          GROUP BY b.id, b.name ORDER BY b.name`,
+        [ids, since],
+      );
+      const rate = (num: number, den: number) => (den > 0 ? Math.round((num / den) * 1000) / 10 : null);
+      return {
+        window_days: window,
+        scorecards: rows.map((r) => {
+          const total = Number(r.total), accepted = Number(r.accepted), rejected = Number(r.rejected);
+          const cancelled = Number(r.cancelled), delivered = Number(r.delivered), failed = Number(r.failed);
+          const prepSecs = r.prep_secs ? Number(r.prep_secs) : null;
+          // A simple 0–100 performance score: acceptance, fulfilment and speed, weighted.
+          const acceptance = rate(accepted, accepted + rejected);
+          const fulfilment = rate(delivered, delivered + failed + cancelled);
+          const speedScore = prepSecs === null ? null : Math.max(0, Math.min(100, 100 - Math.max(0, prepSecs / 60 - 10) * 5));
+          const parts = [acceptance, fulfilment, speedScore].filter((x): x is number => x !== null);
+          const score = parts.length ? Math.round(parts.reduce((a, b) => a + b, 0) / parts.length) : null;
+          return {
+            branch_id: r.branch_id, name: r.name,
+            orders: total, delivered, cancelled, rejected, failed,
+            acceptance_rate: acceptance, fulfilment_rate: fulfilment,
+            cancellation_rate: rate(cancelled, total),
+            avg_prep_minutes: prepSecs === null ? null : Math.round(prepSecs / 6) / 10,
+            gmv: { amount_minor: r.gmv ?? "0", currency: ccy },
+            score,
+          };
+        }),
+      };
+    });
+  }
 }
 
 function publicBinding(b: RoleBinding) {

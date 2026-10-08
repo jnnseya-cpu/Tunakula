@@ -300,7 +300,7 @@ The superset below merges all four actors into build epics. **Each epic notes wh
 | P1 | **Driver safety toolkit / SOS** (reassurance call, 911 escalation, trip-share) | DoorDash SafeDash, Uber Safety Toolkit | Courier safety + liability |
 | ✅ P1 | **Instant/fast driver cash-out + per-offer earnings breakdown** — **BUILT** (per-delivery base+tip breakdown; instant cash-out of the earned balance to mobile money, balanced idempotent ledger journal) | DoorDash Fast Pay, Uber Instant Pay | Courier supply, earnings transparency |
 | P1 | **Self-service courier onboarding + KYC/background check + document upload** | DoorDash, Uber, Just Eat | Scale onboarding without admin labor |
-| P1 | **Merchant performance scorecards + deep analytics** (acceptance rate, ops heatmap, customer cohorts) | Uber Top Eats, Just Eat Performance Score, Deliveroo Hub | Merchant self-optimization |
+| ✅ P1 | **Merchant performance scorecards + deep analytics** (acceptance rate, ops heatmap, customer cohorts) — **BUILT** (per-restaurant 0–100 score from acceptance, fulfilment and prep speed; orders/delivered/cancelled, acceptance/fulfilment/cancellation rates, avg prep minutes, GMV; window selector; scoped to the branches the viewer can see) | Uber Top Eats, Just Eat Performance Score, Deliveroo Hub | Merchant self-optimization |
 | P2 | **Scheduled shifts / Planner + busy-area heatmaps** for riders | Deliveroo Planner, Uber heatmaps, DoorDash slots | Supply/demand balancing |
 | P2 | **Batched/stacked orders + merchant pay-at-counter card** | DoorDash, Uber extra-stops | Delivery efficiency |
 | P2 | **Merchant self-serve ads/sponsored placement + BOGO/happy-hour builder** | DoorDash Sponsored, Just Eat Promoted, Deliveroo Marketer | Merchant revenue, platform take-rate |

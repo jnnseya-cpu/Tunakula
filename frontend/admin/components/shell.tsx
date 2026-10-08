@@ -53,6 +53,7 @@ const ICON: Record<string, string> = {
   comms: "M4 4h16a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H9l-5 4v-4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Zm3 5v2h10V9H7Zm0 4v2h7v-2H7Z",
   menu: "M4 3h11a2 2 0 0 1 2 2v16l-7-3-7 3V5a2 2 0 0 1 1-2Zm16 2h1v16l-3-1.3V5a2 2 0 0 0-2-2h2a2 2 0 0 1 2 2ZM6 7v2h7V7H6Zm0 4v2h7v-2H6Z",
   membership: "M12 2 15 8l6 .9-4.5 4.3L17.6 20 12 16.9 6.4 20l1.1-6.8L3 8.9 9 8l3-6Z",
+  scorecards: "M4 13h3v7H4v-7Zm6.5-5h3v12h-3V8ZM17 4h3v16h-3V4Z",
 };
 const Icon = ({ k }: { k: string }) => <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden className="nav-ico"><path fill="currentColor" d={ICON[k] ?? ""} /></svg>;
 
@@ -68,6 +69,7 @@ const NAV: { group: Key; items: NavItem[] }[] = [
   { group: "g_business", items: [
     { href: "/merchants/", key: "merchants", cap: "catalogue" },
     { href: "/menu/", key: "menu", cap: "catalogue" },
+    { href: "/scorecards/", key: "scorecards", cap: "overview" },
     { href: "/zones/", key: "zones", soon: true },
     { href: "/membership/", key: "membership", cap: "membership" },
     { href: "/promotions/", key: "promotions", soon: true },

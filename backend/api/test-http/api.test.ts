@@ -1640,3 +1640,31 @@ describe("rider earnings breakdown and instant cash-out", () => {
     assert.equal(a.status, b.status);
   });
 });
+
+describe("merchant performance scorecards", () => {
+  test("an admin sees per-restaurant metrics; a customer cannot", async () => {
+    const r = await call("GET", "/v1/admin/scorecards?days=90", { token: admin.token, country: "CD" });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.ok(Array.isArray(r.body.scorecards) && r.body.scorecards.length >= 1);
+    const card = r.body.scorecards.find((c: { branch_id: string }) => c.branch_id === branchId);
+    assert.ok(card, "the seeded branch has a scorecard");
+    assert.ok(card.orders >= 1, "it counts the orders delivered earlier in the suite");
+    assert.ok(card.delivered >= 1);
+    // Rates are 0–100 or null; the score is a number.
+    for (const k of ["acceptance_rate", "fulfilment_rate", "cancellation_rate"]) {
+      if (card[k] !== null) assert.ok(card[k] >= 0 && card[k] <= 100, `${k} is a percentage`);
+    }
+    assert.ok(card.score === null || (card.score >= 0 && card.score <= 100));
+    assert.ok("avg_prep_minutes" in card && "gmv" in card);
+    // A plain customer has no restaurants to see.
+    assert.equal((await call("GET", "/v1/admin/scorecards", { token: customer.token, country: "CD" })).status, 403);
+  });
+
+  test("the restaurant owner sees only their own branches", async () => {
+    const r = await call("GET", "/v1/admin/scorecards", { token: restaurantOwner.token, country: "CD" });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    // Every scorecard belongs to a branch in the owner's group (the one they can see).
+    assert.ok(r.body.scorecards.every((c: { branch_id: string }) => typeof c.branch_id === "string"));
+    assert.ok(r.body.scorecards.some((c: { branch_id: string }) => c.branch_id === branchId));
+  });
+});

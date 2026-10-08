@@ -452,3 +452,9 @@ tr.sel td { background: rgba(250, 210, 14, 0.12); }
 .chip.on { background: var(--navy, #1b2a4a); color: #fff; border-color: var(--navy, #1b2a4a); }
 .nutri { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; }
 .nutri-f { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted, #667); }
+
+/* Merchant performance scorecards (additive) */
+.score { display: inline-block; min-width: 34px; padding: 3px 8px; border-radius: 8px; font-weight: 800; background: var(--tint, #eef1f6); color: var(--muted, #667); }
+.score.good { background: color-mix(in srgb, #0a7d33 15%, transparent); color: #0a7d33; }
+.score.ok { background: color-mix(in srgb, #b5560a 15%, transparent); color: #b5560a; }
+.score.bad { background: color-mix(in srgb, #c01818 15%, transparent); color: #c01818; }
