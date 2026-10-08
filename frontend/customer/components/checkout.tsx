@@ -16,6 +16,10 @@ interface Quote {
   distance_meters?: number;
   /** Present for a signed-in member: the platform-funded benefit and the resulting payable total. */
   membership?: { plan_name: string; free_delivery: boolean; discount: MoneyWire; payable_total: MoneyWire };
+  /** Present when a valid promo code is applied. */
+  coupon?: { code: string; discount: MoneyWire };
+  /** The final amount after every discount (membership + coupon); use this when present. */
+  payable?: MoneyWire;
 }
 type Mode = "DELIVERY" | "TAKEAWAY";
 type Pay = "MOBILE_MONEY_PUSH" | "CARD" | "CASH_ON_DELIVERY";
@@ -44,6 +48,9 @@ export function Checkout() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
+  const [promo, setPromo] = useState("");
+  const [promoApplied, setPromoApplied] = useState("");
+  const [promoError, setPromoError] = useState<string | null>(null);
   const attempt = useRef<{ key: string; total: string } | null>(null);
   const placed = useRef<string | null>(null);
 
@@ -62,7 +69,8 @@ export function Checkout() {
     order_type: mode,
     ...(mode === "DELIVERY" && place ? { delivery: { lat: place.lat, lng: place.lng } } : {}),
     ...(mode === "DELIVERY" && tip !== "0" ? { tip } : {}),
-  }, [cart, mode, place, tip]);
+    ...(promoApplied ? { coupon_code: promoApplied } : {}),
+  }, [cart, mode, place, tip, promoApplied]);
 
   useEffect(() => {
     if (!body || !body.items.length || !live()) return;
@@ -70,14 +78,19 @@ export function Checkout() {
     setQuoteError(null);
     // Signed in → the quote carries the member's benefit (the token identifies them); a guest sees the plain price.
     api<Quote>("/v1/carts/quote", { method: "POST", body })
-      .then((q) => { if (!stale) setQuote(q); })
-      .catch((e: ApiError) => { if (!stale) { setQuote(null); setQuoteError(e.message); } });
+      .then((q) => { if (!stale) { setQuote(q); if (q.coupon) setPromoError(null); } })
+      .catch((e: ApiError) => {
+        if (stale) return;
+        // A bad promo code must not blank the whole checkout: drop it and show a promo error instead.
+        if (e.code.startsWith("COUPON_") && promoApplied) { setPromoError(e.message); setPromoApplied(""); }
+        else { setQuote(null); setQuoteError(e.message); }
+      });
     return () => { stale = true; };
   }, [body]);
 
   useEffect(() => {
     if (!quote) return;
-    const due = quote.membership?.payable_total ?? quote.total;
+    const due = quote.payable ?? quote.membership?.payable_total ?? quote.total;
     api<{ data: string[] }>(`/v1/countries/CD/payment-methods?amount_minor=${due.amount_minor}&currency=${due.currency}`, { auth: false })
       .then((r) => {
         const usable = r.data.filter((m) => m === "MOBILE_MONEY_PUSH" || m === "CARD" || m === "CASH_ON_DELIVERY");
@@ -109,7 +122,7 @@ export function Checkout() {
     setError(null); setNotice(null);
     try {
       // A member pays the discounted total; everyone else the plain total.
-      const due = quote.membership?.payable_total ?? quote.total;
+      const due = quote.payable ?? quote.membership?.payable_total ?? quote.total;
       let orderId = placed.current;
       if (!orderId) {
         // One Idempotency-Key per total: a retry of the same attempt replays, a new price is a new attempt.
@@ -201,6 +214,19 @@ export function Checkout() {
             <li key={i}><span className="q">{l.quantity}×</span><span className="cl-name">{l.name}{l.options?.length ? <small className="cl-opts">{l.options.join(" · ")}</small> : null}</span><span className="num">{l.total ? money(l.total) : "…"}</span></li>
           ))}
         </ul>
+        {signedIn ? (
+          <div className="promo">
+            {quote?.coupon ? (
+              <div className="promo-applied"><span>✓ Promo <b>{quote.coupon.code}</b> applied</span><button type="button" className="link-btn" onClick={() => { setPromoApplied(""); setPromo(""); setPromoError(null); }}>Remove</button></div>
+            ) : (
+              <div className="promo-row">
+                <input value={promo} onChange={(e) => { setPromo(e.target.value.toUpperCase()); setPromoError(null); }} placeholder="Promo code" aria-label="Promo code" />
+                <button type="button" className="btn light" disabled={!promo.trim()} onClick={() => setPromoApplied(promo.trim())}>Apply</button>
+              </div>
+            )}
+            {promoError ? <p className="form-error small">{promoError}</p> : null}
+          </div>
+        ) : null}
         {quote ? (
           <dl className="price-lines">
             {quote.price_lines.map((p) => (
@@ -209,14 +235,17 @@ export function Checkout() {
             {quote.membership ? (
               <div className="member-save"><dt>{quote.membership.plan_name}{quote.membership.free_delivery ? " · free delivery" : ""}</dt><dd className="num">−{money(quote.membership.discount)}</dd></div>
             ) : null}
-            <div className="total"><dt>Total</dt><dd className="num">{money(quote.membership?.payable_total ?? quote.total)}</dd></div>
+            {quote.coupon ? (
+              <div className="member-save"><dt>Promo {quote.coupon.code}</dt><dd className="num">−{money(quote.coupon.discount)}</dd></div>
+            ) : null}
+            <div className="total"><dt>Total</dt><dd className="num">{money(quote.payable ?? quote.membership?.payable_total ?? quote.total)}</dd></div>
           </dl>
         ) : quoteError ? <p className="form-error">{quoteError}</p> : <div className="skeleton-line" />}
         <p className="muted small">Restaurants pay 0% commission: dishes are at the counter price. Our 10% service charge is shown on its own line.</p>
         {notice ? <p className="form-notice" role="status">{notice}</p> : null}
         {error ? <p className="form-error" role="alert">{error}</p> : null}
         <button type="button" className="btn accent wide big" disabled={!quote || !!busy || (pay === "MOBILE_MONEY_PUSH" && msisdn.replace(/\D/g, "").length < 9)} onClick={placeOrder}>
-          {busy ?? (quote ? `Place order · ${money(quote.membership?.payable_total ?? quote.total)}` : "Place order")}
+          {busy ?? (quote ? `Place order · ${money(quote.payable ?? quote.membership?.payable_total ?? quote.total)}` : "Place order")}
         </button>
         <Link className="link-btn" href={`/store/?id=${cart.branch_id}`}>Change my order</Link>
       </aside>

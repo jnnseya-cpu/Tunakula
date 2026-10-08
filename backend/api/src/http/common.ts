@@ -23,6 +23,7 @@ export const TOKENS = {
   comms: "COMMS_SERVICE",
   membership: "MEMBERSHIP_SERVICE",
   group: "GROUP_SERVICE",
+  coupons: "COUPON_SERVICE",
   logger: "LOGGER",
 } as const;
 

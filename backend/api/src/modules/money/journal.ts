@@ -16,6 +16,8 @@ export const LEDGER_ACCOUNTS = [
   "subscription_revenue",
   // Rider incentives/quest bonuses the platform funds (a cost, debited when a bonus is earned).
   "rider_incentive_expense",
+  // Coupon/promo discounts the platform funds for the customer (a cost, debited at settlement).
+  "promotion_expense",
   // §18.2: the 10% customer service charge — the platform's main revenue under 0% merchant commission.
   "service_charge_revenue",
   "delivery_fee_revenue",

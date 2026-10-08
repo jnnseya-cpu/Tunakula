@@ -20,7 +20,7 @@ Legend: **Built** works end to end · **Partial** the engine or a screen exists,
 | Cart and checkout: delivery, takeaway, dine-in, scheduled | Built for delivery and takeaway (live quote, directions, tip); dine-in and scheduled missing |
 | Group ordering + bill-split | Built: a server-side shared cart with an invite code/link, each person adds their own dishes from their phone, the host locks and places one order (COD or mobile money), and the bill splits per person (each one's food plus a proportional slice of service charge, delivery and tip) summing to the total to the cent — the Uber Eats / DoorDash social-order feature StackFood lacks |
 | Pay: mobile money, card, cash, wallet, partial payment | Built: mobile money, card, cash on delivery; wallet and partial payment missing |
-| Coupons, cashback, campaigns | Missing |
+| Coupons, cashback, campaigns | Built (coupons): promo codes at checkout — percentage, fixed amount or free delivery, with minimum subtotal, max-discount cap, total and per-customer limits and a validity window; the platform funds the discount at settlement (promotion_expense) so the merchant and rider are paid in full, and the books stay balanced. Cashback and campaigns still missing |
 | Paid membership (Tunakula Plus): free delivery and/or service-charge discount | Built: admin defines plans per market; customers subscribe (`/membership`), the benefit shows live on the quote and checkout, the platform funds it from subscription revenue so the merchant and rider are still paid in full, and the settlement journal stays balanced. This is the DashPass / Uber One / Deliveroo Plus equivalent |
 | Live order tracking with map and rider | Built: live progress, door code, rider name, distance, arrival time and a map (kitchen, rider, door); street tiles need a map provider key |
 | Order history, reorder, cancel with reason, refund request | Built: history, order again, cancel; refund request missing |
@@ -69,7 +69,7 @@ Legend: **Built** works end to end · **Partial** the engine or a screen exists,
 | Zones (polygons, fees per zone) | Missing |
 | Cuisines, categories, add-ons, foods, bulk import/export | Partial: per-restaurant menu only |
 | Restaurants: list, add, join requests, commission/plan | Partial: list and menu |
-| Promotions: campaigns, banners, coupons, cashback, push, ads | Missing |
+| Promotions: campaigns, banners, coupons, cashback, push, ads | Partial: **coupon manager built** (Commerce → Codes promo: percentage/fixed/free-delivery codes with min subtotal, caps, limits and a window); campaigns, banners, cashback, push and ads still missing |
 | Membership plans (Tunakula Plus): define, price, benefits, activate | Built: plan manager at Commerce → Abonnement Plus (free delivery over a minimum subtotal, service-charge discount %, monthly/yearly), gated by `membership:manage` |
 | Customers: list, wallet, loyalty, subscribers | Missing |
 | Deliverymen: list, vehicles, shifts, reviews, bonuses, join requests | Partial: rider list with status and cash, join requests with ID review, and **incentive quests** (admin defines "N deliveries in a window for a bonus" at Riders; riders see progress and claim the bonus into their cashable balance) plus **performance tiers** (Bronze→Platinum) shown in the rider app; shifts and reviews still missing |

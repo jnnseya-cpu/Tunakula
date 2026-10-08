@@ -12,6 +12,7 @@ import type { EtaService } from "../app/eta.ts";
 import type { OnboardingService } from "../app/onboarding.ts";
 import type { MembershipService } from "../app/membership.ts";
 import type { GroupOrderService } from "../app/group.ts";
+import type { CouponService } from "../app/coupons.ts";
 import type { NotificationService } from "../app/comms.ts";
 import { serialiseQuote, type CommerceService, type PlaceOrderInput, type QuoteInput } from "../app/commerce.ts";
 import { badRequest, notFound } from "../app/errors.ts";
@@ -141,7 +142,7 @@ export class CatalogueController {
 
 type ItemBody = { names: Record<string, string>; description?: Record<string, string>; prices: Record<string, string>; category?: string | null; veg?: boolean | null; tags?: string[]; allergens?: string[]; recommended?: boolean; variations?: unknown; addons?: unknown };
 type QuoteItemBody = { item_id: string; quantity: number; options?: { group: string; choices: string[] }[]; addons?: string[] };
-type QuoteBody = { branch_id: string; items: QuoteItemBody[]; order_type: QuoteInput["orderType"]; delivery?: { lat: number; lng: number; rural?: boolean }; tip?: string };
+type QuoteBody = { branch_id: string; items: QuoteItemBody[]; order_type: QuoteInput["orderType"]; delivery?: { lat: number; lng: number; rural?: boolean }; tip?: string; coupon_code?: string };
 
 const toQuoteInput = (b: QuoteBody): QuoteInput => {
   if (!b || typeof b.branch_id !== "string" || !Array.isArray(b.items)) throw badRequest("BODY_INVALID", "Send branch_id, items and order_type");
@@ -151,6 +152,7 @@ const toQuoteInput = (b: QuoteBody): QuoteInput => {
     orderType: b.order_type ?? "DELIVERY",
     ...(b.delivery ? { delivery: b.delivery } : {}),
     ...(b.tip ? { tip: b.tip } : {}),
+    ...(b.coupon_code ? { couponCode: String(b.coupon_code) } : {}),
   };
 };
 
@@ -787,6 +789,36 @@ export class GroupController {
       ...(body.tip ? { tip: body.tip } : {}),
       ...(body.address ? { address: body.address } : {}),
     }, key);
+  }
+}
+
+/** Coupons / promo codes — admin defines them; customers apply them at checkout via coupon_code. */
+@Controller("v1/admin/coupons")
+export class CouponController {
+  constructor(
+    @Inject(TOKENS.db) private readonly db: Db,
+    @Inject(TOKENS.tokens) private readonly tokens: TokenService,
+    @Inject(TOKENS.coupons) private readonly coupons: CouponService,
+  ) {}
+
+  #p(req: FastifyRequest) {
+    return this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+  }
+
+  @Get()
+  async list(@Req() req: FastifyRequest) {
+    return this.coupons.list(country(req), await this.#p(req));
+  }
+
+  @Post()
+  async create(@Req() req: FastifyRequest, @Body() body: Record<string, unknown>) {
+    return this.coupons.save(country(req), await this.#p(req), undefined, body ?? {});
+  }
+
+  @Post(":id")
+  @HttpCode(200)
+  async update(@Req() req: FastifyRequest, @Param("id") id: string, @Body() body: Record<string, unknown>) {
+    return this.coupons.save(country(req), await this.#p(req), id, body ?? {});
   }
 }
 

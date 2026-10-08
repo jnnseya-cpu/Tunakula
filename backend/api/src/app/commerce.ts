@@ -15,6 +15,7 @@ import { OrderRuleError, replay, type OrderCommand } from "../modules/ordering/o
 import { RIDER_ORDER_TYPES, type Actor, type OrderLine, type OrderSnapshot, type OrderType } from "../modules/ordering/order-types.ts";
 import { priceOrder, PricingError, type PriceBreakdown } from "../modules/pricing/pricing.ts";
 import { membershipDiscount, type MembershipLookup } from "./membership.ts";
+import type { CouponLookup, CouponPrice } from "./coupons.ts";
 import { getBranch, menuOf, type BranchRow, type MenuItemRow } from "../persistence/catalogue.ts";
 import { userById } from "../persistence/identity.ts";
 import { postJournal } from "../persistence/ledger.ts";
@@ -32,6 +33,8 @@ export interface QuoteInput {
   readonly tip?: string;
   /** When set, the quote applies this customer's live membership benefit (free delivery / service-charge discount). */
   readonly customerId?: string;
+  /** A promo code to apply (requires customerId for limit checks). */
+  readonly couponCode?: string;
 }
 
 export interface PlaceOrderInput extends QuoteInput {
@@ -57,6 +60,14 @@ export interface Quote {
     readonly discount: MoneyJSON;
     readonly payableTotal: MoneyJSON;
   };
+  /** Present when a valid promo code applies. */
+  readonly coupon?: {
+    readonly couponId: string;
+    readonly code: string;
+    readonly discount: MoneyJSON;
+  };
+  /** The final amount the customer pays after every discount (membership + coupon). */
+  readonly payable?: MoneyJSON;
 }
 
 /** Default geofence for drop completion; becomes a Country Profile setting with the dispatch context. */
@@ -83,6 +94,7 @@ export class CommerceService {
   private readonly now: () => Date;
   private readonly notifier: OrderNotifier | undefined;
   private membership: MembershipLookup | undefined;
+  private coupons: CouponLookup | undefined;
 
   constructor(db: Db, registry: CountryConfigRegistry, routing: RoutingProvider, now: () => Date = () => new Date(), notifier?: OrderNotifier) {
     this.db = db;
@@ -95,6 +107,11 @@ export class CommerceService {
   /** Wires the membership service after construction (it is built alongside commerce), keeping the constructor stable. */
   useMembership(membership: MembershipLookup): void {
     this.membership = membership;
+  }
+
+  /** Wires the coupon service after construction. */
+  useCoupons(coupons: CouponLookup): void {
+    this.coupons = coupons;
   }
 
   /** Tells the customer about an order state change (best-effort, outside the state transaction). */
@@ -160,7 +177,21 @@ export class CommerceService {
         ...(input.tip ? { tip: Money.of(input.tip, ccy) } : {}),
       });
       const membership = await this.#memberBenefit(sql, country, input.customerId, breakdown);
-      return { branch: { id: branch.id, name: branch.name }, lines, breakdown, ...(distanceMeters !== undefined ? { distanceMeters } : {}), ...(membership ? { membership } : {}) };
+      // A coupon applies on top of any membership benefit; both are funded by the platform.
+      let coupon: CouponPrice | undefined;
+      if (input.couponCode && input.customerId && this.coupons) {
+        coupon = await this.coupons.priceFor(sql, country, input.customerId, input.couponCode, { goods: breakdown.goods, customerDeliveryFee: breakdown.customerDeliveryFee });
+      }
+      const memberDisc = membership ? Money.fromJSON(membership.discount) : Money.zero(ccy);
+      const couponDisc = coupon ? coupon.discount : Money.zero(ccy);
+      const payable = breakdown.total.subtract(memberDisc).subtract(couponDisc);
+      return {
+        branch: { id: branch.id, name: branch.name }, lines, breakdown,
+        ...(distanceMeters !== undefined ? { distanceMeters } : {}),
+        ...(membership ? { membership } : {}),
+        ...(coupon ? { coupon: { couponId: coupon.couponId, code: coupon.code, discount: coupon.discount.toJSON() } } : {}),
+        ...((membership || coupon) ? { payable: payable.toJSON() } : {}),
+      };
     } catch (error) {
       if (error instanceof PricingError) throw unprocessable(error.code, error.message);
       if (error instanceof RangeError) throw badRequest("AMOUNT_INVALID", error.message);
@@ -194,8 +225,8 @@ export class CommerceService {
     let placedRestaurant: string | undefined;
     const out = await this.db.tx({ country }, async (sql) => {
       const quote = await this.#quote(sql, country, { ...input, customerId: principal.userId });
-      // What the customer actually pays: the gross price minus any membership benefit the platform funds.
-      const total = quote.membership ? Money.fromJSON(quote.membership.payableTotal) : quote.breakdown.total;
+      // What the customer actually pays: the gross price minus any platform-funded discount (membership + coupon).
+      const total = quote.payable ? Money.fromJSON(quote.payable) : quote.breakdown.total;
       if (input.expectedTotal?.currency !== total.currency || input.expectedTotal.amount_minor !== total.minor.toString()) {
         throw conflict("PRICE_CHANGED", "The price changed since you last saw it; please confirm the new total", { quote: serialiseQuote(quote) });
       }
@@ -243,6 +274,7 @@ export class CommerceService {
           riderReceives: b.riderReceives.toJSON(),
           platformReceives: b.platformReceives.toJSON(),
           ...(quote.membership ? { membershipDiscount: quote.membership.discount } : {}),
+          ...(quote.coupon ? { couponDiscount: quote.coupon.discount } : {}),
         },
         paymentMode: input.paymentMode,
         configuredConfirmationModel: configured,
@@ -258,6 +290,10 @@ export class CommerceService {
       const actor: Actor = { kind: "CUSTOMER", id: principal.userId };
       const tenant = { country, brandId: branch.brand_id };
       await this.#run(sql, tenant, orderId, actor, `${idempotencyKey}:draft`, { type: "CREATE_DRAFT", snapshot });
+      // Log the coupon redemption now the order exists (idempotent on the order id).
+      if (quote.coupon && this.coupons) {
+        await this.coupons.record(sql, country, quote.coupon.couponId, principal.userId, orderId, Money.fromJSON(quote.coupon.discount));
+      }
       const next: OrderCommand = input.paymentMode === "PREPAID" ? { type: "START_CHECKOUT" } : { type: "PLACE_CASH_ORDER" };
       const { order } = await this.#run(sql, tenant, orderId, actor, `${idempotencyKey}:${next.type}`, next);
       return { orderId, state: order.state, recipientCode, quote };
@@ -379,10 +415,13 @@ export class CommerceService {
     const neg = (j: MoneyJSON) => Money.fromJSON(j).negate();
     // A membership benefit means the customer paid s.total (already net of the discount); the platform
     // funds the discount out of subscription revenue so the merchant and rider are still credited in full.
-    const discount = m.membershipDiscount ? Money.fromJSON(m.membershipDiscount) : Money.zero(Money.fromJSON(s.total).currency);
+    const ccy0 = Money.fromJSON(s.total).currency;
+    const discount = m.membershipDiscount ? Money.fromJSON(m.membershipDiscount) : Money.zero(ccy0);
+    const couponDisc = m.couponDiscount ? Money.fromJSON(m.couponDiscount) : Money.zero(ccy0);
     const entries: LedgerEntry[] = [
       { account: s.paymentMode === "PREPAID" ? "psp_clearing" : "cod_cash_in_transit", country: c, amount: Money.fromJSON(s.total) },
       { account: "subscription_revenue", country: c, amount: discount },
+      { account: "promotion_expense", country: c, amount: couponDisc },
       { account: "restaurant_payable", country: c, amount: neg(m.merchantReceives) },
       { account: "service_charge_revenue", country: c, amount: neg(m.serviceCharge) },
       { account: "rider_payable", country: c, amount: neg(m.riderReceives) },
@@ -518,6 +557,8 @@ export function serialiseQuote(q: Quote) {
           },
         }
       : {}),
+    ...(q.coupon ? { coupon: { code: q.coupon.code, discount: m(Money.fromJSON(q.coupon.discount)) } } : {}),
+    ...(q.payable ? { payable: m(Money.fromJSON(q.payable)) } : {}),
   };
 }
 

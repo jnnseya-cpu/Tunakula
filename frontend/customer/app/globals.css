@@ -1205,3 +1205,10 @@ section.tight { padding: 44px 0; }
 .r-quest-foot { display: flex; justify-content: space-between; align-items: center; color: var(--muted); }
 .r-quest-foot .ok { color: var(--ok, #0a7d33); font-weight: 600; }
 .r-btn.go.sm { padding: 5px 12px; font-size: 13px; width: auto; }
+
+/* Checkout promo code (additive) */
+.promo { margin: 10px 0; }
+.promo-row { display: flex; gap: 8px; }
+.promo-row input { flex: 1; padding: 10px 12px; border: 1px solid var(--rule); border-radius: var(--radius); text-transform: uppercase; }
+.promo-applied { display: flex; justify-content: space-between; align-items: center; color: var(--ok, #0a7d33); font-weight: 600; }
+.form-error.small { font-size: 13px; margin-top: 6px; }

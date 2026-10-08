@@ -1744,3 +1744,57 @@ describe("rider tiers and incentive quests", () => {
     assert.equal(bal.s, "0");
   });
 });
+
+describe("coupons / promo codes", () => {
+  test("admin creates a percent coupon; the customer applies it and the platform funds it at settlement", async () => {
+    await backdate(customer.userId, 40);
+    const c = await call("POST", "/v1/admin/coupons", { token: admin.token, country: "CD", body: { code: "WELCOME20", description: "20% off your order", kind: "PERCENT", value_bps: 2000, min_subtotal_minor: "1000", per_customer_limit: 2, days: 30 } });
+    assert.equal(c.status, 201, JSON.stringify(c.body));
+    assert.equal(c.body.code, "WELCOME20");
+    // A customer cannot create coupons.
+    assert.equal((await call("POST", "/v1/admin/coupons", { token: customer.token, country: "CD", body: { code: "HACK", kind: "FIXED", value_minor: "1" } })).status, 403);
+    // Quote with the code: 20% of 2x$12.50 = $5.00 off.
+    const q = await call("POST", "/v1/carts/quote", { token: customer.token, country: "CD", body: { ...cart(), coupon_code: "welcome20" } });
+    assert.equal(q.status, 200, JSON.stringify(q.body));
+    assert.equal(q.body.coupon.code, "WELCOME20");
+    assert.equal(q.body.coupon.discount.amount_minor, "500");
+    assert.equal(BigInt(q.body.payable.amount_minor), BigInt(q.body.total.amount_minor) - 500n);
+    // Place COD with the discounted total, then deliver to settle.
+    const placed = await call("POST", "/v1/orders", { token: customer.token, country: "CD", body: { ...cart(), coupon_code: "WELCOME20", payment_mode: "CASH_ON_DELIVERY", expected_total: q.body.payable } });
+    assert.equal(placed.status, 201, JSON.stringify(placed.body));
+    const orderId = placed.body.order_id, code = placed.body.recipient_code;
+    assert.equal((await call("GET", `/v1/orders/${orderId}`, { token: customer.token, country: "CD" })).body.total.amount_minor, q.body.payable.amount_minor);
+    await transition(ops, orderId, { type: "ASSIGN_RIDER", riderId: rider.userId });
+    await transition(kitchen, orderId, { type: "ACCEPT" });
+    await transition(kitchen, orderId, { type: "START_PREPARING" });
+    await transition(kitchen, orderId, { type: "PACK", confirmedLineIds: ["l1"], packageCount: 1, allergenAcknowledged: true });
+    await transition(kitchen, orderId, { type: "MARK_READY", packages: [{ labelId: "C-1", sealId: "CS-1" }], packPhotoRef: "photo://pack" });
+    await transition(rider, orderId, { type: "PICK_UP", scannedLabelIds: ["C-1"], restaurantConfirmed: true, sealsIntact: true, location: KINSHASA });
+    assert.equal((await transition(rider, orderId, { type: "DELIVER", scannedLabelId: "C-1", location: DROP, sealIntact: true, verification: { method: "CODE", code } })).body.state, "DELIVERED");
+    // The settlement funds the coupon from promotion_expense, and the books balance.
+    const entries = await inspect("CD", "SELECT e.account, e.amount_minor::text AS amount, e.currency FROM money.ledger_entry e JOIN money.journal j ON j.id = e.journal_id WHERE j.idempotency_key = $1 ORDER BY e.line", [`order:${orderId}:settlement`]);
+    const promo = entries.find((e) => e.account === "promotion_expense");
+    assert.ok(promo && promo.amount === "500", "the platform funds the $5 coupon from promotion_expense");
+    const byCcy = new Map<string, bigint>();
+    for (const e of entries) byCcy.set(e.currency, (byCcy.get(e.currency) ?? 0n) + BigInt(e.amount));
+    for (const [, s] of byCcy) assert.equal(s, 0n, "the settlement journal balances");
+    // The redemption was recorded.
+    const [red] = await inspect("CD", "SELECT amount_minor::text AS a FROM promotions.coupon_redemption WHERE order_id = $1", [orderId]);
+    assert.equal(red.a, "500");
+  });
+
+  test("limits and bad codes are enforced", async () => {
+    await call("POST", "/v1/admin/coupons", { token: admin.token, country: "CD", body: { code: "ONCE", kind: "FIXED", value_minor: "200", per_customer_limit: 1, days: 30 } });
+    // First use: place (no need to deliver).
+    const q = await call("POST", "/v1/carts/quote", { token: customer.token, country: "CD", body: { ...cart(), coupon_code: "ONCE" } });
+    assert.equal(q.body.coupon.discount.amount_minor, "200");
+    await call("POST", "/v1/orders", { token: customer.token, country: "CD", body: { ...cart(), coupon_code: "ONCE", payment_mode: "CASH_ON_DELIVERY", expected_total: q.body.payable } });
+    // Second attempt by the same customer is refused.
+    assert.equal((await call("POST", "/v1/carts/quote", { token: customer.token, country: "CD", body: { ...cart(), coupon_code: "ONCE" } })).body.code, "COUPON_ALREADY_USED");
+    // An unknown code is refused.
+    assert.equal((await call("POST", "/v1/carts/quote", { token: customer.token, country: "CD", body: { ...cart(), coupon_code: "NOPE" } })).body.code, "COUPON_INVALID");
+    // A code lists in the admin panel.
+    const list = await call("GET", "/v1/admin/coupons", { token: admin.token, country: "CD" });
+    assert.ok(list.body.coupons.some((x: { code: string }) => x.code === "ONCE"));
+  });
+});
