@@ -46,6 +46,8 @@ export interface PlaceOrderInput extends QuoteInput {
   readonly recipient?: { readonly name: string; readonly phone: string };
   readonly gifted?: boolean;
   readonly contactless?: boolean;
+  /** The customer's confirmation that they are 18+ (required when the cart has an age-restricted item). */
+  readonly ageConfirmed?: boolean;
 }
 
 export interface Quote {
@@ -69,6 +71,8 @@ export interface Quote {
   };
   /** The final amount the customer pays after every discount (membership + coupon). */
   readonly payable?: MoneyJSON;
+  /** True when the cart has an age-restricted item: the customer must confirm 18+ to place. */
+  readonly ageRestricted?: boolean;
 }
 
 /** Default geofence for drop completion; becomes a Country Profile setting with the dispatch context. */
@@ -188,12 +192,14 @@ export class CommerceService {
       const memberDisc = membership ? Money.fromJSON(membership.discount) : Money.zero(ccy);
       const couponDisc = coupon ? coupon.discount : Money.zero(ccy);
       const payable = breakdown.total.subtract(memberDisc).subtract(couponDisc);
+      const ageRestricted = input.items.some((li) => menu.get(li.itemId)?.age_restricted === true);
       return {
         branch: { id: branch.id, name: branch.name }, lines, breakdown,
         ...(distanceMeters !== undefined ? { distanceMeters } : {}),
         ...(membership ? { membership } : {}),
         ...(coupon ? { coupon: { couponId: coupon.couponId, code: coupon.code, discount: coupon.discount.toJSON() } } : {}),
         ...((membership || coupon) ? { payable: payable.toJSON() } : {}),
+        ...(ageRestricted ? { ageRestricted: true } : {}),
       };
     } catch (error) {
       if (error instanceof PricingError) throw unprocessable(error.code, error.message);
@@ -233,6 +239,7 @@ export class CommerceService {
       if (input.expectedTotal?.currency !== total.currency || input.expectedTotal.amount_minor !== total.minor.toString()) {
         throw conflict("PRICE_CHANGED", "The price changed since you last saw it; please confirm the new total", { quote: serialiseQuote(quote) });
       }
+      if (quote.ageRestricted && input.ageConfirmed !== true) throw unprocessable("AGE_CONFIRMATION_REQUIRED", "This order contains an age-restricted item; confirm you are 18 or older");
       if (input.paymentMode === "CASH_ON_DELIVERY") await this.#assertCodAllowed(sql, profile, principal.userId, total);
       if (input.orderType === "XBO" && !input.recipient) throw badRequest("RECIPIENT_REQUIRED", "Cross-border orders name a recipient");
 
@@ -284,6 +291,7 @@ export class CommerceService {
         // AGENT_OPTIMISED is decided per order by the Dispatch Optimiser (A2); until it runs, restaurant-first.
         confirmationModel: configured === "AGENT_OPTIMISED" ? "RESTAURANT_FIRST" : configured,
         highValue: false,
+        ...(quote.ageRestricted ? { ageRestricted: true } : {}),
         contactlessRequested: input.contactless === true,
         recipientCodeHash: createHash("sha256").update(recipientCode).digest("hex"),
         ...(input.delivery ? { dropLocation: { lat: input.delivery.lat, lng: input.delivery.lng } } : {}),
@@ -562,6 +570,7 @@ export function serialiseQuote(q: Quote) {
       : {}),
     ...(q.coupon ? { coupon: { code: q.coupon.code, discount: m(Money.fromJSON(q.coupon.discount)) } } : {}),
     ...(q.payable ? { payable: m(Money.fromJSON(q.payable)) } : {}),
+    ...(q.ageRestricted ? { age_restricted: true } : {}),
   };
 }
 

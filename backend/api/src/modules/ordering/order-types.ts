@@ -118,6 +118,8 @@ export interface OrderSnapshot {
   readonly configuredConfirmationModel: "RESTAURANT_FIRST" | "RIDER_FIRST" | "AGENT_OPTIMISED";
   readonly confirmationModel: "RESTAURANT_FIRST" | "RIDER_FIRST";
   readonly highValue: boolean;
+  /** The order has an age-restricted item; the rider must check ID at the door (§age). */
+  readonly ageRestricted?: boolean;
   readonly contactlessRequested: boolean;
   /** SHA-256 hex of the recipient's one-time code; the code itself is never stored. */
   readonly recipientCodeHash: string;

@@ -72,6 +72,7 @@ export class CatalogueService {
       ...(input.allergens ? { allergens: input.allergens } : {}),
       ...(input.dietary !== undefined ? { dietary: dietaryTags(input.dietary) } : {}),
       ...(input.nutrition !== undefined ? { nutrition: nutritionFacts(input.nutrition) } : {}),
+      ...(input.age_restricted !== undefined ? { ageRestricted: Boolean(input.age_restricted) } : {}),
       ...(input.recommended !== undefined ? { recommended: Boolean(input.recommended) } : {}),
       ...(input.variations !== undefined ? { variations: this.#variations(input.variations, delta) } : {}),
       ...(input.addons !== undefined ? { addons: this.#addons(input.addons, delta) } : {}),
@@ -200,6 +201,7 @@ interface ItemInput {
   allergens?: string[];
   dietary?: unknown;
   nutrition?: unknown;
+  age_restricted?: boolean;
   recommended?: boolean;
   variations?: unknown;
   addons?: unknown;
@@ -247,6 +249,7 @@ function publicItem(i: MenuItemRow) {
     allergens: i.allergens,
     dietary: i.dietary,
     nutrition: i.nutrition,
+    age_restricted: i.age_restricted,
     available: i.available,
     recommended: i.recommended,
     // Variation/add-on prices are minor units in the market's settlement currency (the client knows it).

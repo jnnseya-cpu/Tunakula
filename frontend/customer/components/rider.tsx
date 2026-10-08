@@ -10,7 +10,7 @@ import { api, ApiError, getSession, live, money, setSession, type MoneyWire } fr
 import { TileMap, type MapPin } from "./map";
 
 interface Job {
-  order_id: string; ref: string; state: string; type: string; items: number; labels: string[];
+  order_id: string; ref: string; state: string; type: string; items: number; labels: string[]; age_restricted?: boolean;
   pickup: { branch_id: string; name: string; commune: string | null; lat: number; lng: number };
   drop: { lat: number; lng: number; note: string | null; customer: string | null } | null;
   collect: MoneyWire | null; earnings: MoneyWire | null;
@@ -405,6 +405,7 @@ function ActiveJob({ job, pos, onDone }: { job: Job; pos: Pos | null; onDone: ()
       ) : (
         <div className="r-card">
           <h2>{job.drop?.customer ?? "Customer"}</h2>
+          {job.age_restricted ? <p className="r-age" role="note">🔞 18+ order — check a photo ID at the door before you hand over. Do not leave it unattended.</p> : null}
           {job.drop?.note ? <p className="r-note">“{job.drop.note}”</p> : null}
           {job.drop ? <a className="r-btn nav" href={nav(job.drop)} target="_blank" rel="noreferrer">Navigate to the customer</a> : null}
           {job.collect ? <p className="r-cash">Collect {money(job.collect)} in cash before you hand over</p> : null}

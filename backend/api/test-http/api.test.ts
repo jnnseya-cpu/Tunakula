@@ -1928,3 +1928,26 @@ describe("opening hours", () => {
     assert.deepEqual(got.body.special_hours, {});
   });
 });
+
+describe("age-restricted items (18+)", () => {
+  let wineId: string;
+  test("an age-restricted order needs an 18+ confirmation", async () => {
+    // The owner adds an age-restricted item.
+    const wine = await call("POST", `/v1/branches/${branchId}/items`, { token: restaurantOwner.token, country: "CD", body: { names: { fr: "Vin rouge", en: "Red wine" }, prices: { USD: "15.00" }, age_restricted: true } });
+    assert.equal(wine.status, 201, JSON.stringify(wine.body));
+    assert.equal(wine.body.age_restricted, true);
+    wineId = wine.body.id;
+    // The quote flags it.
+    const q = await call("POST", "/v1/carts/quote", { token: customer.token, country: "CD", body: { branch_id: branchId, items: [{ item_id: wineId, quantity: 1 }], order_type: "DELIVERY", delivery: DROP } });
+    assert.equal(q.body.age_restricted, true);
+    // Placing without confirming age is refused.
+    const no = await call("POST", "/v1/orders", { token: customer.token, country: "CD", body: { branch_id: branchId, items: [{ item_id: wineId, quantity: 1 }], order_type: "DELIVERY", delivery: DROP, payment_mode: "PREPAID", expected_total: q.body.total } });
+    assert.equal(no.body.code, "AGE_CONFIRMATION_REQUIRED");
+    // Confirming age lets it through.
+    const yes = await call("POST", "/v1/orders", { token: customer.token, country: "CD", body: { branch_id: branchId, items: [{ item_id: wineId, quantity: 1 }], order_type: "DELIVERY", delivery: DROP, payment_mode: "PREPAID", expected_total: q.body.total, age_confirmed: true } });
+    assert.equal(yes.status, 201, JSON.stringify(yes.body));
+    // A normal order (no age item) needs no confirmation.
+    const plain = await call("POST", "/v1/carts/quote", { token: customer.token, country: "CD", body: cart() });
+    assert.equal(plain.body.age_restricted, undefined);
+  });
+});

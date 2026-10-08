@@ -1147,6 +1147,8 @@ section.tight { padding: 44px 0; }
 .diet-chip.clear { color: var(--muted); font-weight: 500; }
 .diet-badges { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0; }
 .diet-tag { font-size: 11px; font-weight: 700; letter-spacing: .02em; text-transform: uppercase; color: var(--ok, #0a7d33); background: color-mix(in srgb, var(--ok, #0a7d33) 10%, transparent); border-radius: 6px; padding: 2px 7px; }
+.diet-tag.age { color: var(--bad, #c0391b); background: color-mix(in srgb, var(--bad, #c0391b) 12%, transparent); }
+.r-age { background: color-mix(in srgb, var(--bad, #c0391b) 10%, #fff); border: 1px solid color-mix(in srgb, var(--bad, #c0391b) 35%, transparent); color: var(--bad, #c0391b); border-radius: 12px; padding: 10px 12px; font-weight: 600; overflow-wrap: anywhere; }
 .kcal { font-size: 11px; font-weight: 600; color: var(--muted); background: var(--tint); border-radius: 6px; padding: 2px 7px; }
 
 /* Group ordering (additive) */

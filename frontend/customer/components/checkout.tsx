@@ -20,6 +20,8 @@ interface Quote {
   coupon?: { code: string; discount: MoneyWire };
   /** The final amount after every discount (membership + coupon); use this when present. */
   payable?: MoneyWire;
+  /** The cart has an age-restricted item; the customer must confirm 18+. */
+  age_restricted?: boolean;
 }
 type Mode = "DELIVERY" | "TAKEAWAY";
 type Pay = "MOBILE_MONEY_PUSH" | "CARD" | "CASH_ON_DELIVERY";
@@ -51,6 +53,7 @@ export function Checkout() {
   const [notice, setNotice] = useState<string | null>(null);
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
   const [promo, setPromo] = useState("");
+  const [ageOk, setAgeOk] = useState(false);
   const [promoApplied, setPromoApplied] = useState("");
   const [promoError, setPromoError] = useState<string | null>(null);
   const attempt = useRef<{ key: string; total: string } | null>(null);
@@ -150,7 +153,7 @@ export function Checkout() {
         setBusy("Placing your order…");
         const r = await api<{ order_id: string; recipient_code: string; state: string }>("/v1/orders", {
           method: "POST", key: attempt.current.key,
-          body: { ...body, payment_mode: pay === "CASH_ON_DELIVERY" ? "CASH_ON_DELIVERY" : "PREPAID", expected_total: due, ...(landmark.trim() ? { address: { landmark: landmark.trim() } } : {}) },
+          body: { ...body, payment_mode: pay === "CASH_ON_DELIVERY" ? "CASH_ON_DELIVERY" : "PREPAID", expected_total: due, ...(quote.age_restricted ? { age_confirmed: true } : {}), ...(landmark.trim() ? { address: { landmark: landmark.trim() } } : {}) },
         });
         orderId = r.order_id;
         placed.current = orderId;
@@ -271,9 +274,12 @@ export function Checkout() {
           </dl>
         ) : quoteError ? <p className="form-error">{quoteError}</p> : <div className="skeleton-line" />}
         <p className="muted small">Restaurants pay 0% commission: dishes are at the counter price. Our 10% service charge is shown on its own line.</p>
+        {quote?.age_restricted ? (
+          <label className="age-gate"><input type="checkbox" checked={ageOk} onChange={(e) => setAgeOk(e.target.checked)} /> I confirm I am 18 or older. The rider will check ID at the door for the age-restricted items.</label>
+        ) : null}
         {notice ? <p className="form-notice" role="status">{notice}</p> : null}
         {error ? <p className="form-error" role="alert">{error}</p> : null}
-        <button type="button" className="btn accent wide big" disabled={!quote || !!busy || (pay === "MOBILE_MONEY_PUSH" && msisdn.replace(/\D/g, "").length < 9)} onClick={placeOrder}>
+        <button type="button" className="btn accent wide big" disabled={!quote || !!busy || (quote?.age_restricted && !ageOk) || (pay === "MOBILE_MONEY_PUSH" && msisdn.replace(/\D/g, "").length < 9)} onClick={placeOrder}>
           {busy ?? (quote ? `Place order · ${money(quote.payable ?? quote.membership?.payable_total ?? quote.total)}` : "Place order")}
         </button>
         <Link className="link-btn" href={`/store/?id=${cart.branch_id}`}>Change my order</Link>

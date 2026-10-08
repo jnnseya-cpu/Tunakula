@@ -448,7 +448,7 @@ export class DispatchService {
       [orderId],
     );
     if (!o) throw notFound("Order");
-    const s = o.snapshot as { dropLocation?: Point; lines?: { name: string; quantity: number }[]; deliveryNote?: string; money?: { riderReceives?: { minor: string; currency: string } } };
+    const s = o.snapshot as { dropLocation?: Point; lines?: { name: string; quantity: number }[]; deliveryNote?: string; ageRestricted?: boolean; money?: { riderReceives?: { minor: string; currency: string } } };
     return {
       order_id: o.order_id,
       ref: o.order_id.slice(-5).toUpperCase(),
@@ -461,6 +461,7 @@ export class DispatchService {
       // Cash the rider collects at the door (cash-on-delivery orders only).
       collect: o.payment_mode === "CASH_ON_DELIVERY" ? { amount_minor: o.total_minor, currency: o.currency } : null,
       earnings: s.money?.riderReceives ? { amount_minor: s.money.riderReceives.minor, currency: s.money.riderReceives.currency } : null,
+      age_restricted: s.ageRestricted === true,
     };
   }
 

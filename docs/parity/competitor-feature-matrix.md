@@ -112,7 +112,7 @@ Reviews/ratings (restaurant + item), favourites, multi-channel notifications (pu
 | Favourites (restaurants + items) | ~ [INF] | ? | ~ | ? | ✔ |
 | Reviews/ratings (restaurant + item + courier) | ~ [INF] | ? | ? | ~ | ✔ |
 | Grocery / convenience vertical | ✘ (separate 6amMart product) | ✔ | ✔ | ✔ | ✔ (Takeaway) |
-| Alcohol / age verification | ✘ | ? | ? | ✔ | ? |
+| Alcohol / age verification | ✘ | ? | ? | ✔ | ? | **Tunakula: ✔ built** — menu `age_restricted` flag (admin toggle), storefront 18+ badge, checkout 18+ confirmation gate (`AGE_CONFIRMATION_REQUIRED` until confirmed), order snapshot `ageRestricted`, rider job "check ID at the door" prompt |
 | Gift cards | ✘ | ✔ | ✔ | ? | ✔ |
 | Corporate / business accounts | ✘ | ✔ | ✔ | ✔ (Plus for companies) | ? |
 
@@ -307,7 +307,7 @@ The superset below merges all four actors into build epics. **Each epic notes wh
 | P2 | **PIN/OTP delivery confirmation for driver** (hand-to-customer) | Uber Eats PIN | Delivery integrity/anti-fraud |
 | ✅ P2 (hours) | **Order throttling / busy-mode + special/holiday hours** — **special/holiday + weekly hours BUILT** (per-restaurant weekly schedule + date overrides; ordering refused when closed; storefront reflects it); busy-mode pause/resume already built | all big-4 | Merchant ops during peaks |
 | P3 | **Grocery/convenience vertical + parcel delivery mode** | DoorDash, Uber, Deliveroo, Takeaway | Basket expansion (6amMart covers separately) |
-| P3 | **Alcohol/age-verification flow** (ID scan, 18+ gates) | Deliveroo | Regulated-goods expansion |
+| ✅ P3 | **Alcohol/age-verification flow** (ID scan, 18+ gates) — **BUILT**: menu `age_restricted` flag, storefront 18+ badge, checkout 18+ confirmation gate, order snapshot carries `ageRestricted`, rider "check ID at the door" prompt | Deliveroo | Regulated-goods expansion |
 | P3 | **Gift cards + corporate/business accounts** | DoorDash, Uber for Business | B2B + gifting revenue |
 | P3 | **Per-zone order shut-off + multi-zone restaurants** (fix known StackFood limits) | — (StackFood defect) | Operational flexibility |
 | P3 | **Internal fraud/risk + chargeback-dispute ops tooling** | DoorDash Risk Ops | Platform integrity at scale |

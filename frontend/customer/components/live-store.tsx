@@ -11,7 +11,7 @@ import { PlateArt, recipeFor } from "./plate-art";
 
 interface VOption { id: string; name: string; price: string }
 interface Variation { id: string; name: string; type: "SINGLE" | "MULTI"; required: boolean; min: number; max: number; options: VOption[] }
-interface MenuItem { id: string; names: Record<string, string>; prices: Record<string, MoneyWire>; tags: string[]; allergens: string[]; available: boolean; variations?: Variation[]; addons?: VOption[]; veg?: boolean | null; dietary?: string[]; nutrition?: Record<string, number> }
+interface MenuItem { id: string; names: Record<string, string>; prices: Record<string, MoneyWire>; tags: string[]; allergens: string[]; available: boolean; variations?: Variation[]; addons?: VOption[]; veg?: boolean | null; dietary?: string[]; nutrition?: Record<string, number>; age_restricted?: boolean }
 
 const DIETARY_LABEL: Record<string, string> = { VEGETARIAN: "Vegetarian", VEGAN: "Vegan", HALAL: "Halal", KOSHER: "Kosher", GLUTEN_FREE: "Gluten-free", DAIRY_FREE: "Dairy-free", NUT_FREE: "Nut-free", ORGANIC: "Organic", SPICY: "Spicy" };
 /** The dietary tags the storefront offers as quick filters. */
@@ -161,8 +161,9 @@ export function LiveStore() {
                     <h3>{name}</h3>
                     {nameOf(i.names, "en") !== name ? <p className="muted">{nameOf(i.names, "en")}</p> : null}
                     {optioned ? <p className="muted small">{(i.variations?.length ?? 0) > 0 ? "Choices" : "Add-ons"} available</p> : null}
-                    {dietaryOf(i).length || i.nutrition?.kcal !== undefined ? (
+                    {dietaryOf(i).length || i.nutrition?.kcal !== undefined || i.age_restricted ? (
                       <p className="diet-badges">
+                        {i.age_restricted ? <span className="diet-tag age">18+</span> : null}
                         {dietaryOf(i).map((d) => <span key={d} className="diet-tag">{DIETARY_LABEL[d] ?? d}</span>)}
                         {i.nutrition?.kcal !== undefined ? <span className="kcal">{i.nutrition.kcal} kcal</span> : null}
                       </p>

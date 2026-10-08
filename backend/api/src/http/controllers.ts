@@ -181,7 +181,7 @@ export class OrdersController {
   }
 
   @Post("orders")
-  async place(@Req() req: FastifyRequest, @Body() body: QuoteBody & { payment_mode: PlaceOrderInput["paymentMode"]; expected_total: PlaceOrderInput["expectedTotal"]; recipient?: PlaceOrderInput["recipient"]; gifted?: boolean; contactless?: boolean; address?: { landmark?: string; voice_note_url?: string } }) {
+  async place(@Req() req: FastifyRequest, @Body() body: QuoteBody & { payment_mode: PlaceOrderInput["paymentMode"]; expected_total: PlaceOrderInput["expectedTotal"]; recipient?: PlaceOrderInput["recipient"]; gifted?: boolean; contactless?: boolean; age_confirmed?: boolean; address?: { landmark?: string; voice_note_url?: string } }) {
     const uid = userId(req, this.tokens);
     const principal = await this.db.tx({}, (sql) => loadPrincipal(sql, uid));
     const key = req.headers["idempotency-key"] as string;
@@ -192,6 +192,7 @@ export class OrdersController {
       ...(body.recipient ? { recipient: body.recipient } : {}),
       ...(body.gifted ? { gifted: true } : {}),
       ...(body.contactless ? { contactless: true } : {}),
+      ...(body.age_confirmed ? { ageConfirmed: true } : {}),
       ...(body.address?.landmark ? { address: { landmark: String(body.address.landmark) } } : {}),
     }, key);
     return { order_id: r.orderId, state: r.state, recipient_code: r.recipientCode, quote: serialiseQuote(r.quote) };

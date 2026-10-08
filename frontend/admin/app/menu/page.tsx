@@ -19,7 +19,7 @@ interface Item {
   prices: Record<string, MoneyWire>; category: string | null; veg: boolean | null;
   tags: string[]; allergens: string[]; available: boolean; recommended: boolean;
   variations: ApiVariation[]; addons: ApiOption[];
-  dietary?: string[]; nutrition?: Record<string, number>;
+  dietary?: string[]; nutrition?: Record<string, number>; age_restricted?: boolean;
 }
 const DIETARY = ["VEGETARIAN", "VEGAN", "HALAL", "KOSHER", "GLUTEN_FREE", "DAIRY_FREE", "NUT_FREE", "ORGANIC", "SPICY"] as const;
 const DIETARY_LABEL: Record<string, [string, string]> = {
@@ -38,7 +38,7 @@ export default function MenuPage() {
 }
 
 const nameOf = (names: Record<string, string>, lang: string) => names[lang] || names.fr || names.en || Object.values(names)[0] || "";
-const blankForm = () => ({ id: "", name_fr: "", name_en: "", desc_fr: "", category: "", price: "", veg: "" as "" | "veg" | "non", recommended: false, tags: "", allergens: "", dietary: [] as string[], kcal: "", protein_g: "", carbs_g: "", fat_g: "", variations: [] as FormVariation[], addons: [] as FormAddon[] });
+const blankForm = () => ({ id: "", name_fr: "", name_en: "", desc_fr: "", category: "", price: "", veg: "" as "" | "veg" | "non", recommended: false, age_restricted: false, tags: "", allergens: "", dietary: [] as string[], kcal: "", protein_g: "", carbs_g: "", fat_g: "", variations: [] as FormVariation[], addons: [] as FormAddon[] });
 type Form = ReturnType<typeof blankForm>;
 
 function Menu() {
@@ -81,7 +81,7 @@ function Menu() {
   const edit = (it: Item) => setForm({
     id: it.id, name_fr: it.names.fr ?? "", name_en: it.names.en ?? "", desc_fr: it.description?.fr ?? "",
     category: it.category ?? "", price: it.prices[settlement] ? decimal(it.prices[settlement]!.amount_minor, settlement) : "",
-    veg: it.veg === true ? "veg" : it.veg === false ? "non" : "", recommended: it.recommended, tags: it.tags.join(", "), allergens: it.allergens.join(", "),
+    veg: it.veg === true ? "veg" : it.veg === false ? "non" : "", recommended: it.recommended, age_restricted: it.age_restricted ?? false, tags: it.tags.join(", "), allergens: it.allergens.join(", "),
     dietary: [...(it.dietary ?? [])],
     kcal: it.nutrition?.kcal !== undefined ? String(it.nutrition.kcal) : "", protein_g: it.nutrition?.protein_g !== undefined ? String(it.nutrition.protein_g) : "",
     carbs_g: it.nutrition?.carbs_g !== undefined ? String(it.nutrition.carbs_g) : "", fat_g: it.nutrition?.fat_g !== undefined ? String(it.nutrition.fat_g) : "",
@@ -151,6 +151,7 @@ function Menu() {
       category: form.category.trim() || null,
       veg: form.veg === "veg" ? true : form.veg === "non" ? false : null,
       recommended: form.recommended,
+      age_restricted: form.age_restricted,
       tags: form.tags.split(",").map((t) => t.trim()).filter(Boolean),
       allergens: form.allergens.split(",").map((t) => t.trim()).filter(Boolean),
       dietary: form.dietary,
@@ -223,6 +224,7 @@ function Menu() {
               <label>{L("Prix", "Price")} ({settlement})<input className="input" inputMode="decimal" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} /></label>
               <label>{L("Type", "Type")}<select className="select" value={form.veg} onChange={(e) => setForm({ ...form, veg: e.target.value as Form["veg"] })}><option value="">—</option><option value="veg">{L("Végétarien", "Veg")}</option><option value="non">{L("Non végétarien", "Non-veg")}</option></select></label>
               <label className="chk"><input type="checkbox" checked={form.recommended} onChange={(e) => setForm({ ...form, recommended: e.target.checked })} /> {L("Recommandé", "Recommended")}</label>
+              <label className="chk"><input type="checkbox" checked={form.age_restricted} onChange={(e) => setForm({ ...form, age_restricted: e.target.checked })} /> {L("Réservé aux 18+ (alcool)", "Age-restricted (18+)")}</label>
               <label>{L("Balises (séparées par des virgules)", "Tags (comma-separated)")}<input className="input" value={form.tags} onChange={(e) => setForm({ ...form, tags: e.target.value })} /></label>
               <label>{L("Allergènes (virgules)", "Allergens (commas)")}<input className="input" value={form.allergens} onChange={(e) => setForm({ ...form, allergens: e.target.value })} /></label>
               <div className="wide">

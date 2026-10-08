@@ -36,6 +36,7 @@ export interface MenuItemRow {
   addons: Addon[];
   dietary: string[];
   nutrition: Record<string, number>;
+  age_restricted: boolean;
 }
 
 export interface MenuItemInput {
@@ -51,9 +52,10 @@ export interface MenuItemInput {
   addons?: Addon[];
   dietary?: string[];
   nutrition?: Record<string, number>;
+  ageRestricted?: boolean;
 }
 
-const ITEM_COLUMNS = "id, branch_id, names, description, prices, category, veg, tags, allergens, available, recommended, variations, addons, dietary, nutrition";
+const ITEM_COLUMNS = "id, branch_id, names, description, prices, category, veg, tags, allergens, available, recommended, variations, addons, dietary, nutrition, age_restricted";
 
 export async function createBranch(sql: Sql, b: Omit<BranchRow, "id" | "status">): Promise<BranchRow> {
   const [row] = await sql.query<BranchRow & Record<string, unknown>>(
@@ -74,9 +76,9 @@ export async function getBranch(sql: Sql, id: string): Promise<BranchRow | undef
 
 export async function addMenuItem(sql: Sql, branch: BranchRow, i: MenuItemInput): Promise<MenuItemRow> {
   const [row] = await sql.query<MenuItemRow & Record<string, unknown>>(
-    `INSERT INTO catalogue.menu_item (branch_id, country_iso2, brand_id, names, description, prices, category, veg, tags, allergens, recommended, variations, addons, dietary, nutrition)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING ${ITEM_COLUMNS}`,
-    [branch.id, branch.country_iso2, branch.brand_id, JSON.stringify(i.names), JSON.stringify(i.description ?? {}), JSON.stringify(i.prices), i.category ?? null, i.veg ?? null, i.tags ?? [], i.allergens ?? [], i.recommended ?? false, JSON.stringify(i.variations ?? []), JSON.stringify(i.addons ?? []), i.dietary ?? [], JSON.stringify(i.nutrition ?? {})],
+    `INSERT INTO catalogue.menu_item (branch_id, country_iso2, brand_id, names, description, prices, category, veg, tags, allergens, recommended, variations, addons, dietary, nutrition, age_restricted)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING ${ITEM_COLUMNS}`,
+    [branch.id, branch.country_iso2, branch.brand_id, JSON.stringify(i.names), JSON.stringify(i.description ?? {}), JSON.stringify(i.prices), i.category ?? null, i.veg ?? null, i.tags ?? [], i.allergens ?? [], i.recommended ?? false, JSON.stringify(i.variations ?? []), JSON.stringify(i.addons ?? []), i.dietary ?? [], JSON.stringify(i.nutrition ?? {}), i.ageRestricted ?? false],
   );
   return row as MenuItemRow;
 }
@@ -85,9 +87,9 @@ export async function addMenuItem(sql: Sql, branch: BranchRow, i: MenuItemInput)
 export async function updateMenuItem(sql: Sql, branchId: string, itemId: string, i: MenuItemInput): Promise<MenuItemRow | undefined> {
   const [row] = await sql.query<MenuItemRow & Record<string, unknown>>(
     `UPDATE catalogue.menu_item
-       SET names = $3, description = $4, prices = $5, category = $6, veg = $7, tags = $8, allergens = $9, recommended = $10, variations = $11, addons = $12, dietary = $13, nutrition = $14, updated_at = now()
+       SET names = $3, description = $4, prices = $5, category = $6, veg = $7, tags = $8, allergens = $9, recommended = $10, variations = $11, addons = $12, dietary = $13, nutrition = $14, age_restricted = $15, updated_at = now()
      WHERE id = $1 AND branch_id = $2 RETURNING ${ITEM_COLUMNS}`,
-    [itemId, branchId, JSON.stringify(i.names), JSON.stringify(i.description ?? {}), JSON.stringify(i.prices), i.category ?? null, i.veg ?? null, i.tags ?? [], i.allergens ?? [], i.recommended ?? false, JSON.stringify(i.variations ?? []), JSON.stringify(i.addons ?? []), i.dietary ?? [], JSON.stringify(i.nutrition ?? {})],
+    [itemId, branchId, JSON.stringify(i.names), JSON.stringify(i.description ?? {}), JSON.stringify(i.prices), i.category ?? null, i.veg ?? null, i.tags ?? [], i.allergens ?? [], i.recommended ?? false, JSON.stringify(i.variations ?? []), JSON.stringify(i.addons ?? []), i.dietary ?? [], JSON.stringify(i.nutrition ?? {}), i.ageRestricted ?? false],
   );
   return row as MenuItemRow | undefined;
 }
