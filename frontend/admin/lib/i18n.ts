@@ -14,6 +14,7 @@ const T = {
   finance: { fr: "Finance", en: "Finance" },
   payments: { fr: "Paiements", en: "Payments" },
   refunds: { fr: "Remboursements", en: "Refunds" },
+  get_started: { fr: "Commencer", en: "Get started" },
   audit: { fr: "Journal d'audit", en: "Audit log" },
   g_operations: { fr: "Opérations", en: "Operations" },
   g_business: { fr: "Commerce", en: "Business" },

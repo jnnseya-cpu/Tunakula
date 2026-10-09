@@ -2306,3 +2306,51 @@ describe("referrals", () => {
     assert.equal((await call("POST", "/v1/referrals/claim", { token: used.token, country: "CD", body: { code } })).body.code, "NOT_NEW_CUSTOMER");
   });
 });
+
+describe("self-serve merchant onboarding", () => {
+  const KIN2 = { lat: -4.3300, lng: 15.3000 };
+  const inDiscovery = async (branchId: string) => {
+    const r = await call("GET", `/v1/branches/nearby?lat=${KIN2.lat}&lng=${KIN2.lng}&radius_km=5`, { country: "CD" });
+    return (r.body.data as { id: string }[]).some((b) => b.id === branchId);
+  };
+
+  test("a business registers, builds a menu with the wizard, and publishes to go live", async () => {
+    const merchant = await signIn("+243810000200");
+    // Step 1: register the business — the signed-in user becomes its owner.
+    const reg = await call("POST", "/v1/merchant/register", { token: merchant.token, country: "CD", body: { business_name: "Mama Nkoyi Kitchen" } });
+    assert.equal(reg.status, 201, JSON.stringify(reg.body));
+    assert.match(reg.body.group_id, /^rg-/);
+    const groupId = reg.body.group_id;
+
+    // Step 2: add a branch — it is created unpublished (not yet discoverable).
+    const br = await call("POST", "/v1/merchant/branches", { token: merchant.token, country: "CD", body: { group_id: groupId, name: "Mama Nkoyi — Lemba", lat: KIN2.lat, lng: KIN2.lng, commune: "lemba" } });
+    assert.equal(br.status, 201, JSON.stringify(br.body));
+    assert.equal(br.body.published, false);
+    const newBranch = br.body.branch_id;
+    assert.equal(await inDiscovery(newBranch), false, "unpublished branch is not discoverable");
+
+    // Publishing with no menu is refused.
+    assert.equal((await call("POST", `/v1/merchant/branches/${newBranch}/publish`, { token: merchant.token, country: "CD" })).body.code, "MENU_EMPTY");
+    let st = await call("GET", `/v1/merchant/branches/${newBranch}/onboarding`, { token: merchant.token, country: "CD" });
+    assert.equal(st.body.can_publish, false);
+    assert.equal(st.body.steps.menu, false);
+
+    // Step 3: add a dish (the owner has menu:write on their own branch).
+    const item = await call("POST", `/v1/branches/${newBranch}/items`, { token: merchant.token, country: "CD", body: { names: { fr: "Fumbwa", en: "Cassava leaves" }, prices: { USD: "6.00" } } });
+    assert.equal(item.status, 201, JSON.stringify(item.body));
+    st = await call("GET", `/v1/merchant/branches/${newBranch}/onboarding`, { token: merchant.token, country: "CD" });
+    assert.equal(st.body.can_publish, true);
+    assert.equal(st.body.available_items, 1);
+
+    // Step 4: publish — the branch is now discoverable (web storefront and Tunakula Nzela read the same catalogue).
+    const pub = await call("POST", `/v1/merchant/branches/${newBranch}/publish`, { token: merchant.token, country: "CD" });
+    assert.equal(pub.body.published, true);
+    assert.equal(await inDiscovery(newBranch), true, "a published branch is discoverable");
+  });
+
+  test("a signed-in user without a business cannot add a branch to someone else's group", async () => {
+    const stranger = await signIn("+243810000201");
+    const r = await call("POST", "/v1/merchant/branches", { token: stranger.token, country: "CD", body: { group_id: "rg-someone-else", name: "Pirate branch", lat: KIN2.lat, lng: KIN2.lng } });
+    assert.equal(r.status, 403);
+  });
+});

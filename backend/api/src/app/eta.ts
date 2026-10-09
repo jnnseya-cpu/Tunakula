@@ -220,10 +220,13 @@ function checkPoint(p: GeoPoint) {
 }
 
 async function branchesWithLoad(sql: Sql, branchId?: string): Promise<BranchRow[]> {
+  // Discovery (no branch id) lists only published branches; a direct fetch by id still works (merchant preview).
   return sql.query<BranchRow>(
     `SELECT b.id, b.name, b.commune, b.status, b.lat::text AS lat, b.lng::text AS lng, b.hours, b.special_hours,
             (SELECT count(*) FROM ordering.order_view o WHERE o.branch_id = b.id AND o.state = ANY($1)) AS active
-       FROM catalogue.branch b WHERE ($2::uuid IS NULL OR b.id = $2::uuid)`,
+       FROM catalogue.branch b
+      WHERE ($2::uuid IS NULL OR b.id = $2::uuid)
+        AND ($2::uuid IS NOT NULL OR b.published_at IS NOT NULL)`,
     [ACTIVE_STATES, branchId ?? null],
   );
 }

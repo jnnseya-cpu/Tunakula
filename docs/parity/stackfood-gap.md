@@ -47,7 +47,7 @@ Legend: **Built** works end to end · **Partial** the engine or a screen exists,
 | Reviews and replies | Built: the owner sees every review for a branch and replies (Merchants → a restaurant → Customer reviews) |
 | Wallet, withdrawals, earnings | Partial: ledger only |
 | Employees and roles | Partial: team page (admin) |
-| Self-registration and onboarding | Missing |
+| Self-registration and onboarding | Built: a **self-serve onboarding wizard** (admin console → Get started) with no field team needed — a business owner registers (becomes the owner of their own restaurant group), adds a branch with its location (use-my-location or coordinates), builds a menu, then publishes. A branch is only discoverable once published; the storefront (and Tunakula Nzela, the WhatsApp channel, which reads the same catalogue) picks it up immediately on publish |
 
 ## Deliveryman (app)
 

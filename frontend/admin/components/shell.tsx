@@ -30,7 +30,7 @@ const store = {
   set: (k: string, v: string) => { try { localStorage.setItem(k, v); } catch { /* ignore */ } },
 };
 
-type NavItem = { href: string; key: Key; cap?: keyof Me["capabilities"]; soon?: boolean };
+type NavItem = { href: string; key: Key; cap?: keyof Me["capabilities"]; soon?: boolean; always?: boolean };
 /** 24×24 outline icons (single path each) for the side menu. */
 const ICON: Record<string, string> = {
   overview: "M4 13h6V4H4v9Zm0 7h6v-5H4v5Zm10 0h6v-9h-6v9Zm0-16v5h6V4h-6Z",
@@ -40,6 +40,7 @@ const ICON: Record<string, string> = {
   pos: "M4 4h16v10H4V4Zm2 2v6h12V6H6Zm-1 10h14v4H5v-4Zm3 1v2h2v-2H8Zm4 0v2h2v-2h-2Z",
   support: "M12 3a8 8 0 0 0-8 8v5a3 3 0 0 0 3 3h2v-7H6v-1a6 6 0 1 1 12 0v1h-3v7h2.2a2 2 0 0 1-2 1H13v2h2.2a4 4 0 0 0 3.9-3.2A3 3 0 0 0 20 16v-5a8 8 0 0 0-8-8Z",
   merchants: "M4 4h16l1 5a3 3 0 0 1-2 2.8V20H5v-8.2A3 3 0 0 1 3 9l1-5Zm3 9v5h4v-5H7Zm6 0v5h4v-5h-4Z",
+  get_started: "M12 2 15 9l7 .5-5.3 4.6L18.4 21 12 17.3 5.6 21l1.7-6.9L2 9.5 9 9l3-7Z",
   zones: "M12 2a7 7 0 0 0-7 7c0 5.2 7 13 7 13s7-7.8 7-13a7 7 0 0 0-7-7Zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5Z",
   promotions: "M3 11v2l2 .5V18h2v-4l9 3V7L5 10.5 3 11Zm15-4h2v10h-2V7Z",
   customers: "M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm0 2c-3.3 0-7 1.7-7 4v3h14v-3c0-2.3-3.7-4-7-4Zm8-2a3 3 0 1 0 0-6v6Zm1 2.2c1.8.6 4 1.7 4 3.8v3h-4v-3c0-1.4-.5-2.7-1.3-3.6l1.3-.2Z",
@@ -61,6 +62,7 @@ const Icon = ({ k }: { k: string }) => <svg viewBox="0 0 24 24" width="18" heigh
 
 const NAV: { group: Key; items: NavItem[] }[] = [
   { group: "g_operations", items: [
+    { href: "/get-started/", key: "get_started", always: true },
     { href: "/", key: "overview", cap: "overview" },
     { href: "/dispatch/", key: "dispatch", cap: "dispatch" },
     { href: "/kitchen/", key: "kitchen", cap: "kitchen" },
@@ -147,7 +149,7 @@ export function Shell({ title, children, actions }: { title: Key; children: Reac
             <div><b>Tunakula</b><small>Admin</small></div>
           </div>
           {NAV.map((g) => {
-            const items = g.items.filter((i) => i.soon || (i.cap && me.capabilities[i.cap]));
+            const items = g.items.filter((i) => i.soon || i.always || (i.cap && me.capabilities[i.cap]));
             if (!items.some((i) => !i.soon)) return null;
             return (
               <div key={g.group} style={{ display: "contents" }}>

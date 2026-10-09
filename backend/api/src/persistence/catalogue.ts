@@ -57,13 +57,18 @@ export interface MenuItemInput {
 
 const ITEM_COLUMNS = "id, branch_id, names, description, prices, category, veg, tags, allergens, available, recommended, variations, addons, dietary, nutrition, age_restricted";
 
-export async function createBranch(sql: Sql, b: Omit<BranchRow, "id" | "status">): Promise<BranchRow> {
+export async function createBranch(sql: Sql, b: Omit<BranchRow, "id" | "status">, published = false): Promise<BranchRow> {
   const [row] = await sql.query<BranchRow & Record<string, unknown>>(
-    `INSERT INTO catalogue.branch (country_iso2, brand_id, restaurant_group_id, name, city, commune, lat, lng)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id, country_iso2, brand_id, restaurant_group_id, name, city, commune, lat::text, lng::text, status`,
-    [b.country_iso2, b.brand_id, b.restaurant_group_id, b.name, b.city, b.commune, b.lat, b.lng],
+    `INSERT INTO catalogue.branch (country_iso2, brand_id, restaurant_group_id, name, city, commune, lat, lng, published_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8, CASE WHEN $9 THEN now() ELSE NULL END) RETURNING id, country_iso2, brand_id, restaurant_group_id, name, city, commune, lat::text, lng::text, status`,
+    [b.country_iso2, b.brand_id, b.restaurant_group_id, b.name, b.city, b.commune, b.lat, b.lng, published],
   );
   return row as BranchRow;
+}
+
+/** Marks a branch published (discoverable on the storefront and in Tunakula Nzela). Idempotent. */
+export async function publishBranch(sql: Sql, branchId: string): Promise<void> {
+  await sql.query("UPDATE catalogue.branch SET published_at = coalesce(published_at, now()), updated_at = now() WHERE id = $1", [branchId]);
 }
 
 export async function getBranch(sql: Sql, id: string): Promise<BranchRow | undefined> {

@@ -481,3 +481,20 @@ tr.sel td { background: rgba(250, 210, 14, 0.12); }
 .hours-day { width: 110px; font-weight: 600; }
 .hours-times { display: flex; align-items: center; gap: 8px; }
 .hours-times .input { width: auto; }
+
+/* Self-serve onboarding wizard (additive) */
+.wizard { max-width: 720px; }
+.wiz-steps { list-style: none; display: flex; gap: 8px; padding: 0; margin: 0 0 18px; flex-wrap: wrap; }
+.wiz-steps li { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--muted); padding: 6px 12px; border-radius: 999px; background: var(--panel, #f3f4f8); }
+.wiz-steps li span { display: inline-flex; width: 22px; height: 22px; align-items: center; justify-content: center; border-radius: 999px; background: var(--rule-strong, #cbd2e0); color: #fff; font-size: 12px; }
+.wiz-steps li.now { color: var(--ink); background: color-mix(in srgb, var(--primary, #1f305d) 12%, transparent); }
+.wiz-steps li.now span { background: var(--primary, #1f305d); }
+.wiz-steps li.done span { background: var(--ok, #0a7d33); }
+.wiz-loc { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 6px 0; }
+.wiz-items { list-style: none; padding: 0; margin: 8px 0; display: grid; gap: 6px; }
+.wiz-items li { display: flex; justify-content: space-between; padding: 8px 12px; border: 1px solid var(--rule); border-radius: 10px; }
+.wiz-review { display: grid; gap: 8px; margin: 10px 0 16px; }
+.wiz-review div { display: flex; justify-content: space-between; border-bottom: 1px solid var(--rule); padding-bottom: 6px; }
+.wiz-review dt { color: var(--muted); }
+.wiz-done { text-align: center; }
+.wiz-cta { display: flex; gap: 10px; justify-content: center; margin-top: 12px; flex-wrap: wrap; }

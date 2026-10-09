@@ -39,7 +39,7 @@ export class CatalogueService {
         commune: input.commune ?? null,
         lat: String(input.lat),
         lng: String(input.lng),
-      });
+      }, true); // an admin-created branch is published immediately
       await audit(sql, { actor: principal.userId, action: "branch.created", target: `branch:${branch.id}`, country });
       return branch;
     });

@@ -20,6 +20,7 @@ import type { ReservationService, BookingStatus } from "../app/reservations.ts";
 import type { RefundService } from "../app/refunds.ts";
 import type { WalletService } from "../app/wallet.ts";
 import type { ReferralService } from "../app/referrals.ts";
+import type { MerchantOnboardingService } from "../app/merchant-onboarding.ts";
 import type { NotificationService } from "../app/comms.ts";
 import { serialiseQuote, type CommerceService, type PlaceOrderInput, type QuoteInput } from "../app/commerce.ts";
 import { badRequest, notFound } from "../app/errors.ts";
@@ -1110,6 +1111,48 @@ export class ReferralController {
   @Post("referrals/claim")
   async claim(@Req() req: FastifyRequest, @Body() body: { code?: string }) {
     return this.referrals.claim(country(req), await this.#p(req), String(body?.code ?? ""));
+  }
+}
+
+/** Self-serve merchant onboarding: a guided wizard to register a business, add a branch + menu, and publish. */
+@Controller("v1/merchant")
+export class MerchantOnboardingController {
+  constructor(
+    @Inject(TOKENS.db) private readonly db: Db,
+    @Inject(TOKENS.tokens) private readonly tokens: TokenService,
+    @Inject(TOKENS.onboardingMerchant) private readonly onboarding: MerchantOnboardingService,
+  ) {}
+
+  #p(req: FastifyRequest) {
+    return this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+  }
+
+  /** Step 1: register a business (creates a restaurant group owned by the signed-in user). */
+  @Post("register")
+  async register(@Req() req: FastifyRequest, @Body() body: { business_name?: string }) {
+    return this.onboarding.register(country(req), await this.#p(req), { businessName: String(body?.business_name ?? "") });
+  }
+
+  /** Step 2: add a branch (unpublished until the wizard finishes). */
+  @Post("branches")
+  async addBranch(@Req() req: FastifyRequest, @Body() body: { group_id?: string; name?: string; lat?: number; lng?: number; city?: string; commune?: string }) {
+    return this.onboarding.addBranch(country(req), await this.#p(req), {
+      groupId: String(body?.group_id ?? ""), name: String(body?.name ?? ""), lat: Number(body?.lat), lng: Number(body?.lng),
+      ...(body?.city ? { city: String(body.city) } : {}), ...(body?.commune ? { commune: String(body.commune) } : {}),
+    });
+  }
+
+  /** The wizard's progress for a branch. */
+  @Get("branches/:id/onboarding")
+  async status(@Req() req: FastifyRequest, @Param("id") id: string) {
+    return this.onboarding.status(country(req), await this.#p(req), id);
+  }
+
+  /** Final step: publish the branch so customers (web and Tunakula Nzela) can find it. */
+  @Post("branches/:id/publish")
+  @HttpCode(200)
+  async publish(@Req() req: FastifyRequest, @Param("id") id: string) {
+    return this.onboarding.publish(country(req), await this.#p(req), id);
   }
 }
 
