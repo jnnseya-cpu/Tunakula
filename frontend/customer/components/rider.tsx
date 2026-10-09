@@ -8,6 +8,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError, getSession, live, money, setSession, type MoneyWire } from "../lib/api";
 import { TileMap, type MapPin } from "./map";
+import { OrderChat } from "./order-chat";
 
 interface Job {
   order_id: string; ref: string; state: string; type: string; items: number; labels: string[]; age_restricted?: boolean;
@@ -477,6 +478,8 @@ function ActiveJob({ job, pos, onDone }: { job: Job; pos: Pos | null; onDone: ()
         <li className={atKitchen ? "now" : "done"}>Pick up at {job.pickup.name}</li>
         <li className={atKitchen ? "" : "now"}>Deliver{job.drop?.customer ? ` to ${job.drop.customer}` : ""}</li>
       </ol>
+
+      <OrderChat orderId={job.order_id} title="Chat with the customer" />
 
       {atKitchen ? (
         <div className="r-card">

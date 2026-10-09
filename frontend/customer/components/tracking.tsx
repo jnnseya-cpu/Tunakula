@@ -7,6 +7,7 @@ import { useSession } from "./account";
 import { localHour, modelSeconds } from "@tunakula/ts-contracts/eta-model";
 import { ClockIcon, PinIcon, useLocationCtx } from "./location";
 import { TileMap } from "./map";
+import { OrderChat } from "./order-chat";
 
 interface OrderView {
   order_id: string; state: string; type: string; total: MoneyWire; payment_mode: string; rider_id: string | null;
@@ -126,6 +127,8 @@ export function Tracking() {
           ))}
         </ol>
       ) : null}
+
+      {o.rider_id ? <OrderChat orderId={o.order_id} /> : null}
 
       {o.state === "DELIVERED" ? <RateOrder orderId={o.order_id} /> : null}
       {o.state === "DELIVERED" || o.state === "REFUND_REQUESTED" || o.state === "REFUNDED" ? <RefundRequest orderId={o.order_id} /> : null}

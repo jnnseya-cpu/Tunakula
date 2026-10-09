@@ -3178,3 +3178,60 @@ describe("merchant promotions (happy hour)", () => {
     assert.equal(bal.s, "0", "the ledger balances");
   });
 });
+
+describe("in-order chat (customer ↔ rider)", () => {
+  test("the customer and the assigned rider can message each other; nobody else can; it closes with the order", async () => {
+    // Place and pay for an order, then assign a rider so there is a counterparty.
+    const p = await placePrepaid();
+    await call("POST", "/v1/payments/intents", { token: customer.token, country: "CD", body: { order_id: p.orderId, method_type: "MOBILE_MONEY_PUSH", payer: { msisdn: "+243810000001" } } });
+    await transition(ops, p.orderId, { type: "ASSIGN_RIDER", riderId: rider.userId });
+
+    // The customer opens the thread: their counterparty is the rider, and it is open.
+    const t0 = await call("GET", `/v1/orders/${p.orderId}/messages`, { token: customer.token, country: "CD" });
+    assert.equal(t0.status, 200, JSON.stringify(t0.body));
+    assert.equal(t0.body.role, "CUSTOMER");
+    assert.equal(t0.body.counterparty, "RIDER");
+    assert.equal(t0.body.open, true);
+    assert.equal(t0.body.messages.length, 0);
+
+    // The customer sends a message; the rider sees it as not-theirs.
+    const sent = await call("POST", `/v1/orders/${p.orderId}/messages`, { token: customer.token, country: "CD", body: { body: "Please leave it at the gate, thanks!" } });
+    assert.equal(sent.status, 201, JSON.stringify(sent.body));
+    assert.equal(sent.body.from, "CUSTOMER");
+    assert.equal(sent.body.mine, true);
+    const riderView = await call("GET", `/v1/orders/${p.orderId}/messages`, { token: rider.token, country: "CD" });
+    assert.equal(riderView.body.role, "RIDER");
+    assert.equal(riderView.body.counterparty, "CUSTOMER");
+    assert.equal(riderView.body.messages.length, 1);
+    assert.equal(riderView.body.messages[0].mine, false);
+    assert.equal(riderView.body.messages[0].body, "Please leave it at the gate, thanks!");
+
+    // The rider replies; the customer sees both messages in order.
+    await call("POST", `/v1/orders/${p.orderId}/messages`, { token: rider.token, country: "CD", body: { body: "On my way — 5 minutes." } });
+    const both = await call("GET", `/v1/orders/${p.orderId}/messages`, { token: customer.token, country: "CD" });
+    assert.equal(both.body.messages.length, 2);
+    assert.equal(both.body.messages[1].from, "RIDER");
+    assert.equal(both.body.messages[1].mine, false);
+
+    // Someone who is neither the customer nor the rider cannot read or post.
+    const stranger = await signIn("+243810000260");
+    assert.equal((await call("GET", `/v1/orders/${p.orderId}/messages`, { token: stranger.token, country: "CD" })).status, 403);
+    assert.equal((await call("POST", `/v1/orders/${p.orderId}/messages`, { token: stranger.token, country: "CD", body: { body: "hi" } })).status, 403);
+    // An empty message is refused.
+    assert.equal((await call("POST", `/v1/orders/${p.orderId}/messages`, { token: customer.token, country: "CD", body: { body: "   " } })).body.code, "MESSAGE_EMPTY");
+
+    // Drive the order to delivered; the thread then becomes read-only.
+    const code = p.code;
+    await transition(kitchen, p.orderId, { type: "ACCEPT" });
+    await transition(kitchen, p.orderId, { type: "START_PREPARING" });
+    await transition(kitchen, p.orderId, { type: "PACK", confirmedLineIds: ["l1"], packageCount: 1, allergenAcknowledged: true });
+    await transition(kitchen, p.orderId, { type: "MARK_READY", packages: [{ labelId: "CH-1", sealId: "CH-1-S" }], packPhotoRef: "photo://pack" });
+    await transition(rider, p.orderId, { type: "PICK_UP", scannedLabelIds: ["CH-1"], restaurantConfirmed: true, sealsIntact: true, location: KINSHASA });
+    const done = await transition(rider, p.orderId, { type: "DELIVER", scannedLabelId: "CH-1", location: DROP, sealIntact: true, verification: { method: "CODE", code }, proofPhotoRef: "photo://door" });
+    assert.equal(done.body.state, "DELIVERED", JSON.stringify(done.body));
+    const closed = await call("GET", `/v1/orders/${p.orderId}/messages`, { token: customer.token, country: "CD" });
+    assert.equal(closed.body.open, false, "a delivered order's chat is closed");
+    assert.equal(closed.body.messages.length, 2, "history is still readable");
+    assert.equal((await call("POST", `/v1/orders/${p.orderId}/messages`, { token: customer.token, country: "CD", body: { body: "too late" } })).body.code, "ORDER_CLOSED");
+  });
+});

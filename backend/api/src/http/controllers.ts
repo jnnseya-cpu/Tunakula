@@ -22,6 +22,7 @@ import type { WalletService } from "../app/wallet.ts";
 import type { ReferralService } from "../app/referrals.ts";
 import type { LoyaltyService } from "../app/loyalty.ts";
 import type { CashbackService } from "../app/cashback.ts";
+import type { ChatService } from "../app/chat.ts";
 import type { MerchantOnboardingService } from "../app/merchant-onboarding.ts";
 import type { NotificationService } from "../app/comms.ts";
 import { serialiseQuote, type CommerceService, type PlaceOrderInput, type QuoteInput } from "../app/commerce.ts";
@@ -1306,6 +1307,30 @@ export class LoyaltyController {
   @HttpCode(200)
   async setConfig(@Req() req: FastifyRequest, @Body() body: { enabled?: boolean; earn_bps?: number; redeem_minor_per_point?: number; min_redeem_points?: number }) {
     return this.loyalty.setConfig(country(req), await this.#p(req), body ?? {});
+  }
+}
+
+/** In-order chat between the customer and the rider on a live order. */
+@Controller("v1")
+export class ChatController {
+  constructor(
+    @Inject(TOKENS.db) private readonly db: Db,
+    @Inject(TOKENS.tokens) private readonly tokens: TokenService,
+    @Inject(TOKENS.chat) private readonly chat: ChatService,
+  ) {}
+
+  #p(req: FastifyRequest) {
+    return this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+  }
+
+  @Get("orders/:id/messages")
+  async thread(@Req() req: FastifyRequest, @Param("id") id: string) {
+    return this.chat.thread(country(req), await this.#p(req), id);
+  }
+
+  @Post("orders/:id/messages")
+  async send(@Req() req: FastifyRequest, @Param("id") id: string, @Body() body: { body?: string }) {
+    return this.chat.send(country(req), await this.#p(req), id, body?.body ?? "");
   }
 }
 

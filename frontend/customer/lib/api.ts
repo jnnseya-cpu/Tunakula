@@ -177,6 +177,12 @@ export const myLoyaltyHistory = () => api<{ transactions: LoyaltyTxn[] }>("/v1/m
 export const redeemLoyalty = (points: number) =>
   api<{ points_balance: number; credited?: MoneyWire; wallet_balance: MoneyWire }>("/v1/me/loyalty/redeem", { method: "POST", body: { points } });
 
+// ── In-order chat (customer ↔ rider) ──
+export interface ChatMessage { id: string; from: "CUSTOMER" | "RIDER"; mine: boolean; body: string; at: string }
+export interface ChatThread { role: "CUSTOMER" | "RIDER"; counterparty: "CUSTOMER" | "RIDER" | null; open: boolean; messages: ChatMessage[] }
+export const orderMessages = (orderId: string) => api<ChatThread>(`/v1/orders/${orderId}/messages`);
+export const sendOrderMessage = (orderId: string, body: string) => api<ChatMessage>(`/v1/orders/${orderId}/messages`, { method: "POST", body: { body } });
+
 // ── Cashback campaigns ──
 export interface CashbackOffer { name: string; percent: number; min_spend: MoneyWire; max_cashback: MoneyWire | null; ends_at: string }
 export const cashbackOffer = () => api<{ offer: CashbackOffer | null }>("/v1/cashback").then((r) => r.offer);
