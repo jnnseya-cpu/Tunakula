@@ -24,6 +24,7 @@ import type { LoyaltyService } from "../app/loyalty.ts";
 import type { CashbackService } from "../app/cashback.ts";
 import type { ChatService } from "../app/chat.ts";
 import type { BannerService } from "../app/banners.ts";
+import type { SubscriptionService } from "../app/subscriptions.ts";
 import type { MerchantOnboardingService } from "../app/merchant-onboarding.ts";
 import type { NotificationService } from "../app/comms.ts";
 import { serialiseQuote, type CommerceService, type PlaceOrderInput, type QuoteInput } from "../app/commerce.ts";
@@ -1308,6 +1309,36 @@ export class LoyaltyController {
   @HttpCode(200)
   async setConfig(@Req() req: FastifyRequest, @Body() body: { enabled?: boolean; earn_bps?: number; redeem_minor_per_point?: number; min_redeem_points?: number }) {
     return this.loyalty.setConfig(country(req), await this.#p(req), body ?? {});
+  }
+}
+
+/** Repeat / subscription orders: a customer turns a cart into a recurring wallet-funded order. */
+@Controller("v1")
+export class SubscriptionController {
+  constructor(
+    @Inject(TOKENS.db) private readonly db: Db,
+    @Inject(TOKENS.tokens) private readonly tokens: TokenService,
+    @Inject(TOKENS.subscriptions) private readonly subs: SubscriptionService,
+  ) {}
+
+  #p(req: FastifyRequest) {
+    return this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+  }
+
+  @Get("me/subscriptions")
+  async list(@Req() req: FastifyRequest) {
+    return this.subs.list(country(req), await this.#p(req));
+  }
+
+  @Post("me/subscriptions")
+  async create(@Req() req: FastifyRequest, @Body() body: unknown) {
+    return this.subs.create(country(req), await this.#p(req), (body ?? {}) as never);
+  }
+
+  @Post("me/subscriptions/:id")
+  @HttpCode(200)
+  async setStatus(@Req() req: FastifyRequest, @Param("id") id: string, @Body() body: { action?: string }) {
+    return this.subs.setStatus(country(req), await this.#p(req), id, body?.action ?? "");
   }
 }
 

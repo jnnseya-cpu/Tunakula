@@ -41,6 +41,7 @@ import type { WalletService } from "../app/wallet.ts";
 import type { ReferralService } from "../app/referrals.ts";
 import type { LoyaltyService } from "../app/loyalty.ts";
 import type { CashbackService } from "../app/cashback.ts";
+import type { SubscriptionService } from "../app/subscriptions.ts";
 import { createApi } from "./app.ts";
 import { TOKENS } from "./common.ts";
 
@@ -127,6 +128,7 @@ if (dispatchMs > 0) {
   const referrals = app.get<ReferralService>(TOKENS.referrals);
   const loyalty = app.get<LoyaltyService>(TOKENS.loyalty);
   const cashback = app.get<CashbackService>(TOKENS.cashback);
+  const subscriptions = app.get<SubscriptionService>(TOKENS.subscriptions);
   let running = false;
   const loop = setInterval(async () => {
     if (running) return;
@@ -151,6 +153,9 @@ if (dispatchMs > 0) {
         // Delivered orders placed during a cashback campaign are credited back to the wallet.
         const cashbackAwards = await cashback.awardSweep(c.iso2);
         if (cashbackAwards.awarded) log.info("cashback", { country: c.iso2, ...cashbackAwards });
+        // Recurring (subscription) orders due now are placed from the wallet.
+        const subRuns = await subscriptions.runSweep(c.iso2);
+        if (subRuns.placed || subRuns.skipped) log.info("subscriptions", { country: c.iso2, ...subRuns });
       }
     } catch (error) { log.error("dispatch failed", { error }); } finally { running = false; }
   }, dispatchMs);

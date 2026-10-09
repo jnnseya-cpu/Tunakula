@@ -5,7 +5,7 @@
  */
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { api, ApiError, getSession, listAddresses, live, loadCart, money, rememberCode, saveAddress, saveCart, walletBalance, type Cart, type MoneyWire, type SavedAddress } from "../lib/api";
+import { api, ApiError, createSubscription, getSession, listAddresses, live, loadCart, money, rememberCode, saveAddress, saveCart, walletBalance, type Cart, type MoneyWire, type SavedAddress, type SubCadence } from "../lib/api";
 import { useLocationCtx } from "./location";
 
 interface Quote {
@@ -79,6 +79,12 @@ export function Checkout() {
   const [ageOk, setAgeOk] = useState(false);
   const [promoApplied, setPromoApplied] = useState("");
   const [promoError, setPromoError] = useState<string | null>(null);
+  const [repeat, setRepeat] = useState(false);
+  const [repCadence, setRepCadence] = useState<SubCadence>("WEEKLY");
+  const [repWeekday, setRepWeekday] = useState(1);
+  const [repTime, setRepTime] = useState("12:00");
+  const [repMsg, setRepMsg] = useState<string | null>(null);
+  const [repBusy, setRepBusy] = useState(false);
   const attempt = useRef<{ key: string; total: string } | null>(null);
   const placed = useRef<string | null>(null);
 
@@ -212,6 +218,21 @@ export function Checkout() {
     }
   };
 
+  const makeRepeat = async () => {
+    if (!cart || !place) return;
+    setRepMsg(null); setRepBusy(true);
+    try {
+      const sub = await createSubscription({
+        branch_id: cart.branch_id,
+        items: cart.lines.map((l) => ({ item_id: l.item_id, quantity: l.qty, ...(l.options?.length ? { options: l.options } : {}), ...(l.addons?.length ? { addons: l.addons } : {}) })),
+        delivery: { lat: place.lat, lng: place.lng },
+        cadence: repCadence, ...(repCadence === "WEEKLY" ? { weekday: repWeekday } : {}), time: repTime,
+      });
+      setRepMsg(`✓ Saved — ${sub.label}. We’ll place it from your wallet. Manage it in Repeat orders.`);
+      setRepeat(false);
+    } catch (e) { setRepMsg((e as ApiError).message); } finally { setRepBusy(false); }
+  };
+
   const km = quote?.distance_meters !== undefined ? (Math.round(quote.distance_meters / 100) / 10).toFixed(1) : null;
   const dueNow = quote ? (quote.payable ?? quote.membership?.payable_total ?? quote.total) : null;
   const walletMinor = wallet ? BigInt(wallet.amount_minor) : 0n;
@@ -309,6 +330,36 @@ export function Checkout() {
           </div>
           {pay === "MOBILE_MONEY_PUSH" ? <label className="field"><span>Mobile money number</span><input inputMode="tel" value={msisdn} onChange={(e) => setMsisdn(e.target.value)} /></label> : null}
         </section>
+
+        {mode === "DELIVERY" ? (
+          <section className="co-sec">
+            <h2>Make it a repeat order</h2>
+            <label className="repeat-toggle">
+              <input type="checkbox" checked={repeat} onChange={(e) => { setRepeat(e.target.checked); setRepMsg(null); }} />
+              <span>Deliver this order again automatically — your usual, paid from your wallet.</span>
+            </label>
+            {repeat ? (
+              <div className="repeat-grid">
+                <div className="seg2" role="radiogroup" aria-label="How often">
+                  {(["WEEKLY", "DAILY"] as const).map((c) => (
+                    <button type="button" key={c} role="radio" aria-checked={repCadence === c} className={repCadence === c ? "on" : ""} onClick={() => setRepCadence(c)}>{c === "WEEKLY" ? "Every week" : "Every day"}</button>
+                  ))}
+                </div>
+                {repCadence === "WEEKLY" ? (
+                  <label className="field"><span>Day</span>
+                    <select value={repWeekday} onChange={(e) => setRepWeekday(Number(e.target.value))}>
+                      {["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"].map((d, i) => <option key={i} value={i}>{d}</option>)}
+                    </select>
+                  </label>
+                ) : null}
+                <label className="field"><span>Time</span><input type="time" value={repTime} onChange={(e) => setRepTime(e.target.value)} /></label>
+                <button type="button" className="btn light" disabled={repBusy || !place} onClick={makeRepeat}>{repBusy ? "Saving…" : "Save repeat order"}</button>
+                {!place ? <p className="muted small">Choose a delivery address first.</p> : null}
+              </div>
+            ) : null}
+            {repMsg ? <p className="form-notice small" role="status">{repMsg}</p> : null}
+          </section>
+        ) : null}
       </div>
 
       <aside className="co-summary">

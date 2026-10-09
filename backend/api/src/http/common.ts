@@ -34,6 +34,7 @@ export const TOKENS = {
   cashback: "CASHBACK_SERVICE",
   chat: "CHAT_SERVICE",
   banners: "BANNER_SERVICE",
+  subscriptions: "SUBSCRIPTION_SERVICE",
   onboardingMerchant: "MERCHANT_ONBOARDING_SERVICE",
   logger: "LOGGER",
 } as const;

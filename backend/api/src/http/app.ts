@@ -23,6 +23,7 @@ import { LoyaltyService } from "../app/loyalty.ts";
 import { CashbackService } from "../app/cashback.ts";
 import { ChatService } from "../app/chat.ts";
 import { BannerService } from "../app/banners.ts";
+import { SubscriptionService } from "../app/subscriptions.ts";
 import { MerchantOnboardingService } from "../app/merchant-onboarding.ts";
 import { GroupOrderService } from "../app/group.ts";
 import { MembershipService } from "../app/membership.ts";
@@ -34,7 +35,7 @@ import type { Db } from "../db/db.ts";
 import type { CountryConfigRegistry } from "../modules/config/config-registry.ts";
 import { PaymentRouter } from "../modules/payments/payment-router.ts";
 import { IdempotencyInterceptor, ProblemFilter, TOKENS } from "./common.ts";
-import { AdminConfigController, AdminController, AuthController, AddressController, FavouriteController, CommsController, CouponController, GroupController, KitchenController, MeController, MembershipController, NotificationsController, OnboardingController, OpsController, RefundController, ReferralController, LoyaltyController, CashbackController, ChatController, BannerController, ReservationController, ReviewController, RiderController, WalletController, MerchantOnboardingController, CatalogueController, OrdersController, PaymentsController, PlatformController, WebhooksController } from "./controllers.ts";
+import { AdminConfigController, AdminController, AuthController, AddressController, FavouriteController, CommsController, CouponController, GroupController, KitchenController, MeController, MembershipController, NotificationsController, OnboardingController, OpsController, RefundController, ReferralController, LoyaltyController, CashbackController, ChatController, BannerController, SubscriptionController, ReservationController, ReviewController, RiderController, WalletController, MerchantOnboardingController, CatalogueController, OrdersController, PaymentsController, PlatformController, WebhooksController } from "./controllers.ts";
 
 export interface ApiDeps {
   readonly db: Db;
@@ -78,6 +79,7 @@ export async function createApi(deps: ApiDeps): Promise<NestFastifyApplication> 
   const cashback = new CashbackService(deps.db, deps.registry, wallet, now);
   const chat = new ChatService(deps.db, now);
   const banners = new BannerService(deps.db, deps.registry, now);
+  const subscriptions = new SubscriptionService(deps.db, deps.registry, commerce, now);
   const merchantOnboarding = new MerchantOnboardingService(deps.db, deps.registry);
   const onboarding = new OnboardingService(deps.db, commerce, now, comms);
 
@@ -86,7 +88,7 @@ export async function createApi(deps: ApiDeps): Promise<NestFastifyApplication> 
     static register(): DynamicModule {
       return {
         module: ApiModule,
-        controllers: [AddressController, FavouriteController, AdminConfigController, AdminController, KitchenController, OpsController, OnboardingController, RiderController, MeController, MembershipController, GroupController, CouponController, ReviewController, ReservationController, RefundController, WalletController, ReferralController, LoyaltyController, CashbackController, ChatController, BannerController, MerchantOnboardingController, PlatformController, AuthController, CatalogueController, OrdersController, PaymentsController, WebhooksController, NotificationsController, CommsController],
+        controllers: [AddressController, FavouriteController, AdminConfigController, AdminController, KitchenController, OpsController, OnboardingController, RiderController, MeController, MembershipController, GroupController, CouponController, ReviewController, ReservationController, RefundController, WalletController, ReferralController, LoyaltyController, CashbackController, ChatController, BannerController, SubscriptionController, MerchantOnboardingController, PlatformController, AuthController, CatalogueController, OrdersController, PaymentsController, WebhooksController, NotificationsController, CommsController],
         providers: [
           { provide: TOKENS.db, useValue: deps.db },
           { provide: TOKENS.registry, useValue: deps.registry },
@@ -114,6 +116,7 @@ export async function createApi(deps: ApiDeps): Promise<NestFastifyApplication> 
           { provide: TOKENS.cashback, useValue: cashback },
           { provide: TOKENS.chat, useValue: chat },
           { provide: TOKENS.banners, useValue: banners },
+          { provide: TOKENS.subscriptions, useValue: subscriptions },
           { provide: TOKENS.onboardingMerchant, useValue: merchantOnboarding },
         ],
       };

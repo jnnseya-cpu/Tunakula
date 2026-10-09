@@ -191,6 +191,22 @@ export const sendOrderMessage = (orderId: string, body: string) => api<ChatMessa
 export interface CashbackOffer { name: string; percent: number; min_spend: MoneyWire; max_cashback: MoneyWire | null; ends_at: string }
 export const cashbackOffer = () => api<{ offer: CashbackOffer | null }>("/v1/cashback").then((r) => r.offer);
 
+// ── Repeat / subscription orders ──
+export type SubCadence = "DAILY" | "WEEKLY";
+export interface Subscription {
+  id: string; branch_id: string; items: { itemId: string; quantity: number }[];
+  cadence: SubCadence; weekday: number | null; time: string; status: "ACTIVE" | "PAUSED" | "CANCELLED";
+  label: string; next_run: string; next_run_local: string; last_run_at: string | null;
+}
+export interface SubscribeInput {
+  branch_id: string; items: { item_id: string; quantity: number; options?: CartLineOption[]; addons?: string[] }[];
+  delivery: { lat: number; lng: number }; cadence: SubCadence; weekday?: number; time: string;
+}
+export const mySubscriptions = () => api<{ subscriptions: Subscription[] }>("/v1/me/subscriptions").then((r) => r.subscriptions);
+export const createSubscription = (body: SubscribeInput) => api<Subscription>("/v1/me/subscriptions", { method: "POST", body });
+export const setSubscriptionStatus = (id: string, action: "PAUSE" | "RESUME" | "CANCEL") =>
+  api<Subscription>(`/v1/me/subscriptions/${id}`, { method: "POST", body: { action } });
+
 // ── Refund requests ──
 export type RefundStatus = "PENDING" | "APPROVED" | "DECLINED";
 export interface RefundRequestView { id: string; order_id: string; reason_code: string; comment: string | null; status: RefundStatus; amount: MoneyWire; resolution_note: string | null; resolved_at: string | null; created_at: string }

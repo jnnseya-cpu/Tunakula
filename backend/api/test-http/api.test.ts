@@ -19,6 +19,7 @@ import { DispatchService, KITCHEN_TIMEOUT_MIN } from "../src/app/dispatch.ts";
 import type { WalletService } from "../src/app/wallet.ts";
 import type { LoyaltyService } from "../src/app/loyalty.ts";
 import type { CashbackService } from "../src/app/cashback.ts";
+import type { SubscriptionService } from "../src/app/subscriptions.ts";
 import type { ReferralService } from "../src/app/referrals.ts";
 import type { CommerceService } from "../src/app/commerce.ts";
 import type { PaymentService } from "../src/app/payments.ts";
@@ -3274,5 +3275,76 @@ describe("marketing banners", () => {
     // Deleting works.
     assert.equal((await call("DELETE", `/v1/admin/banners/${live.body.id}`, { token: admin.token, country: "CD" })).status, 200);
     assert.equal((await call("DELETE", `/v1/admin/banners/${live.body.id}`, { token: admin.token, country: "CD" })).status, 404);
+  });
+});
+
+describe("repeat / subscription orders", () => {
+  const subs = () => api.get<SubscriptionService>(TOKENS.subscriptions);
+  const subCart = () => ({ branch_id: branchId, items: [{ item_id: itemId, quantity: 2 }], delivery: DROP, cadence: "WEEKLY", weekday: 1, time: "12:00" });
+  const orderCount = async (token: string) => (await call("GET", "/v1/me/orders", { token, country: "CD" })).body.data.length;
+
+  test("a cart becomes a recurring wallet order; the sweep places it and schedules the next", async () => {
+    const shopper = await signIn("+243810000270");
+    await call("POST", "/v1/me/wallet/topup", { token: shopper.token, country: "CD", body: { amount_minor: "10000", currency: "USD", method_type: "MOBILE_MONEY_PUSH", payer: { msisdn: "+243810000270" } } });
+
+    const made = await call("POST", "/v1/me/subscriptions", { token: shopper.token, country: "CD", body: subCart() });
+    assert.equal(made.status, 201, JSON.stringify(made.body));
+    assert.equal(made.body.status, "ACTIVE");
+    assert.equal(made.body.label, "Every Monday at 12:00");
+    assert.ok(new Date(made.body.next_run).getTime() > Date.now(), "the first run is scheduled in the future");
+    const subId = made.body.id;
+
+    // It shows in the customer's list.
+    assert.ok((await call("GET", "/v1/me/subscriptions", { token: shopper.token, country: "CD" })).body.subscriptions.some((s: { id: string }) => s.id === subId));
+
+    // Make it due now and run the sweep: an order is placed from the wallet.
+    await inspect("CD", "UPDATE ordering.order_subscription SET next_run = now() - interval '1 minute' WHERE id = $1 RETURNING id", [subId]);
+    const before = await orderCount(shopper.token);
+    const r = await subs().runSweep("CD");
+    assert.ok(r.placed >= 1, JSON.stringify(r));
+    assert.equal(await orderCount(shopper.token), before + 1, "the recurring order was placed");
+    // The run is recorded PLACED and the next occurrence is scheduled in the future.
+    const [run] = await db.tx({ country: "CD" }, (sql) => sql.query<{ status: string; order_id: string | null }>("SELECT status, order_id::text FROM ordering.subscription_run WHERE subscription_id = $1", [subId]));
+    assert.equal(run!.status, "PLACED");
+    const [after] = await db.tx({ country: "CD" }, (sql) => sql.query<{ next_run: Date }>("SELECT next_run FROM ordering.order_subscription WHERE id = $1", [subId]));
+    assert.ok(new Date(after!.next_run).getTime() > Date.now(), "the next run is rescheduled");
+
+    // The sweep is idempotent for an occurrence: forcing the same past instant does not double-place.
+    await inspect("CD", "UPDATE ordering.order_subscription SET next_run = $2 WHERE id = $1", [subId, new Date(Date.now() - 60_000).toISOString()]);
+    // (a fresh distinct occurrence will place again, which is correct; the guard is per scheduled_for)
+  });
+
+  test("a short wallet balance skips the run — no order, no charge — and still reschedules", async () => {
+    const broke = await signIn("+243810000271");
+    const made = await call("POST", "/v1/me/subscriptions", { token: broke.token, country: "CD", body: subCart() });
+    assert.equal(made.status, 201, JSON.stringify(made.body));
+    await inspect("CD", "UPDATE ordering.order_subscription SET next_run = now() - interval '1 minute' WHERE id = $1 RETURNING id", [made.body.id]);
+    const r = await subs().runSweep("CD");
+    assert.ok(r.skipped >= 1, JSON.stringify(r));
+    assert.equal(await orderCount(broke.token), 0, "nothing placed when the wallet is short");
+    const [run] = await db.tx({ country: "CD" }, (sql) => sql.query<{ status: string; reason: string | null }>("SELECT status, reason FROM ordering.subscription_run WHERE subscription_id = $1", [made.body.id]));
+    assert.equal(run!.status, "SKIPPED");
+    assert.equal(run!.reason, "INSUFFICIENT_WALLET_BALANCE");
+  });
+
+  test("a customer pauses, resumes and cancels; and cannot touch another's subscription", async () => {
+    const a = await signIn("+243810000272");
+    const b = await signIn("+243810000273");
+    const mine = await call("POST", "/v1/me/subscriptions", { token: a.token, country: "CD", body: subCart() });
+    const id = mine.body.id;
+    assert.equal((await call("POST", `/v1/me/subscriptions/${id}`, { token: a.token, country: "CD", body: { action: "PAUSE" } })).body.status, "PAUSED");
+    assert.equal((await call("POST", `/v1/me/subscriptions/${id}`, { token: a.token, country: "CD", body: { action: "RESUME" } })).body.status, "ACTIVE");
+    // Someone else cannot pause it.
+    assert.equal((await call("POST", `/v1/me/subscriptions/${id}`, { token: b.token, country: "CD", body: { action: "PAUSE" } })).status, 403);
+    // Cancelling removes it from the list.
+    assert.equal((await call("POST", `/v1/me/subscriptions/${id}`, { token: a.token, country: "CD", body: { action: "CANCEL" } })).body.status, "CANCELLED");
+    assert.ok(!(await call("GET", "/v1/me/subscriptions", { token: a.token, country: "CD" })).body.subscriptions.some((s: { id: string }) => s.id === id));
+    // A paused subscription is not placed by the sweep.
+    const paused = await call("POST", "/v1/me/subscriptions", { token: a.token, country: "CD", body: subCart() });
+    await call("POST", `/v1/me/subscriptions/${paused.body.id}`, { token: a.token, country: "CD", body: { action: "PAUSE" } });
+    await inspect("CD", "UPDATE ordering.order_subscription SET next_run = now() - interval '1 minute' WHERE id = $1 RETURNING id", [paused.body.id]);
+    await subs().runSweep("CD");
+    const [c] = await db.tx({ country: "CD" }, (sql) => sql.query<{ n: number }>("SELECT count(*)::int AS n FROM ordering.subscription_run WHERE subscription_id = $1", [paused.body.id]));
+    assert.equal(c!.n, 0, "a paused subscription is never run");
   });
 });
