@@ -16,7 +16,7 @@ import type { CommerceService } from "./commerce.ts";
 import type { PaymentService } from "./payments.ts";
 import { badRequest, notFound, unprocessable } from "./errors.ts";
 
-type TxKind = "TOPUP" | "ORDER_PAYMENT" | "REFUND" | "ADJUSTMENT";
+type TxKind = "TOPUP" | "ORDER_PAYMENT" | "REFUND" | "ADJUSTMENT" | "REFERRAL";
 const MIN_TOPUP_MINOR = 100n; // at least one major unit
 
 export class WalletService {
@@ -99,6 +99,23 @@ export class WalletService {
     const [existing] = await sql.query<{ id: string }>("SELECT id FROM wallet.transaction WHERE order_id = $1 AND kind = 'ORDER_PAYMENT'", [orderId]);
     if (existing) return;
     await this.#move(sql, country, userId, total.negate(), "ORDER_PAYMENT", { orderId });
+  }
+
+  /**
+   * Credits a platform-funded reward (e.g. a referral) to a customer's wallet and records the cost in the
+   * ledger (promotion_expense debited, customer_wallet credited), so the money is real, spendable stored value.
+   * Idempotent on the reference. Returns false if that reference was already credited.
+   */
+  async creditFromPromotion(sql: Sql, country: string, userId: string, amount: Money, kind: TxKind, reference: string): Promise<boolean> {
+    const [existing] = await sql.query<{ id: string }>("SELECT id FROM wallet.transaction WHERE reference = $1 AND user_id = $2 AND kind = $3", [reference, userId, kind]);
+    if (existing) return false;
+    await this.#move(sql, country, userId, amount, kind, { reference });
+    await postJournal(sql, createJournal({
+      id: `promo-wallet:${reference}`, idempotencyKey: `promo-wallet:${reference}`, description: `Promotional wallet credit (${kind})`,
+      entries: [{ account: "promotion_expense", country, amount }, { account: "customer_wallet", country, amount: amount.negate() }],
+      postedAt: this.now(),
+    }));
+    return true;
   }
 
   /** Credits a wallet-funded order back to the wallet (on cancellation before delivery). Idempotent per order. */

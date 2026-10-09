@@ -13,7 +13,7 @@ const LINKS = [
 ];
 
 const FOOTER: [string, [string, string][]][] = [
-  ["Order", [["Order food", "/order/"], ["My wallet", "/wallet/"], ["My table bookings", "/bookings/"], ["Kinshasa", "/kinshasa/"], ["How it works", "/how-it-works/"], ["Send a meal home", "/send-home/"], ["How pricing works", "/legal/pricing/"]]],
+  ["Order", [["Order food", "/order/"], ["My wallet", "/wallet/"], ["Invite & earn", "/wallet/"], ["My table bookings", "/bookings/"], ["Kinshasa", "/kinshasa/"], ["How it works", "/how-it-works/"], ["Send a meal home", "/send-home/"], ["How pricing works", "/legal/pricing/"]]],
   ["Partners", [["Restaurants & shops", "/restaurants/"], ["Riders & fleets", "/riders/"], ["Merchant terms", "/legal/merchant-terms/"], ["Rider terms", "/legal/rider-terms/"]]],
   ["Trust", [["Reviews & moderation", "/legal/reviews/"], ["Ranking & fairness", "/legal/ranking/"], ["Allergens & food safety", "/legal/food-safety/"], ["Accessibility", "/legal/accessibility/"]]],
   ["Company", [["About", "/about/"], ["Terms of use", "/legal/terms/"], ["Privacy", "/legal/privacy/"], ["All policies", "/legal/"]]],

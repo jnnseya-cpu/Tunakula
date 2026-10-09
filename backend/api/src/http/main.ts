@@ -38,6 +38,7 @@ import { cachedRouting, googleRoutesRouting, osrmRouting, straightLineRouting, w
 import type { DispatchService } from "../app/dispatch.ts";
 import type { PaymentService } from "../app/payments.ts";
 import type { WalletService } from "../app/wallet.ts";
+import type { ReferralService } from "../app/referrals.ts";
 import { createApi } from "./app.ts";
 import { TOKENS } from "./common.ts";
 
@@ -121,6 +122,7 @@ if (dispatchMs > 0) {
   const dispatcher = app.get<DispatchService>(TOKENS.dispatch);
   const payments = app.get<PaymentService>(TOKENS.payments);
   const wallet = app.get<WalletService>(TOKENS.wallet);
+  const referrals = app.get<ReferralService>(TOKENS.referrals);
   let running = false;
   const loop = setInterval(async () => {
     if (running) return;
@@ -136,6 +138,9 @@ if (dispatchMs > 0) {
         // Wallet-funded orders that ended before delivery are credited back to the wallet.
         const walletRefunds = await wallet.refundSweep(c.iso2);
         if (walletRefunds.refunded) log.info("wallet refunds", { country: c.iso2, ...walletRefunds });
+        // Referral rewards unlock once the referee has spent the threshold.
+        const unlocked = await referrals.unlockSweep(c.iso2);
+        if (unlocked.unlocked) log.info("referrals", { country: c.iso2, ...unlocked });
       }
     } catch (error) { log.error("dispatch failed", { error }); } finally { running = false; }
   }, dispatchMs);

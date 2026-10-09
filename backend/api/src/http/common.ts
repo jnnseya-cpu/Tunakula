@@ -29,6 +29,7 @@ export const TOKENS = {
   reservations: "RESERVATION_SERVICE",
   refunds: "REFUND_SERVICE",
   wallet: "WALLET_SERVICE",
+  referrals: "REFERRAL_SERVICE",
   logger: "LOGGER",
 } as const;
 

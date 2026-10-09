@@ -1212,6 +1212,14 @@ section.tight { padding: 44px 0; }
 .wallet-txns .num.credit { color: var(--ok, #0a7d33); }
 .wallet-txns .num.debit { color: var(--ink); }
 .wallet-topup-hint { display: block; margin-top: 8px; font-size: 13px; font-weight: 600; color: var(--accent-ink, #8a4b00); }
+
+/* Referrals (additive) */
+.referral-code { display: flex; align-items: center; gap: 10px; margin: 10px 0; }
+.referral-code code { flex: 1; font-size: 22px; font-weight: 800; letter-spacing: 0.12em; text-align: center; padding: 12px; border-radius: 12px; border: 2px dashed var(--rule-strong); background: var(--tint); }
+.referral-apply { display: flex; gap: 8px; margin-top: 8px; }
+.referral-apply input { flex: 1; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--rule-strong); letter-spacing: 0.1em; font-weight: 700; text-transform: uppercase; }
+.referral-bar { height: 10px; border-radius: 999px; background: var(--tint); overflow: hidden; margin: 10px 0 4px; }
+.referral-bar span { display: block; height: 100%; background: var(--ok, #0a7d33); border-radius: 999px; transition: width .4s; }
 .g-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
 .g-status { font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 999px; background: var(--tint); color: var(--muted); }
 .g-status.open { background: color-mix(in srgb, var(--ok, #0a7d33) 12%, transparent); color: var(--ok, #0a7d33); }

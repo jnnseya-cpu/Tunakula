@@ -19,6 +19,7 @@ import type { AddressService } from "../app/addresses.ts";
 import type { ReservationService, BookingStatus } from "../app/reservations.ts";
 import type { RefundService } from "../app/refunds.ts";
 import type { WalletService } from "../app/wallet.ts";
+import type { ReferralService } from "../app/referrals.ts";
 import type { NotificationService } from "../app/comms.ts";
 import { serialiseQuote, type CommerceService, type PlaceOrderInput, type QuoteInput } from "../app/commerce.ts";
 import { badRequest, notFound } from "../app/errors.ts";
@@ -1077,6 +1078,38 @@ export class WalletController {
       methodType: String(body?.method_type ?? "MOBILE_MONEY_PUSH") as PaymentMethodType,
       payer: body?.payer ?? {},
     }, key);
+  }
+}
+
+/** Referrals: a customer shares their code; a new customer applies it and earns a reward after spending the threshold. */
+@Controller("v1")
+export class ReferralController {
+  constructor(
+    @Inject(TOKENS.db) private readonly db: Db,
+    @Inject(TOKENS.tokens) private readonly tokens: TokenService,
+    @Inject(TOKENS.referrals) private readonly referrals: ReferralService,
+  ) {}
+
+  #p(req: FastifyRequest) {
+    return this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+  }
+
+  /** The customer's own referral code and how it is doing. */
+  @Get("me/referral")
+  async mine(@Req() req: FastifyRequest) {
+    return this.referrals.myCode(country(req), await this.#p(req));
+  }
+
+  /** The referee's claim and progress toward the unlock. */
+  @Get("me/referral/claim")
+  async status(@Req() req: FastifyRequest) {
+    return this.referrals.status(country(req), await this.#p(req));
+  }
+
+  /** A new customer applies a referral code. */
+  @Post("referrals/claim")
+  async claim(@Req() req: FastifyRequest, @Body() body: { code?: string }) {
+    return this.referrals.claim(country(req), await this.#p(req), String(body?.code ?? ""));
   }
 }
 
