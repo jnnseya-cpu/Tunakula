@@ -498,3 +498,5 @@ tr.sel td { background: rgba(250, 210, 14, 0.12); }
 .wiz-review dt { color: var(--muted); }
 .wiz-done { text-align: center; }
 .wiz-cta { display: flex; gap: 10px; justify-content: center; margin-top: 12px; flex-wrap: wrap; }
+.wiz-dish { margin-top: 12px; padding: 14px; border: 1px solid var(--rule); border-radius: 12px; background: var(--surface, #fafbff); }
+.wiz-dish-actions { display: flex; gap: 10px; justify-content: space-between; flex-wrap: wrap; margin-top: 12px; }

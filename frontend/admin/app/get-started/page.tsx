@@ -1,14 +1,16 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Shell, useConsole } from "../../components/shell";
 import { api } from "../../lib/api";
+import { blankDish, DishFields, dishPayload, OptionsEditor, type DishFormValue } from "../../components/dish-form";
 
 /** Self-serve onboarding wizard: register a business, add a branch + menu, publish — no field team needed. */
 export default function GetStartedPage() {
   return <Shell title="get_started"><Wizard /></Shell>;
 }
 
-interface Item { id: string; name: string; price: string }
+interface Item { id: string; name: string }
+interface Config { money: { currencies: { settlement: string } } }
 const KINSHASA = { lat: -4.3217, lng: 15.3125 };
 
 function Wizard() {
@@ -26,7 +28,12 @@ function Wizard() {
   const [locMsg, setLocMsg] = useState<string | null>(null);
   const [branchId, setBranchId] = useState<string | null>(null);
   const [items, setItems] = useState<Item[]>([]);
-  const [form, setForm] = useState({ fr: "", en: "", usd: "" });
+  const [dish, setDish] = useState<DishFormValue>(blankDish());
+  const [settlement, setSettlement] = useState("USD");
+
+  useEffect(() => {
+    api<Config>(`/v1/countries/${country}/config`, { country }).then((c) => setSettlement(c.money.currencies.settlement)).catch(() => undefined);
+  }, [country]);
 
   const call = async <T,>(fn: () => Promise<T>): Promise<T | null> => {
     setBusy(true); setError(null);
@@ -49,9 +56,9 @@ function Wizard() {
     if (r) { setBranchId(r.branch_id); setStep(3); }
   };
   const addItem = async () => {
-    if (!form.fr.trim() || !form.usd.trim()) return;
-    const r = await call(() => api<{ id: string }>(`/v1/branches/${branchId}/items`, { method: "POST", country, body: { names: { fr: form.fr, ...(form.en ? { en: form.en } : {}) }, prices: { USD: form.usd } } }));
-    if (r) { setItems([...items, { id: r.id, name: form.fr, price: form.usd }]); setForm({ fr: "", en: "", usd: "" }); }
+    if (!dish.name_fr.trim() || !dish.price.trim()) return;
+    const r = await call(() => api<{ id: string }>(`/v1/branches/${branchId}/items`, { method: "POST", country, body: dishPayload(dish, settlement) }));
+    if (r) { setItems([...items, { id: r.id, name: dish.name_fr.trim() }]); setDish(blankDish()); }
   };
   const publish = async () => {
     const r = await call(() => api<{ published: boolean }>(`/v1/merchant/branches/${branchId}/publish`, { method: "POST", country }));
@@ -92,17 +99,18 @@ function Wizard() {
 
       {step === 3 ? (
         <section className="card">
-          <div className="card-head"><div><h2>{L("Ajoutez vos plats", "Add your dishes")}</h2><p>{L("Au moins un plat est requis pour publier. Vous pourrez en ajouter d'autres plus tard.", "At least one dish is needed to publish. You can add more later.")}</p></div></div>
+          <div className="card-head"><div><h2>{L("Ajoutez vos plats", "Add your dishes")}</h2><p>{L("Au moins un plat est requis pour publier. Décrivez-le comme dans la carte : variations (taille, choix), add-ons payants, régimes et allergènes.", "At least one dish is needed to publish. Describe it like on the menu: variations (size, choice), paid add-ons, dietary flags and allergens.")}</p></div></div>
           {items.length ? (
-            <ul className="wiz-items">{items.map((it) => <li key={it.id}><b>{it.name}</b><span className="num">${it.price}</span></li>)}</ul>
+            <ul className="wiz-items">{items.map((it) => <li key={it.id}><b>{it.name}</b><span className="muted small">{L("ajouté ✓", "added ✓")}</span></li>)}</ul>
           ) : <p className="muted">{L("Aucun plat pour l'instant.", "No dishes yet.")}</p>}
-          <div className="filters" style={{ marginTop: 10 }}>
-            <input className="input" placeholder={L("Nom (français)", "Name (French)")} value={form.fr} onChange={(e) => setForm({ ...form, fr: e.target.value })} />
-            <input className="input" placeholder={L("Nom (anglais)", "Name (English)")} value={form.en} onChange={(e) => setForm({ ...form, en: e.target.value })} />
-            <input className="input" inputMode="decimal" placeholder="USD" value={form.usd} onChange={(e) => setForm({ ...form, usd: e.target.value })} style={{ width: 100 }} />
-            <button className="btn" type="button" disabled={busy || !form.fr.trim() || !form.usd.trim()} onClick={addItem}>{L("Ajouter", "Add")}</button>
+          <div className="wiz-dish">
+            <DishFields form={dish} setForm={setDish} settlement={settlement} lang={lang} L={L} />
+            <OptionsEditor form={dish} setForm={setDish} settlement={settlement} L={L} />
           </div>
-          <button className="btn primary" type="button" disabled={items.length === 0} onClick={() => setStep(4)} style={{ marginTop: 12 }}>{L("Continuer", "Continue")}</button>
+          <div className="wiz-dish-actions">
+            <button className="btn" type="button" disabled={busy || !dish.name_fr.trim() || !dish.price.trim()} onClick={addItem}>{L("Ajouter ce plat", "Add this dish")}</button>
+            <button className="btn primary" type="button" disabled={items.length === 0} onClick={() => setStep(4)}>{L("Continuer", "Continue")}</button>
+          </div>
         </section>
       ) : null}
 
