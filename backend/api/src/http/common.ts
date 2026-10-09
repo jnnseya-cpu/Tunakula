@@ -35,6 +35,7 @@ export const TOKENS = {
   chat: "CHAT_SERVICE",
   banners: "BANNER_SERVICE",
   subscriptions: "SUBSCRIPTION_SERVICE",
+  pos: "POS_SERVICE",
   onboardingMerchant: "MERCHANT_ONBOARDING_SERVICE",
   logger: "LOGGER",
 } as const;

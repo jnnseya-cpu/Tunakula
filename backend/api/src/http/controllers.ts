@@ -25,6 +25,7 @@ import type { CashbackService } from "../app/cashback.ts";
 import type { ChatService } from "../app/chat.ts";
 import type { BannerService } from "../app/banners.ts";
 import type { SubscriptionService } from "../app/subscriptions.ts";
+import type { PosService } from "../app/pos.ts";
 import type { MerchantOnboardingService } from "../app/merchant-onboarding.ts";
 import type { NotificationService } from "../app/comms.ts";
 import { serialiseQuote, type CommerceService, type PlaceOrderInput, type QuoteInput } from "../app/commerce.ts";
@@ -1339,6 +1340,50 @@ export class SubscriptionController {
   @HttpCode(200)
   async setStatus(@Req() req: FastifyRequest, @Param("id") id: string, @Body() body: { action?: string }) {
     return this.subs.setStatus(country(req), await this.#p(req), id, body?.action ?? "");
+  }
+}
+
+/** Built-in POS: branch staff take a cash counter order (takeaway or dine-in) that lands on the kitchen board. */
+type PosBody = {
+  branch_id?: string; items?: QuoteItemBody[]; order_type?: string; table_id?: string; device_id?: string;
+  customer_phone?: string; customer_name?: string; kitchen_note?: string;
+  expected_total?: { amount_minor: string; currency: string };
+};
+const toPosInput = (b: PosBody) => ({
+  ...(b?.branch_id ? { branchId: String(b.branch_id) } : {}),
+  ...(Array.isArray(b?.items) ? { items: b.items.map((i) => ({ itemId: i.item_id, quantity: i.quantity, ...(Array.isArray(i.options) ? { options: i.options } : {}), ...(Array.isArray(i.addons) ? { addons: i.addons } : {}), ...(typeof i.note === "string" && i.note.trim() ? { note: i.note } : {}) })) } : {}),
+  ...(b?.order_type ? { orderType: String(b.order_type) } : {}),
+  ...(b?.table_id ? { tableId: String(b.table_id) } : {}),
+  ...(b?.device_id ? { deviceId: String(b.device_id) } : {}),
+  ...(b?.customer_phone ? { customerPhone: String(b.customer_phone) } : {}),
+  ...(b?.customer_name ? { customerName: String(b.customer_name) } : {}),
+  ...(typeof b?.kitchen_note === "string" && b.kitchen_note.trim() ? { kitchenNote: b.kitchen_note } : {}),
+  ...(b?.expected_total ? { expectedTotal: b.expected_total } : {}),
+});
+
+@Controller("v1")
+export class PosController {
+  constructor(
+    @Inject(TOKENS.db) private readonly db: Db,
+    @Inject(TOKENS.tokens) private readonly tokens: TokenService,
+    @Inject(TOKENS.pos) private readonly pos: PosService,
+  ) {}
+
+  #p(req: FastifyRequest) {
+    return this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+  }
+
+  @Post("pos/quote")
+  @HttpCode(200)
+  async quote(@Req() req: FastifyRequest, @Body() body: PosBody) {
+    return serialiseQuote(await this.pos.quote(country(req), await this.#p(req), toPosInput(body)));
+  }
+
+  @Post("pos/orders")
+  async place(@Req() req: FastifyRequest, @Body() body: PosBody) {
+    const key = req.headers["idempotency-key"] as string;
+    const r = await this.pos.place(country(req), await this.#p(req), toPosInput(body), key);
+    return { order_id: r.orderId, state: r.state, recipient_code: r.recipientCode, order_type: r.orderType, ...(r.customerPhone ? { customer_phone: r.customerPhone } : {}), quote: serialiseQuote(r.quote) };
   }
 }
 

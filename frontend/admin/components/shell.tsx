@@ -69,7 +69,7 @@ const NAV: { group: Key; items: NavItem[] }[] = [
     { href: "/dispatch/", key: "dispatch", cap: "dispatch" },
     { href: "/kitchen/", key: "kitchen", cap: "kitchen" },
     { href: "/orders/", key: "orders", cap: "orders" },
-    { href: "/pos/", key: "pos", soon: true },
+    { href: "/pos/", key: "pos", cap: "pos" },
     { href: "/support/", key: "support", soon: true },
   ] },
   { group: "g_business", items: [

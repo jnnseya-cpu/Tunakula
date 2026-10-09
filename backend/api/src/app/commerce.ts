@@ -341,11 +341,19 @@ export class CommerceService {
   }
 
   /** Places an order: re-prices, checks the accepted total, creates the event stream (§11.2). */
-  async place(country: string, principal: Principal, input: PlaceOrderInput, idempotencyKey: string): Promise<{ orderId: string; state: string; recipientCode: string; quote: Quote }> {
+  /**
+   * Places an order. `pos` turns this into a counter sale taken by branch staff: the order is attributed to the
+   * supplied walk-in/known customer and stamped with the cashier (`staffId`) and the POS channel; the on-delivery
+   * cash policy is skipped because counter cash is paid up front. Authorisation for POS happens in PosService.
+   */
+  async place(country: string, principal: Principal, input: PlaceOrderInput, idempotencyKey: string, pos?: { customerId: string; staffId: string; deviceId: string; tableId?: string }): Promise<{ orderId: string; state: string; recipientCode: string; quote: Quote }> {
     const profile = this.profile(country);
+    const customerId = pos?.customerId ?? principal.userId;
     let placedRestaurant: string | undefined;
     const out = await this.db.tx({ country }, async (sql) => {
-      const quote = await this.#quote(sql, country, { ...input, customerId: principal.userId });
+      // A counter (POS) sale is priced plainly — membership and coupons are app features — but still attributed to
+      // the walk-in/known customer for history and loyalty. An online order prices for the signed-in customer.
+      const quote = await this.#quote(sql, country, { ...input, ...(pos ? {} : { customerId }) });
       // What the customer actually pays: the gross price minus any platform-funded discount (membership + coupon).
       const total = quote.payable ? Money.fromJSON(quote.payable) : quote.breakdown.total;
       if (input.expectedTotal?.currency !== total.currency || input.expectedTotal.amount_minor !== total.minor.toString()) {
@@ -361,11 +369,11 @@ export class CommerceService {
       const walletApplied = walletFunded ? undefined : this.#resolveWalletApply(input.walletApplyMinor, total);
       if (walletApplied) {
         if (!this.wallet) throw unprocessable("WALLET_UNAVAILABLE", "Wallet payment is not available");
-        const bal = await this.wallet.balance(sql, country, principal.userId, walletApplied.currency);
+        const bal = await this.wallet.balance(sql, country, customerId, walletApplied.currency);
         if (bal.compare(walletApplied) < 0) throw unprocessable("INSUFFICIENT_WALLET_BALANCE", "Your wallet balance is too low for the amount you chose to pay from it");
       }
       // Cash on delivery collects what the rider will actually hand over: the total less any wallet portion.
-      if (input.paymentMode === "CASH_ON_DELIVERY") await this.#assertCodAllowed(sql, profile, principal.userId, walletApplied ? total.subtract(walletApplied) : total);
+      if (input.paymentMode === "CASH_ON_DELIVERY" && !pos) await this.#assertCodAllowed(sql, profile, principal.userId, walletApplied ? total.subtract(walletApplied) : total);
       if (input.orderType === "XBO" && !input.recipient) throw badRequest("RECIPIENT_REQUIRED", "Cross-border orders name a recipient");
 
       const branch = (await getBranch(sql, input.branchId)) as BranchRow;
@@ -391,11 +399,13 @@ export class CommerceService {
       const snapshot: OrderSnapshot = {
         orderId,
         type: input.orderType,
-        channel: "ONLINE",
+        channel: pos ? "POS" : "ONLINE",
         country,
         brandId: branch.brand_id,
         branchId: branch.id,
-        customerId: principal.userId,
+        customerId,
+        ...(pos ? { staffId: pos.staffId, deviceId: pos.deviceId } : {}),
+        ...(pos?.tableId ? { tableId: pos.tableId } : {}),
         ...(input.recipient ? { recipient: input.recipient } : {}),
         gifted: input.gifted === true || input.orderType === "XBO",
         lines,
@@ -432,12 +442,12 @@ export class CommerceService {
         ...(scheduledFor ? { scheduledFor: scheduledFor.toISOString() } : {}),
         geofenceRadiusM: GEOFENCE_M,
       };
-      const actor: Actor = { kind: "CUSTOMER", id: principal.userId };
+      const actor: Actor = { kind: "CUSTOMER", id: customerId };
       const tenant = { country, brandId: branch.brand_id };
       await this.#run(sql, tenant, orderId, actor, `${idempotencyKey}:draft`, { type: "CREATE_DRAFT", snapshot });
       // Log the coupon redemption now the order exists (idempotent on the order id).
       if (quote.coupon && this.coupons) {
-        await this.coupons.record(sql, country, quote.coupon.couponId, principal.userId, orderId, Money.fromJSON(quote.coupon.discount));
+        await this.coupons.record(sql, country, quote.coupon.couponId, customerId, orderId, Money.fromJSON(quote.coupon.discount));
       }
       // Mark the referee's first-order discount as used so it applies only once.
       if (quote.referral && this.referral) {
@@ -445,7 +455,7 @@ export class CommerceService {
       }
       if (walletFunded) {
         // Reserve the money from the balance, then settle the order as paid at once.
-        await this.wallet!.payForOrder(sql, country, principal.userId, orderId, total);
+        await this.wallet!.payForOrder(sql, country, customerId, orderId, total);
         await this.#run(sql, tenant, orderId, actor, `${idempotencyKey}:checkout`, { type: "START_CHECKOUT" });
         const { order } = await this.#run(sql, tenant, orderId, actor, `${idempotencyKey}:wallet-confirm`, { type: "CONFIRM_PAYMENT", paymentIntentId: `wallet:${orderId}` });
         return { orderId, state: order.state, recipientCode, quote };
@@ -454,14 +464,14 @@ export class CommerceService {
       // rest). A split prepaid order waits for the remainder charge; its wallet portion is debited only when
       // that charge confirms (so an abandoned order never has wallet money moved).
       if (walletApplied && settledMode === "CASH_ON_DELIVERY") {
-        await this.wallet!.payForOrder(sql, country, principal.userId, orderId, walletApplied);
+        await this.wallet!.payForOrder(sql, country, customerId, orderId, walletApplied);
       }
       const next: OrderCommand = settledMode === "PREPAID" ? { type: "START_CHECKOUT" } : { type: "PLACE_CASH_ORDER" };
       const { order } = await this.#run(sql, tenant, orderId, actor, `${idempotencyKey}:${next.type}`, next);
       return { orderId, state: order.state, recipientCode, quote };
     });
     // A cash order is PLACED straight away; a prepaid one becomes PLACED when payment confirms.
-    if (out.state === "PLACED") await this.#notifyOrder(country, { state: "PLACED", orderId: out.orderId, customerId: principal.userId, restaurant: placedRestaurant });
+    if (out.state === "PLACED") await this.#notifyOrder(country, { state: "PLACED", orderId: out.orderId, customerId, restaurant: placedRestaurant });
     return out;
   }
 

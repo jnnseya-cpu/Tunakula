@@ -3348,3 +3348,72 @@ describe("repeat / subscription orders", () => {
     assert.equal(c!.n, 0, "a paused subscription is never run");
   });
 });
+
+describe("built-in POS (counter orders)", () => {
+  const posCart = (type = "TAKEAWAY", extra: Record<string, unknown> = {}) => ({ branch_id: branchId, items: [{ item_id: itemId, quantity: 2 }], order_type: type, ...extra });
+
+  test("staff take a cash takeaway at the counter; it lands on the kitchen board, attributed to a walk-in not the cashier", async () => {
+    const q = await call("POST", "/v1/pos/quote", { token: restaurantOwner.token, country: "CD", body: posCart() });
+    assert.equal(q.status, 200, JSON.stringify(q.body));
+    assert.ok(q.body.total.amount_minor, "the counter quote has a total");
+
+    const placed = await call("POST", "/v1/pos/orders", { token: restaurantOwner.token, country: "CD", body: { ...posCart(), expected_total: q.body.total } });
+    assert.equal(placed.status, 201, JSON.stringify(placed.body));
+    assert.equal(placed.body.state, "PLACED", "a cash counter order is PLACED at once");
+    assert.ok(placed.body.recipient_code);
+
+    // Stamped with the POS channel and the cashier; attributed to a walk-in, never the cashier's own account.
+    const [row] = await inspect("CD",
+      `SELECT o.customer_id::text AS customer_id,
+              d.payload->'snapshot'->>'channel' AS channel,
+              d.payload->'snapshot'->>'staffId' AS staff
+         FROM ordering.order_view o
+         JOIN ordering.order_event d ON d.order_id = o.order_id AND d.type = 'ORDER_DRAFTED'
+        WHERE o.order_id = $1`, [placed.body.order_id]);
+    assert.equal(row.channel, "POS");
+    assert.equal(row.staff, restaurantOwner.userId);
+    assert.notEqual(row.customer_id, restaurantOwner.userId, "attributed to a walk-in, not the cashier");
+
+    // Not in the cashier's own order history.
+    const mine = await call("GET", "/v1/me/orders", { token: restaurantOwner.token, country: "CD" });
+    assert.ok(!mine.body.data.some((o: { order_id: string }) => o.order_id === placed.body.order_id), "a counter sale is not the cashier's own order");
+
+    // Shows on the kitchen board.
+    const board = await call("GET", "/v1/kitchen/orders", { token: restaurantOwner.token, country: "CD" });
+    assert.ok(board.body.orders.some((o: { order_id: string }) => o.order_id === placed.body.order_id), "the counter order is on the kitchen board");
+  });
+
+  test("a dine-in with a table number and a customer phone attributes to that customer", async () => {
+    const q = await call("POST", "/v1/pos/quote", { token: restaurantOwner.token, country: "CD", body: posCart("DINE_IN") });
+    const placed = await call("POST", "/v1/pos/orders", { token: restaurantOwner.token, country: "CD", body: { ...posCart("DINE_IN"), table_id: "12", customer_phone: "+243810000777", customer_name: "Grace", expected_total: q.body.total } });
+    assert.equal(placed.status, 201, JSON.stringify(placed.body));
+    assert.equal(placed.body.order_type, "DINE_IN");
+
+    const [u] = await inspect("CD", "SELECT id::text AS id FROM identity.app_user WHERE phone_e164 = $1", ["+243810000777"]);
+    assert.ok(u, "a customer account was created from the phone given at the counter");
+    const [row] = await inspect("CD",
+      `SELECT o.customer_id::text AS customer_id, d.payload->'snapshot'->>'tableId' AS table_id
+         FROM ordering.order_view o
+         JOIN ordering.order_event d ON d.order_id = o.order_id AND d.type = 'ORDER_DRAFTED'
+        WHERE o.order_id = $1`, [placed.body.order_id]);
+    assert.equal(row.customer_id, u.id, "attributed to the named customer");
+    assert.equal(row.table_id, "12");
+  });
+
+  test("a bad customer phone is refused", async () => {
+    const r = await call("POST", "/v1/pos/orders", { token: restaurantOwner.token, country: "CD", body: { ...posCart(), customer_phone: "0810", expected_total: { amount_minor: "1", currency: "USD" } } });
+    assert.equal(r.status, 400);
+    assert.equal(r.body.code, "PHONE_INVALID");
+  });
+
+  test("a plain customer cannot operate the POS", async () => {
+    assert.equal((await call("POST", "/v1/pos/quote", { token: customer.token, country: "CD", body: posCart() })).status, 403);
+    assert.equal((await call("POST", "/v1/pos/orders", { token: customer.token, country: "CD", body: { ...posCart(), expected_total: { amount_minor: "1", currency: "USD" } } })).status, 403);
+  });
+
+  test("the counter price is plain, so a confirmed total always places (no membership divergence)", async () => {
+    const q = await call("POST", "/v1/pos/quote", { token: restaurantOwner.token, country: "CD", body: posCart() });
+    const placed = await call("POST", "/v1/pos/orders", { token: restaurantOwner.token, country: "CD", body: { ...posCart(), expected_total: q.body.total } });
+    assert.equal(placed.status, 201, JSON.stringify(placed.body));
+  });
+});
