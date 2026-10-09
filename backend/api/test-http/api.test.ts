@@ -2609,4 +2609,31 @@ describe("brands and franchises", () => {
     assert.equal((await call("POST", "/v1/merchant/brand/invite", { token: joiner.token, country: "CD" })).status, 403);
     assert.ok(reg.body.group_id);
   });
+
+  test("an owner copies one branch's whole menu into another of their branches", async () => {
+    const jpeg = (seed: number) => Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(32, seed), Buffer.from([0xff, 0xd9])]).toString("base64");
+    const owner = await signIn("+243810000260");
+    const reg = await call("POST", "/v1/merchant/register", { token: owner.token, country: "CD", body: { business_name: "Multi Brand" } });
+    const a = (await call("POST", "/v1/merchant/branches", { token: owner.token, country: "CD", body: { group_id: reg.body.group_id, name: "Multi — Gombe", lat: -4.31, lng: 15.28 } })).body.branch_id;
+    const b = (await call("POST", "/v1/merchant/branches", { token: owner.token, country: "CD", body: { group_id: reg.body.group_id, name: "Multi — Lemba", lat: -4.34, lng: 15.33 } })).body.branch_id;
+    const img = await call("POST", "/v1/media", { token: owner.token, country: "CD", body: { purpose: "MENU_ITEM", content_type: "image/jpeg", data_base64: jpeg(5) } });
+    await call("POST", `/v1/branches/${a}/items`, { token: owner.token, country: "CD", body: { names: { fr: "Poulet moambe" }, prices: { USD: "12.50" }, image_id: img.body.id, variations: [{ name: "Taille", type: "SINGLE", required: true, options: [{ name: "Normale", price: "0" }, { name: "Familiale", price: "6.00" }] }] } });
+    await call("POST", `/v1/branches/${a}/items`, { token: owner.token, country: "CD", body: { names: { fr: "Pondu" }, prices: { USD: "3.50" } } });
+
+    // Copy A's menu into the (empty) branch B.
+    const copy = await call("POST", `/v1/branches/${a}/menu/copy-to`, { token: owner.token, country: "CD", body: { target_branch_id: b } });
+    assert.equal(copy.status, 200, JSON.stringify(copy.body));
+    assert.equal(copy.body.copied, 2);
+    const menuB = await call("GET", `/v1/branches/${b}/menu`, { country: "CD" });
+    const moambe = (menuB.body.items as { names: Record<string, string>; image_id: string | null; variations: unknown[] }[]).find((i) => i.names.fr === "Poulet moambe");
+    assert.ok(moambe, "the dish was copied");
+    assert.equal(moambe!.image_id, img.body.id, "the photo comes along");
+    assert.equal(moambe!.variations.length, 1, "variations come along");
+
+    // Copying into the same branch, or without a target, is refused.
+    assert.equal((await call("POST", `/v1/branches/${a}/menu/copy-to`, { token: owner.token, country: "CD", body: { target_branch_id: a } })).body.code, "SAME_BRANCH");
+    // Someone who does not manage the target cannot copy into it.
+    const stranger = await signIn("+243810000264");
+    assert.equal((await call("POST", `/v1/branches/${a}/menu/copy-to`, { token: stranger.token, country: "CD", body: { target_branch_id: b } })).status, 403);
+  });
 });

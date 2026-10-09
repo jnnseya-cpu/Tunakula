@@ -172,6 +172,19 @@ export async function setAvailability(sql: Sql, itemId: string, available: boole
   return rows.length === 1;
 }
 
+/** Copies every dish of one branch into another (new items), keeping prices, photos, variations and add-ons. */
+export async function copyMenu(sql: Sql, source: BranchRow, target: BranchRow): Promise<number> {
+  const items = await menuOf(sql, source.id);
+  for (const it of items) {
+    await addMenuItem(sql, target, {
+      names: it.names, description: it.description, prices: it.prices, category: it.category, veg: it.veg,
+      tags: it.tags, allergens: it.allergens, recommended: it.recommended, variations: it.variations, addons: it.addons,
+      dietary: it.dietary, nutrition: it.nutrition, ageRestricted: it.age_restricted, imageId: it.image_id,
+    });
+  }
+  return items.length;
+}
+
 export async function menuOf(sql: Sql, branchId: string): Promise<MenuItemRow[]> {
   return sql.query<MenuItemRow & Record<string, unknown>>(
     `SELECT ${ITEM_COLUMNS} FROM catalogue.menu_item WHERE branch_id = $1 ORDER BY category NULLS LAST, created_at`,

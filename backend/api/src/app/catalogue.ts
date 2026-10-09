@@ -4,7 +4,7 @@ import type { CountryProfile } from "@tunakula/ts-contracts";
 import type { Db, Sql } from "../db/db.ts";
 import type { CountryConfigRegistry } from "../modules/config/config-registry.ts";
 import type { Principal } from "../modules/identity/policy.ts";
-import { addMenuItem, createBranch, ensureGroup, getBranch, menuOf, setAvailability, updateBranchProfile, updateMenuItem, type Addon, type BranchProfilePatch, type BranchRow, type MenuItemInput, type MenuItemRow, type Variation, type VariationOption } from "../persistence/catalogue.ts";
+import { addMenuItem, copyMenu, createBranch, ensureGroup, getBranch, menuOf, setAvailability, updateBranchProfile, updateMenuItem, type Addon, type BranchProfilePatch, type BranchRow, type MenuItemInput, type MenuItemRow, type Variation, type VariationOption } from "../persistence/catalogue.ts";
 import { audit } from "../persistence/identity.ts";
 import { badRequest, notFound, unprocessable } from "./errors.ts";
 import { require } from "./principal.ts";
@@ -182,6 +182,24 @@ export class CatalogueService {
         }
       }
       return { imported: created + updated, created, updated, errors: [] as { row: number; message: string }[] };
+    });
+  }
+
+  /** Copies one branch's whole menu into another branch of the same owner (both need menu:write). Appends. */
+  async copyMenuTo(country: string, principal: Principal, sourceId: string, targetId: string) {
+    if (!targetId) throw badRequest("TARGET_REQUIRED", "Choose a branch to copy the menu into");
+    if (sourceId === targetId) throw badRequest("SAME_BRANCH", "Choose a different branch to copy the menu into");
+    const profile = this.#profile(country);
+    return this.db.tx({ country }, async (sql) => {
+      const source = await getBranch(sql, sourceId);
+      if (!source) throw notFound("Branch");
+      const target = await getBranch(sql, targetId);
+      if (!target) throw notFound("Target branch");
+      require(principal, "menu:write", { type: "menu", country, branchId: source.id, restaurantGroupId: source.restaurant_group_id }, { activeCountry: country, profile });
+      require(principal, "menu:write", { type: "menu", country, branchId: target.id, restaurantGroupId: target.restaurant_group_id }, { activeCountry: country, profile });
+      const copied = await copyMenu(sql, source, target);
+      await audit(sql, { actor: principal.userId, action: "menu.copied", target: `branch:${targetId}`, country, detail: { from: sourceId, copied } });
+      return { copied, target_branch_id: targetId };
     });
   }
 

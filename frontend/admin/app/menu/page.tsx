@@ -44,6 +44,7 @@ function Menu() {
   const [form, setForm] = useState<Form | null>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [copyTarget, setCopyTarget] = useState("");
 
   useEffect(() => {
     const wanted = new URLSearchParams(window.location.search).get("branch");
@@ -130,6 +131,19 @@ function Menu() {
     } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   };
 
+  const copyMenu = async () => {
+    if (!copyTarget) return;
+    const targetName = branches?.find((b) => b.id === copyTarget)?.name ?? "";
+    const n = items?.length ?? 0;
+    if (!window.confirm(L(`Copier ${n} plats vers « ${targetName} » ?`, `Copy ${n} dishes to "${targetName}"?`))) return;
+    setBusy(true); setNotice(null); setError(null);
+    try {
+      const r = await api<{ copied: number }>(`/v1/branches/${branchId}/menu/copy-to`, { method: "POST", country, body: { target_branch_id: copyTarget } });
+      setNotice(L(`${r.copied} plats copiés vers « ${targetName} ».`, `${r.copied} dishes copied to "${targetName}".`));
+      setCopyTarget("");
+    } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
+  };
+
   const save = async () => {
     if (!form) return;
     setBusy(true); setError(null);
@@ -160,6 +174,15 @@ function Menu() {
           <input type="file" accept=".csv,text/csv" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) void doImport(f); e.target.value = ""; }} />
         </label>
         <button type="button" className="btn primary" onClick={() => setForm(blankDish())}>{L("Ajouter un plat", "Add a dish")}</button>
+        {branches.length > 1 ? (
+          <span className="menu-copy">
+            <select className="select" value={copyTarget} onChange={(e) => setCopyTarget(e.target.value)} aria-label={L("Copier la carte vers", "Copy menu to")}>
+              <option value="">{L("Copier la carte vers…", "Copy menu to…")}</option>
+              {branches.filter((b) => b.id !== branchId).map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+            </select>
+            <button type="button" className="btn" disabled={!copyTarget || busy || !items?.length} onClick={copyMenu}>{L("Copier", "Copy")}</button>
+          </span>
+        ) : null}
       </div>
       {notice ? <div className="banner ok">{notice}</div> : null}
 
