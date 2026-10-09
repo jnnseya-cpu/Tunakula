@@ -2,7 +2,7 @@
 /** Order tracking (/track/?id=) with live progress and the door code, and the order history (/orders/). */
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { api, ApiError, live, money, recallCode, setSession, STATE_LABEL, type MoneyWire } from "../lib/api";
+import { api, ApiError, live, money, recallCode, refundStatus, requestRefund, REFUND_REASONS, setSession, STATE_LABEL, type MoneyWire, type RefundRequestView, type RefundStatus } from "../lib/api";
 import { useSession } from "./account";
 import { localHour, modelSeconds } from "@tunakula/ts-contracts/eta-model";
 import { ClockIcon, PinIcon, useLocationCtx } from "./location";
@@ -128,6 +128,7 @@ export function Tracking() {
       ) : null}
 
       {o.state === "DELIVERED" ? <RateOrder orderId={o.order_id} /> : null}
+      {o.state === "DELIVERED" || o.state === "REFUND_REQUESTED" || o.state === "REFUNDED" ? <RefundRequest orderId={o.order_id} /> : null}
 
       {code && !TERMINAL.has(o.state) ? (
         <div className="door-code">
@@ -198,6 +199,55 @@ function RateOrder({ orderId }: { orderId: string }) {
       <button type="button" className="btn accent wide" disabled={rating < 1 || busy} onClick={submit}>{busy ? "Sending…" : "Submit rating"}</button>
     </div>
   );
+}
+
+const REFUND_STATUS_LABEL: Record<RefundStatus, string> = { PENDING: "Being reviewed", APPROVED: "Approved — refunded", DECLINED: "Not approved" };
+
+function RefundRequest({ orderId }: { orderId: string }) {
+  const [state, setState] = useState<"loading" | "hidden" | "can" | "form" | "has">("loading");
+  const [request, setRequest] = useState<RefundRequestView | null>(null);
+  const [reason, setReason] = useState(REFUND_REASONS[0]![0]);
+  const [comment, setComment] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = () => refundStatus(orderId)
+    .then((r) => { setRequest(r.request); setState(r.request ? "has" : r.refundable ? "can" : "hidden"); })
+    .catch(() => setState("hidden"));
+  useEffect(() => { load(); }, [orderId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const submit = async () => {
+    setBusy(true); setError(null);
+    try { await requestRefund(orderId, reason, comment.trim() || undefined); await load(); }
+    catch (e) { setError((e as ApiError).message); } finally { setBusy(false); }
+  };
+
+  if (state === "loading" || state === "hidden") return null;
+  if (state === "has" && request) {
+    return (
+      <div className="app-card refund">
+        <h2>Refund request</h2>
+        <p><span className={`refund-chip s-${request.status.toLowerCase()}`}>{REFUND_STATUS_LABEL[request.status]}</span></p>
+        <p className="muted small">{(REFUND_REASONS.find(([c]) => c === request.reason_code)?.[1]) ?? request.reason_code}{request.comment ? ` — “${request.comment}”` : ""}</p>
+        {request.resolution_note ? <p className="muted small">Support: {request.resolution_note}</p> : null}
+        {request.status === "DECLINED" ? <button type="button" className="link-btn" onClick={() => setState("can")}>Request again</button> : null}
+      </div>
+    );
+  }
+  if (state === "can") {
+    return (
+      <div className="app-card refund">
+        <h2>Something wrong with this order?</h2>
+        <label className="field"><span>What happened?</span>
+          <select value={reason} onChange={(e) => setReason(e.target.value)}>{REFUND_REASONS.map(([c, l]) => <option key={c} value={c}>{l}</option>)}</select>
+        </label>
+        <textarea rows={2} value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Tell us what happened (optional)" maxLength={1000} />
+        {error ? <p className="form-error small">{error}</p> : null}
+        <button type="button" className="btn wide" disabled={busy} onClick={submit}>{busy ? "Sending…" : "Request a refund"}</button>
+      </div>
+    );
+  }
+  return null;
 }
 
 export function OrderHistory() {

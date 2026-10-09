@@ -2053,3 +2053,86 @@ describe("scheduled orders", () => {
     assert.equal((await call("GET", `/v1/orders/${r.body.order_id}`, { token: customer.token, country: "CD" })).body.state, "CANCELLED");
   });
 });
+
+describe("refund requests", () => {
+  let support: { token: string; userId: string };
+  let label = 0;
+  // Drives a fresh PREPAID order all the way to DELIVERED and returns its id.
+  const deliverFresh = async () => {
+    const q = await call("POST", "/v1/carts/quote", { country: "CD", body: cart() });
+    const placed = await call("POST", "/v1/orders", { token: customer.token, country: "CD", body: { ...cart(), payment_mode: "PREPAID", expected_total: q.body.total } });
+    const orderId = placed.body.order_id as string;
+    const code = placed.body.recipient_code as string;
+    await call("POST", "/v1/payments/intents", { token: customer.token, country: "CD", body: { order_id: orderId, method_type: "MOBILE_MONEY_PUSH", payer: { msisdn: "+243810000001" } } });
+    const lb = `RF-${++label}`;
+    await transition(ops, orderId, { type: "ASSIGN_RIDER", riderId: rider.userId });
+    await transition(kitchen, orderId, { type: "ACCEPT" });
+    await transition(kitchen, orderId, { type: "START_PREPARING" });
+    await transition(kitchen, orderId, { type: "PACK", confirmedLineIds: ["l1"], packageCount: 1, allergenAcknowledged: true });
+    await transition(kitchen, orderId, { type: "MARK_READY", packages: [{ labelId: lb, sealId: `${lb}-S` }], packPhotoRef: "photo://pack" });
+    await transition(rider, orderId, { type: "PICK_UP", scannedLabelIds: [lb], restaurantConfirmed: true, sealsIntact: true, location: KINSHASA });
+    const done = await transition(rider, orderId, { type: "DELIVER", scannedLabelId: lb, location: DROP, sealIntact: true, verification: { method: "CODE", code } });
+    assert.equal(done.body.state, "DELIVERED", JSON.stringify(done.body));
+    return { orderId, total: q.body.total };
+  };
+  const balanceOf = async (account: string) =>
+    BigInt((await inspect("CD", "SELECT coalesce(sum(amount_minor),0)::text AS t FROM money.ledger_entry WHERE account = $1 AND country_iso2 = 'CD' AND currency = 'USD'", [account]))[0].t);
+
+  test("a customer requests a refund; support approves; the money is refunded and the books balance", async () => {
+    support = await signIn("+243810000070");
+    await grant({ userId: support.userId, role: "COUNTRY_FINANCE", scope: { type: "COUNTRY", id: "CD" } });
+    await grant({ userId: support.userId, role: "SUPPORT_AGENT", scope: { type: "COUNTRY", id: "CD" } });
+    // Merchant payable before this order settles; after the refund reversal it must return to exactly this.
+    const merchantBefore = await balanceOf("restaurant_payable");
+    const { orderId } = await deliverFresh();
+    // Before any request, the order is refundable.
+    const look = await call("GET", `/v1/orders/${orderId}/refund-request`, { token: customer.token, country: "CD" });
+    assert.equal(look.body.refundable, true);
+    assert.equal(look.body.request, null);
+    // The customer files the request.
+    const req = await call("POST", `/v1/orders/${orderId}/refund-request`, { token: customer.token, country: "CD", body: { reason_code: "ITEM_MISSING", comment: "The drink was missing" } });
+    assert.equal(req.status, 201, JSON.stringify(req.body));
+    assert.equal((await call("GET", `/v1/orders/${orderId}`, { token: customer.token, country: "CD" })).body.state, "REFUND_REQUESTED");
+    // A second request is refused while one is open.
+    assert.equal((await call("POST", `/v1/orders/${orderId}/refund-request`, { token: customer.token, country: "CD", body: { reason_code: "OTHER" } })).body.code, "REFUND_ALREADY_REQUESTED");
+    // A customer cannot see the support queue.
+    assert.equal((await call("GET", "/v1/admin/refunds", { token: customer.token, country: "CD" })).status, 403);
+    // Support sees it in the queue and approves it.
+    const queue = await call("GET", "/v1/admin/refunds", { token: support.token, country: "CD" });
+    assert.ok(queue.body.requests.some((r: { id: string }) => r.id === req.body.id));
+    const decided = await call("POST", `/v1/admin/refunds/${req.body.id}/decision`, { token: support.token, country: "CD", body: { approve: true, note: "Verified" } });
+    assert.equal(decided.body.status, "APPROVED", JSON.stringify(decided.body));
+    assert.equal((await call("GET", `/v1/orders/${orderId}`, { token: customer.token, country: "CD" })).body.state, "REFUNDED");
+    // The settlement was reversed: the merchant payable returns to where it was before this order settled.
+    assert.equal(await balanceOf("restaurant_payable"), merchantBefore, "merchant payable clawed back");
+    // The reversal journal itself balances to zero.
+    const rev = await inspect("CD", "SELECT coalesce(sum(amount_minor),0)::text AS t FROM money.ledger_entry e JOIN money.journal j ON j.id = e.journal_id WHERE j.idempotency_key = $1", [`order:${orderId}:refund-reversal`]);
+    assert.equal(rev[0].t, "0");
+    // The provider refund was recorded.
+    const refund = await inspect("CD", "SELECT status FROM payments.refund WHERE order_id = $1", [orderId]);
+    assert.equal(refund[0]?.status, "SUCCEEDED");
+  });
+
+  test("a refund cannot be requested before delivery", async () => {
+    const q = await call("POST", "/v1/carts/quote", { country: "CD", body: cart() });
+    const placed = await call("POST", "/v1/orders", { token: customer.token, country: "CD", body: { ...cart(), payment_mode: "CASH_ON_DELIVERY", expected_total: q.body.total } });
+    const refuse = await call("POST", `/v1/orders/${placed.body.order_id}/refund-request`, { token: customer.token, country: "CD", body: { reason_code: "LATE" } });
+    assert.equal(refuse.body.code, "NOT_REFUNDABLE");
+  });
+
+  test("support can decline a request and the order returns to delivered", async () => {
+    const { orderId } = await deliverFresh();
+    const req = await call("POST", `/v1/orders/${orderId}/refund-request`, { token: customer.token, country: "CD", body: { reason_code: "FOOD_QUALITY" } });
+    assert.equal(req.status, 201, JSON.stringify(req.body));
+    const decided = await call("POST", `/v1/admin/refunds/${req.body.id}/decision`, { token: support.token, country: "CD", body: { approve: false, note: "Outside policy" } });
+    assert.equal(decided.body.status, "DECLINED");
+    assert.equal((await call("GET", `/v1/orders/${orderId}`, { token: customer.token, country: "CD" })).body.state, "DELIVERED");
+    // After a decline the customer may file again.
+    assert.equal((await call("GET", `/v1/orders/${orderId}/refund-request`, { token: customer.token, country: "CD" })).body.refundable, true);
+  });
+
+  test("a bad reason is refused", async () => {
+    const { orderId } = await deliverFresh();
+    assert.equal((await call("POST", `/v1/orders/${orderId}/refund-request`, { token: customer.token, country: "CD", body: { reason_code: "BECAUSE" } })).body.code, "REASON_INVALID");
+  });
+});

@@ -152,6 +152,14 @@ export const bookTable = (b: { branch_id: string; party_size: number; at: string
 export const myBookings = () => api<{ bookings: Booking[] }>("/v1/me/reservations").then((r) => r.bookings);
 export const cancelBooking = (id: string) => api<{ id: string; status: BookingStatus }>(`/v1/reservations/${id}/cancel`, { method: "POST" });
 
+// ── Refund requests ──
+export type RefundStatus = "PENDING" | "APPROVED" | "DECLINED";
+export interface RefundRequestView { id: string; order_id: string; reason_code: string; comment: string | null; status: RefundStatus; amount: MoneyWire; resolution_note: string | null; resolved_at: string | null; created_at: string }
+export const REFUND_REASONS: [string, string][] = [["ITEM_MISSING", "Something was missing"], ["WRONG_ORDER", "Wrong order"], ["FOOD_QUALITY", "Food quality"], ["DAMAGED", "Arrived damaged"], ["LATE", "Arrived too late"], ["NEVER_ARRIVED", "Never arrived"], ["OTHER", "Something else"]];
+export const refundStatus = (orderId: string) => api<{ refundable: boolean; request: RefundRequestView | null }>(`/v1/orders/${orderId}/refund-request`);
+export const requestRefund = (orderId: string, reasonCode: string, comment?: string) =>
+  api<{ id: string; status: RefundStatus; reason_code: string }>(`/v1/orders/${orderId}/refund-request`, { method: "POST", body: { reason_code: reasonCode, ...(comment ? { comment } : {}) } });
+
 // ── Group ordering (shared cart) ──
 export interface GroupMember { user_id: string; name: string; is_host: boolean }
 export interface GroupLine { id: string; member_user_id: string; item_id: string; name: string; quantity: number; options?: CartLineOption[]; addons?: string[]; line_total: MoneyWire }

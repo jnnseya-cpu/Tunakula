@@ -24,6 +24,47 @@ export class PaymentService {
   }
 
   /**
+   * Refunds one paid order's money through its provider, outside any state transaction, and records it.
+   * Idempotent on the order (payments.refund is one-per-order). For a cash order there is no online payment
+   * to reverse, so it returns ok with cod=true and records nothing. Used by the post-delivery refund flow.
+   */
+  async refundPaidOrder(country: string, orderId: string, reasonCode: string, now: () => Date = () => new Date()): Promise<{ ok: boolean; cod?: boolean; error?: string }> {
+    const intent = await this.db.tx({ country }, async (sql) => {
+      const [existing] = await sql.query<{ status: string }>("SELECT status FROM payments.refund WHERE order_id = $1", [orderId]);
+      if (existing?.status === "SUCCEEDED") return { done: true as const };
+      const [i] = await sql.query<{ intent_id: string; connector_id: string; provider_ref: string | null; amount_minor: string; currency: string }>(
+        `SELECT i.id AS intent_id, i.connector_id, i.provider_ref, i.amount_minor::text AS amount_minor, i.currency
+           FROM payments.payment_intent i WHERE i.order_id = $1 AND i.status = 'SUCCEEDED' LIMIT 1`,
+        [orderId],
+      );
+      return { done: false as const, intent: i ?? null };
+    });
+    if ("done" in intent && intent.done) return { ok: true };
+    const i = intent.intent;
+    if (!i) return { ok: true, cod: true }; // cash order: no online payment to reverse
+    const connector = this.connectors.get(i.connector_id);
+    let outcome: { ok: true; ref: string } | { ok: false; error: string };
+    if (!connector || !i.provider_ref) outcome = { ok: false, error: `Connector ${i.connector_id} unavailable` };
+    else {
+      try {
+        const r = await connector.refund(i.provider_ref, { minor: i.amount_minor, currency: i.currency }, `refund:${orderId}`);
+        outcome = { ok: true, ref: r.refundRef };
+      } catch (e) { outcome = { ok: false, error: e instanceof Error ? e.message.slice(0, 200) : "Refund failed" }; }
+    }
+    await this.db.tx({ country }, async (sql) => {
+      await sql.query(
+        `INSERT INTO payments.refund (country_iso2, order_id, intent_id, connector_id, amount_minor, currency, status, refund_ref, reason_code, failure, attempts, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 1, $11, $11)
+         ON CONFLICT (order_id) DO UPDATE SET status = EXCLUDED.status, refund_ref = EXCLUDED.refund_ref, failure = EXCLUDED.failure,
+           attempts = payments.refund.attempts + 1, updated_at = EXCLUDED.updated_at`,
+        [country, orderId, i.intent_id, i.connector_id, i.amount_minor, i.currency, outcome.ok ? "SUCCEEDED" : "FAILED", outcome.ok ? outcome.ref : null, reasonCode.slice(0, 60), outcome.ok ? null : outcome.error, now()],
+      );
+      if (outcome.ok) await updateIntent(sql, i.intent_id, { status: "REFUNDED" });
+    });
+    return outcome.ok ? { ok: true } : { ok: false, error: outcome.error };
+  }
+
+  /**
    * Automatic refunds: every paid order that ended before delivery (cancelled, rejected, delivery failed)
    * gets its full amount back through the same provider, then moves to REFUNDED. The provider call is
    * made outside any database transaction and is idempotent on `refund:<order>`, so a retry never pays

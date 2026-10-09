@@ -46,6 +46,7 @@ const ICON: Record<string, string> = {
   riders: "M5 11a4 4 0 1 0 0 8 4 4 0 0 0 0-8Zm0 6a2 2 0 1 1 0-4 2 2 0 0 1 0 4Zm14-6a4 4 0 1 0 0 8 4 4 0 0 0 0-8Zm0 6a2 2 0 1 1 0-4 2 2 0 0 1 0 4ZM15 5h-3v2h2.3l1.6 3H10l-2-3H5v2h2l1.7 2.6L7.3 12h2.3l1-1.5h5.9l.7 1.4 1.8-.9L15 5Z",
   finance: "M4 20V10h3v10H4Zm6 0V4h3v16h-3Zm6 0v-7h3v7h-3Z",
   payments: "M3 6h18v12H3V6Zm2 2v2h14V8H5Zm0 5v3h14v-3H5Zm2 1h4v1H7v-1Z",
+  refunds: "M12 5V2L7 7l5 5V9a5 5 0 1 1-5 5H5a7 7 0 1 0 7-9Z",
   payouts: "M12 2 3 7v2h18V7l-9-5ZM5 11v6h2v-6H5Zm4 0v6h2v-6H9Zm4 0v6h2v-6h-2Zm4 0v6h2v-6h-2ZM3 19v2h18v-2H3Z",
   team: "M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-7 8v-1c0-2.8 3.1-5 7-5s7 2.2 7 5v1H5Z",
   markets: "M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm6.9 9h-3a15 15 0 0 0-1.3-6 8 8 0 0 1 4.3 6ZM12 4c.9 1.2 1.8 3.7 1.9 7h-3.8c.1-3.3 1-5.8 1.9-7ZM9.4 5a15 15 0 0 0-1.3 6h-3a8 8 0 0 1 4.3-6Zm-4.3 8h3a15 15 0 0 0 1.3 6 8 8 0 0 1-4.3-6ZM12 20c-.9-1.2-1.8-3.7-1.9-7h3.8c-.1 3.3-1 5.8-1.9 7Zm2.6-1a15 15 0 0 0 1.3-6h3a8 8 0 0 1-4.3 6Z",
@@ -81,6 +82,7 @@ const NAV: { group: Key; items: NavItem[] }[] = [
   { group: "g_money", items: [
     { href: "/finance/", key: "finance", cap: "finance" },
     { href: "/payments/", key: "payments", cap: "payments" },
+    { href: "/refunds/", key: "refunds", cap: "refunds" },
     { href: "/payouts/", key: "payouts", soon: true },
   ] },
   { group: "g_platform", items: [

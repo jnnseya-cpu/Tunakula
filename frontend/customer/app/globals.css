@@ -1185,6 +1185,15 @@ section.tight { padding: 44px 0; }
 .booking-status.s-confirmed, .booking-status.s-seated { color: var(--ok, #0a7d33); background: color-mix(in srgb, var(--ok, #0a7d33) 12%, transparent); }
 .booking-status.s-cancelled, .booking-status.s-no_show { color: var(--bad, #c0391b); background: color-mix(in srgb, var(--bad, #c0391b) 12%, transparent); }
 .btn.small { padding: 6px 12px; font-size: 13px; }
+
+/* Refund requests (additive) */
+.app-card.refund { border: 1px solid var(--rule-strong); }
+.app-card.refund select { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--rule-strong); background: var(--bg, #fff); }
+.app-card.refund textarea { width: 100%; margin-top: 8px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--rule-strong); }
+.refund-chip { font-size: 12px; font-weight: 700; border-radius: 999px; padding: 3px 10px; background: var(--tint); }
+.refund-chip.s-approved { color: var(--ok, #0a7d33); background: color-mix(in srgb, var(--ok, #0a7d33) 12%, transparent); }
+.refund-chip.s-declined { color: var(--bad, #c0391b); background: color-mix(in srgb, var(--bad, #c0391b) 12%, transparent); }
+.refund-chip.s-pending { color: #8a4b00; background: color-mix(in srgb, #e0901a 16%, transparent); }
 .g-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
 .g-status { font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 999px; background: var(--tint); color: var(--muted); }
 .g-status.open { background: color-mix(in srgb, var(--ok, #0a7d33) 12%, transparent); color: var(--ok, #0a7d33); }

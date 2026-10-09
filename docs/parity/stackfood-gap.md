@@ -24,7 +24,7 @@ Legend: **Built** works end to end · **Partial** the engine or a screen exists,
 | Coupons, cashback, campaigns | Built (coupons): promo codes at checkout — percentage, fixed amount or free delivery, with minimum subtotal, max-discount cap, total and per-customer limits and a validity window; the platform funds the discount at settlement (promotion_expense) so the merchant and rider are paid in full, and the books stay balanced. Cashback and campaigns still missing |
 | Paid membership (Tunakula Plus): free delivery and/or service-charge discount | Built: admin defines plans per market; customers subscribe (`/membership`), the benefit shows live on the quote and checkout, the platform funds it from subscription revenue so the merchant and rider are still paid in full, and the settlement journal stays balanced. This is the DashPass / Uber One / Deliveroo Plus equivalent |
 | Live order tracking with map and rider | Built: live progress, door code, rider name, distance, arrival time and a map (kitchen, rider, door); street tiles need a map provider key |
-| Order history, reorder, cancel with reason, refund request | Built: history, order again, cancel; refund request missing |
+| Order history, reorder, cancel with reason, refund request | Built: history, order again, cancel. **Refund request built**: after delivery the customer requests a refund with a reason (within 7 days) from the tracking page; support reviews a queue and approves — the money is refunded through the same provider and the settlement is reversed so the books stay balanced — or declines, returning the order to delivered |
 | Reviews and ratings | Built: after a delivered order the customer rates the restaurant (1–5 stars) and optionally the rider, with a comment; the rating shows on the storefront (average + count) and feeds the performance scorecard; the restaurant replies from the merchant panel |
 | Chat with restaurant and rider; push and SMS notifications | Missing |
 | Wallet, loyalty points, referral | Missing |
@@ -66,7 +66,7 @@ Legend: **Built** works end to end · **Partial** the engine or a screen exists,
 | Dashboard with charts per role | Built |
 | Orders list, detail, cancel | Built |
 | Dispatch management (assign or reassign riders, live map) | Built: automatic dispatch, kitchen timeouts, live dispatch screen with map, rider statuses, assign/reassign, refunds needing attention |
-| Refunds | Partial: automatic full refunds for paid orders that end before delivery, with retries; refunds after delivery missing |
+| Refunds | Built: automatic full refunds for paid orders that end before delivery, with retries; **plus customer-initiated refund requests after delivery** — the customer files a request with a reason, support approves (money refunded through the same provider, settlement reversed so the books balance) or declines, all from a support refund queue |
 | Zones (polygons, fees per zone) | Missing |
 | Cuisines, categories, add-ons, foods, bulk import/export | Partial: per-restaurant menu only |
 | Restaurants: list, add, join requests, commission/plan | Partial: list and menu |

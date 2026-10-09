@@ -16,6 +16,7 @@ import type { CouponService } from "../app/coupons.ts";
 import type { ReviewService } from "../app/reviews.ts";
 import type { AddressService } from "../app/addresses.ts";
 import type { ReservationService, BookingStatus } from "../app/reservations.ts";
+import type { RefundService } from "../app/refunds.ts";
 import type { NotificationService } from "../app/comms.ts";
 import { serialiseQuote, type CommerceService, type PlaceOrderInput, type QuoteInput } from "../app/commerce.ts";
 import { badRequest, notFound } from "../app/errors.ts";
@@ -990,6 +991,51 @@ export class ReservationController {
   @HttpCode(200)
   async setStatus(@Req() req: FastifyRequest, @Param("id") id: string, @Body() body: { status?: string }) {
     return this.reservations.setStatus(country(req), await this.#p(req), id, String(body?.status ?? "") as BookingStatus);
+  }
+}
+
+/** Refund requests: a customer asks for a refund on a delivered order; support approves or declines. */
+@Controller("v1")
+export class RefundController {
+  constructor(
+    @Inject(TOKENS.db) private readonly db: Db,
+    @Inject(TOKENS.tokens) private readonly tokens: TokenService,
+    @Inject(TOKENS.refunds) private readonly refunds: RefundService,
+  ) {}
+
+  #p(req: FastifyRequest) {
+    return this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+  }
+
+  /** Customer: request a refund on their delivered order. */
+  @Post("orders/:id/refund-request")
+  async request(@Req() req: FastifyRequest, @Param("id") id: string, @Body() body: { reason_code?: string; comment?: string }) {
+    return this.refunds.request(country(req), await this.#p(req), id, { reasonCode: String(body?.reason_code ?? ""), ...(body?.comment ? { comment: String(body.comment) } : {}) });
+  }
+
+  /** Customer or support: the refund request for an order (and whether it is still refundable). */
+  @Get("orders/:id/refund-request")
+  async forOrder(@Req() req: FastifyRequest, @Param("id") id: string) {
+    return this.refunds.forOrder(country(req), await this.#p(req), id);
+  }
+
+  /** Customer: their own refund requests. */
+  @Get("me/refunds")
+  async mine(@Req() req: FastifyRequest) {
+    return this.refunds.mine(country(req), await this.#p(req));
+  }
+
+  /** Support/finance: the pending refund queue. */
+  @Get("admin/refunds")
+  async queue(@Req() req: FastifyRequest) {
+    return this.refunds.queue(country(req), await this.#p(req));
+  }
+
+  /** Support/finance: approve or decline a pending request. */
+  @Post("admin/refunds/:id/decision")
+  @HttpCode(200)
+  async decide(@Req() req: FastifyRequest, @Param("id") id: string, @Body() body: { approve?: boolean; note?: string }) {
+    return this.refunds.decide(country(req), await this.#p(req), id, body?.approve === true, body?.note);
   }
 }
 

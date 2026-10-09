@@ -396,6 +396,10 @@ export class CommerceService {
       if (result.order.state === "DELIVERED" && order.state !== "DELIVERED" && result.events.length > 0) {
         await this.#settle(sql, result.order.snapshot);
       }
+      // A refund approved after delivery reverses that settlement so the ledger stays balanced (clawback + repay).
+      if (result.order.state === "REFUNDED" && order.state === "REFUND_REQUESTED" && result.events.length > 0) {
+        await this.#reverseSettlement(sql, result.order.snapshot);
+      }
       if (result.order.state !== order.state && ORDER_EVENT[result.order.state]) {
         const branch = await getBranch(sql, result.order.snapshot.branchId);
         const riderId = result.order.riderId;
@@ -446,9 +450,10 @@ export class CommerceService {
   }
 
   /** PRD §18 / PRC-016: one balanced settlement journal per delivered order, in the same transaction. */
-  async #settle(sql: Sql, s: OrderSnapshot): Promise<void> {
+  /** The balanced settlement entries for an order (cash in, platform-funded discounts, payables and revenue out). */
+  #settlementEntries(s: OrderSnapshot): LedgerEntry[] {
     const m = s.money;
-    if (!m) return;
+    if (!m) return [];
     const c = s.country;
     const neg = (j: MoneyJSON) => Money.fromJSON(j).negate();
     // A membership benefit means the customer paid s.total (already net of the discount); the platform
@@ -456,7 +461,7 @@ export class CommerceService {
     const ccy0 = Money.fromJSON(s.total).currency;
     const discount = m.membershipDiscount ? Money.fromJSON(m.membershipDiscount) : Money.zero(ccy0);
     const couponDisc = m.couponDiscount ? Money.fromJSON(m.couponDiscount) : Money.zero(ccy0);
-    const entries: LedgerEntry[] = [
+    return [
       { account: s.paymentMode === "PREPAID" ? "psp_clearing" : "cod_cash_in_transit", country: c, amount: Money.fromJSON(s.total) },
       { account: "subscription_revenue", country: c, amount: discount },
       { account: "promotion_expense", country: c, amount: couponDisc },
@@ -465,7 +470,23 @@ export class CommerceService {
       { account: "rider_payable", country: c, amount: neg(m.riderReceives) },
       { account: "delivery_fee_revenue", country: c, amount: neg(m.platformDeliveryShare) },
     ].filter((e) => !e.amount.isZero()) as LedgerEntry[];
+  }
+
+  async #settle(sql: Sql, s: OrderSnapshot): Promise<void> {
+    const entries = this.#settlementEntries(s);
+    if (entries.length < 2) return;
     await postJournal(sql, createJournal({ id: `settle:${s.orderId}`, idempotencyKey: `order:${s.orderId}:settlement`, description: `Order ${s.orderId} settlement`, entries, postedAt: this.now() }));
+  }
+
+  /**
+   * Reverses the settlement of a delivered order on a refund: the merchant, rider and platform shares are
+   * clawed back and the cash the platform held is released to repay the customer, so the books stay balanced.
+   * Idempotent on the order (a replay returns the existing journal).
+   */
+  async #reverseSettlement(sql: Sql, s: OrderSnapshot): Promise<void> {
+    const entries = this.#settlementEntries(s).map((e) => ({ ...e, amount: e.amount.negate() }));
+    if (entries.length < 2) return;
+    await postJournal(sql, createJournal({ id: `refund-reversal:${s.orderId}`, idempotencyKey: `order:${s.orderId}:refund-reversal`, description: `Order ${s.orderId} refund reversal`, entries, postedAt: this.now() }));
   }
 
   /** §20.4 / Appendix A: COD only under a time-boxed CEO exception, within the cash cap, account age and market share. */
