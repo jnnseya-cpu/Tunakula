@@ -3,7 +3,7 @@
  * Prices come only from the catalogue; the client never supplies a total.
  */
 import { createHash, randomInt } from "node:crypto";
-import { Money, ratio, type MoneyJSON } from "@tunakula/ts-money";
+import { Money, type MoneyJSON } from "@tunakula/ts-money";
 import type { CountryProfile } from "@tunakula/ts-contracts";
 import type { Db, Sql } from "../db/db.ts";
 import type { CountryConfigRegistry } from "../modules/config/config-registry.ts";
@@ -226,11 +226,12 @@ export class CommerceService {
       }
       const memberDisc = membership ? Money.fromJSON(membership.discount) : Money.zero(ccy);
       const couponDisc = coupon ? coupon.discount : Money.zero(ccy);
-      // A referee's first order is discounted (platform-funded, like a coupon).
+      // A referee's first order has our service fee waived (the platform's own 10%; the merchant and
+      // rider are still paid in full). Funded by the platform, like a coupon.
       let referral: { claimId: string; discount: Money } | undefined;
       if (input.customerId && this.referral) {
         const r = await this.referral.firstOrderDiscount(sql, country, input.customerId);
-        if (r) referral = { claimId: r.claimId, discount: breakdown.total.multiply(ratio(BigInt(r.bps), 10_000n)) };
+        if (r && !breakdown.serviceCharge.isZero()) referral = { claimId: r.claimId, discount: breakdown.serviceCharge };
       }
       const referralDisc = referral ? referral.discount : Money.zero(ccy);
       const payable = breakdown.total.subtract(memberDisc).subtract(couponDisc).subtract(referralDisc);

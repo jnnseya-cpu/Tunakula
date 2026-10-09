@@ -2245,7 +2245,7 @@ describe("referrals", () => {
     return BigInt(due.amount_minor);
   };
 
-  test("the referee gets 10% off their first order; the referrer earns $10 after the referee spends $50", async () => {
+  test("the referee's first order has our service fee waived; the referrer earns $10 after the referee spends $50", async () => {
     // The existing customer owns a code and earns $10 after a referee spends $50.
     const mine = await call("GET", "/v1/me/referral", { token: customer.token, country: "CD" });
     assert.match(mine.body.code, /^[A-Z0-9]{7}$/);
@@ -2264,11 +2264,12 @@ describe("referrals", () => {
     assert.equal((await call("POST", "/v1/referrals/claim", { token: referee.token, country: "CD", body: { code } })).body.code, "ALREADY_REFERRED");
     assert.equal((await call("POST", "/v1/referrals/claim", { token: customer.token, country: "CD", body: { code } })).body.code, "CANNOT_REFER_SELF");
 
-    // The referee's first-order quote shows the 10% discount; the status says it is available.
+    // The referee's first-order quote waives our service fee; the status says the discount is available.
     const q1 = await call("POST", "/v1/carts/quote", { token: referee.token, country: "CD", body: cart() });
     const gross = BigInt(q1.body.total.amount_minor);
-    assert.equal(q1.body.referral.discount.amount_minor, String(gross / 10n), "10% off the first order");
-    assert.equal(BigInt(q1.body.payable.amount_minor), gross - gross / 10n);
+    const serviceFee = BigInt(q1.body.price_lines.find((l: { code: string }) => l.code === "SERVICE_CHARGE").amount.amount_minor);
+    assert.equal(q1.body.referral.discount.amount_minor, String(serviceFee), "the referral waives our service fee");
+    assert.equal(BigInt(q1.body.payable.amount_minor), gross - serviceFee);
     assert.equal((await call("GET", "/v1/me/referral/claim", { token: referee.token, country: "CD" })).body.claim.discount_available, true);
     assert.equal(await walletUsd(referee.token), 0n, "the referee is not given wallet cash, only a discount");
 

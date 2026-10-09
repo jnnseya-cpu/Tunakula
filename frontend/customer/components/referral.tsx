@@ -15,7 +15,7 @@ export function ReferralInvite() {
 
   const link = typeof window !== "undefined" ? `${window.location.origin}/order/?ref=${r.code}` : "";
   const share = async () => {
-    const text = `Join me on Tunakula — use my code ${r.code} for ${r.friend_discount_pct}% off your first order.`;
+    const text = `Join me on Tunakula — use my code ${r.code} and pay no service fee on your first order.`;
     try {
       if (navigator.share) { await navigator.share({ title: "Tunakula", text, url: link }); return; }
     } catch { /* cancelled */ }
@@ -25,7 +25,7 @@ export function ReferralInvite() {
   return (
     <section className="app-card referral-invite">
       <h2>Invite friends, earn {money(r.reward)}</h2>
-      <p className="muted">Your friend gets {r.friend_discount_pct}% off their first order. You earn {money(r.reward)} once they have spent {money(r.spend_threshold)} on Tunakula.</p>
+      <p className="muted">Your friend pays no service fee on their first order. You earn {money(r.reward)} once they have spent {money(r.spend_threshold)} on Tunakula.</p>
       <div className="referral-code">
         <code>{r.code}</code>
         <button type="button" className="btn accent" onClick={share}>{copied ? "Copied ✓" : "Share"}</button>
@@ -59,12 +59,12 @@ export function ReferralClaimCard() {
       <section className="app-card referral-claim">
         {claim.discount_available
           ? <>
-              <h2>{claim.first_order_discount_pct}% off your first order 🎉</h2>
-              <p className="muted">Your referral discount is applied automatically at checkout on your first order.</p>
+              <h2>No service fee on your first order 🎉</h2>
+              <p className="muted">Your referral benefit — our service fee waived — is applied automatically at checkout on your first order.</p>
             </>
           : <>
-              <h2>Referral discount used</h2>
-              <p className="muted">You saved {claim.first_order_discount_pct}% on your first order. Share your own code to earn rewards.</p>
+              <h2>Referral benefit used</h2>
+              <p className="muted">Your service fee was waived on your first order. Share your own code to earn rewards.</p>
             </>}
       </section>
     );
@@ -73,7 +73,7 @@ export function ReferralClaimCard() {
   return (
     <section className="app-card referral-claim">
       <h2>Have a referral code?</h2>
-      <p className="muted">New here? Enter a friend's code to get a discount on your first order.</p>
+      <p className="muted">New here? Enter a friend's code to pay no service fee on your first order.</p>
       <div className="referral-apply">
         <input value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} placeholder="CODE" maxLength={12} />
         <button type="button" className="btn" disabled={busy || !code.trim()} onClick={apply}>{busy ? "Applying…" : "Apply"}</button>

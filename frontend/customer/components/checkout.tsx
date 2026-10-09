@@ -325,7 +325,7 @@ export function Checkout() {
               <div className="member-save"><dt>Promo {quote.coupon.code}</dt><dd className="num">−{money(quote.coupon.discount)}</dd></div>
             ) : null}
             {quote.referral ? (
-              <div className="member-save"><dt>Referral — first order</dt><dd className="num">−{money(quote.referral.discount)}</dd></div>
+              <div className="member-save"><dt>Referral — no service fee</dt><dd className="num">−{money(quote.referral.discount)}</dd></div>
             ) : null}
             <div className="total"><dt>Total</dt><dd className="num">{money(quote.payable ?? quote.membership?.payable_total ?? quote.total)}</dd></div>
           </dl>
