@@ -1182,6 +1182,22 @@ export class MerchantOnboardingController {
   async publish(@Req() req: FastifyRequest, @Param("id") id: string) {
     return this.onboarding.publish(country(req), await this.#p(req), id);
   }
+
+  /** The brand owner's invite code — share it so franchisees can join the brand. Created on first ask. */
+  @Post("brand/invite")
+  @HttpCode(200)
+  async invite(@Req() req: FastifyRequest) {
+    return this.onboarding.brandInvite(country(req), await this.#p(req));
+  }
+
+  /** A franchisee joins an existing brand with its code, creating their own branch under it. */
+  @Post("join")
+  async join(@Req() req: FastifyRequest, @Body() body: { code?: string; name?: string; lat?: number; lng?: number; commune?: string }) {
+    return this.onboarding.join(country(req), await this.#p(req), {
+      code: String(body?.code ?? ""), name: String(body?.name ?? ""), lat: Number(body?.lat), lng: Number(body?.lng),
+      ...(body?.commune ? { commune: String(body.commune) } : {}),
+    });
+  }
 }
 
 function orderView(o: OrderAggregate) {

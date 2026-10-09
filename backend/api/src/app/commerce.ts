@@ -647,7 +647,7 @@ const ACTION_FOR: Record<Exclude<OrderCommand["type"], "CREATE_DRAFT">, Action> 
 function actorKind(role: string): Actor["kind"] {
   if (role === "RIDER") return "RIDER";
   if (role === "CUSTOMER") return "CUSTOMER";
-  if (["RESTAURANT_OWNER", "BRANCH_MANAGER", "KITCHEN_STAFF"].includes(role) || role.startsWith("profile:")) return "RESTAURANT";
+  if (["RESTAURANT_OWNER", "FRANCHISEE", "BRANCH_MANAGER", "KITCHEN_STAFF"].includes(role) || role.startsWith("profile:")) return "RESTAURANT";
   return "SUPPORT";
 }
 

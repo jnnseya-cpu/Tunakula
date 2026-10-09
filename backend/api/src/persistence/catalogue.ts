@@ -79,6 +79,33 @@ export interface MenuItemInput {
 
 const ITEM_COLUMNS = "id, branch_id, names, description, prices, category, veg, tags, allergens, available, recommended, variations, addons, dietary, nutrition, age_restricted, image_id";
 
+export interface GroupRow { id: string; country_iso2: string; name: string; invite_code: string | null; created_by: string | null }
+
+/** Creates the brand (restaurant group) if it does not exist yet; keeps the stored name on conflict. */
+export async function ensureGroup(sql: Sql, g: { id: string; country: string; name: string; createdBy?: string | null }): Promise<GroupRow> {
+  const [row] = await sql.query<GroupRow & Record<string, unknown>>(
+    `INSERT INTO catalogue.restaurant_group (id, country_iso2, name, created_by)
+     VALUES ($1, $2, $3, $4) ON CONFLICT (id) DO UPDATE SET updated_at = now()
+     RETURNING id, country_iso2, name, invite_code, created_by`,
+    [g.id, g.country, g.name.slice(0, 120), g.createdBy ?? null],
+  );
+  return row as GroupRow;
+}
+
+export async function getGroup(sql: Sql, id: string): Promise<GroupRow | undefined> {
+  const [row] = await sql.query<GroupRow & Record<string, unknown>>("SELECT id, country_iso2, name, invite_code, created_by FROM catalogue.restaurant_group WHERE id = $1", [id]);
+  return row;
+}
+
+export async function getGroupByInvite(sql: Sql, code: string): Promise<GroupRow | undefined> {
+  const [row] = await sql.query<GroupRow & Record<string, unknown>>("SELECT id, country_iso2, name, invite_code, created_by FROM catalogue.restaurant_group WHERE invite_code = $1", [code]);
+  return row;
+}
+
+export async function setInviteCode(sql: Sql, id: string, code: string): Promise<void> {
+  await sql.query("UPDATE catalogue.restaurant_group SET invite_code = $2, updated_at = now() WHERE id = $1", [id, code]);
+}
+
 export async function createBranch(sql: Sql, b: Omit<BranchRow, "id" | "status">, published = false): Promise<BranchRow> {
   const [row] = await sql.query<BranchRow & Record<string, unknown>>(
     `INSERT INTO catalogue.branch (country_iso2, brand_id, restaurant_group_id, name, city, commune, lat, lng, published_at)

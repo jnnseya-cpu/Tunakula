@@ -157,6 +157,26 @@ export const ROLES = {
       "reservation:manage",
     ),
   },
+  // A franchisee runs one branch of a brand: full control of their own location (menu, profile, orders),
+  // but scoped to that branch, so they never see or touch the brand's other franchises.
+  FRANCHISEE: {
+    scopes: ["BRANCH"],
+    grants: all(
+      "menu:write",
+      "price:write",
+      "branch:manage",
+      "payout:read",
+      "analytics:read",
+      "availability:write",
+      "shift:manage",
+      "pos:operate",
+      "order:read",
+      "order:accept",
+      "order:prepare",
+      "order:handover",
+      "reservation:manage",
+    ),
+  },
   BRANCH_MANAGER: {
     scopes: ["BRANCH"],
     grants: all("availability:write", "shift:manage", "pos:operate", "order:read", "order:accept", "order:prepare", "order:handover", "reservation:manage"),

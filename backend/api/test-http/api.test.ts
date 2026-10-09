@@ -2552,3 +2552,61 @@ describe("business profile", () => {
     assert.equal((await call("POST", `/v1/branches/${br.body.branch_id}/profile`, { token: stranger.token, country: "CD", body: { address: "nope" } })).status, 403);
   });
 });
+
+describe("brands and franchises", () => {
+  const branches = async (token: string) => {
+    const r = await call("GET", "/v1/admin/branches", { token, country: "CD" });
+    return r.body as { has_business: boolean; data: { id: string; name: string; published: boolean }[] };
+  };
+
+  test("a franchisee signs up individually and joins a brand with its code; each manages only their own branch", async () => {
+    // The brand owner registers, opens one branch, and gets an invite code.
+    const owner = await signIn("+243810000250");
+    const reg = await call("POST", "/v1/merchant/register", { token: owner.token, country: "CD", body: { business_name: "Chez Maman" } });
+    const ownerBranch = await call("POST", "/v1/merchant/branches", { token: owner.token, country: "CD", body: { group_id: reg.body.group_id, name: "Chez Maman — Gombe", lat: -4.31, lng: 15.28, commune: "gombe" } });
+    const invite = await call("POST", "/v1/merchant/brand/invite", { token: owner.token, country: "CD" });
+    assert.equal(invite.status, 200, JSON.stringify(invite.body));
+    assert.match(invite.body.invite_code, /^[A-Z2-9]{8}$/);
+    assert.equal(invite.body.name, "Chez Maman");
+    const code = invite.body.invite_code;
+
+    // A different person signs up and joins the brand with the code, getting their own branch under it.
+    const franchisee = await signIn("+243810000251");
+    const join = await call("POST", "/v1/merchant/join", { token: franchisee.token, country: "CD", body: { code, name: "Chez Maman — Lemba", lat: -4.34, lng: 15.33, commune: "lemba" } });
+    assert.equal(join.status, 201, JSON.stringify(join.body));
+    assert.equal(join.body.group_id, reg.body.group_id, "the franchisee's branch is under the same brand");
+    assert.equal(join.body.brand_name, "Chez Maman");
+    const franchiseeBranch = join.body.branch_id;
+
+    // The franchisee runs their own branch: adds a dish and publishes it.
+    await call("POST", `/v1/branches/${franchiseeBranch}/items`, { token: franchisee.token, country: "CD", body: { names: { fr: "Pondu" }, prices: { USD: "3.50" } } });
+    await call("POST", `/v1/branches/${franchiseeBranch}/profile`, { token: franchisee.token, country: "CD", body: { address: "Lemba, Kinshasa" } });
+    const pub = await call("POST", `/v1/merchant/branches/${franchiseeBranch}/publish`, { token: franchisee.token, country: "CD" });
+    assert.equal(pub.body.published, true, JSON.stringify(pub.body));
+
+    // The franchisee sees only their own branch; the brand owner sees both.
+    const fView = await branches(franchisee.token);
+    assert.equal(fView.has_business, false, "a franchisee does not own the brand");
+    assert.deepEqual(fView.data.map((b) => b.id), [franchiseeBranch], "a franchisee sees only their own branch");
+    const oView = await branches(owner.token);
+    assert.equal(oView.has_business, true);
+    const ownerIds = oView.data.map((b) => b.id).sort();
+    assert.deepEqual([ownerBranch.body.branch_id, franchiseeBranch].sort(), ownerIds, "the brand owner sees every branch");
+
+    // A franchisee cannot touch a sibling branch they do not run.
+    assert.equal((await call("POST", `/v1/branches/${ownerBranch.body.branch_id}/profile`, { token: franchisee.token, country: "CD", body: { address: "nope" } })).status, 403);
+  });
+
+  test("a bad code is refused, and someone who already runs a business cannot join another brand", async () => {
+    const joiner = await signIn("+243810000252");
+    assert.equal((await call("POST", "/v1/merchant/join", { token: joiner.token, country: "CD", body: { code: "NOPE2345", name: "X", lat: -4.3, lng: 15.3 } })).body.code, "INVALID_INVITE");
+    // Register a business, then try to join another brand — refused.
+    const owner = await signIn("+243810000253");
+    const reg = await call("POST", "/v1/merchant/register", { token: owner.token, country: "CD", body: { business_name: "Brand A" } });
+    const invite = await call("POST", "/v1/merchant/brand/invite", { token: owner.token, country: "CD" });
+    assert.equal((await call("POST", "/v1/merchant/join", { token: owner.token, country: "CD", body: { code: invite.body.invite_code, name: "Y", lat: -4.3, lng: 15.3 } })).body.code, "ALREADY_HAS_BUSINESS");
+    // A non-owner cannot mint an invite code.
+    assert.equal((await call("POST", "/v1/merchant/brand/invite", { token: joiner.token, country: "CD" })).status, 403);
+    assert.ok(reg.body.group_id);
+  });
+});

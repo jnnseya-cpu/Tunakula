@@ -4,7 +4,7 @@ import type { CountryProfile } from "@tunakula/ts-contracts";
 import type { Db, Sql } from "../db/db.ts";
 import type { CountryConfigRegistry } from "../modules/config/config-registry.ts";
 import type { Principal } from "../modules/identity/policy.ts";
-import { addMenuItem, createBranch, getBranch, menuOf, setAvailability, updateBranchProfile, updateMenuItem, type Addon, type BranchProfilePatch, type BranchRow, type MenuItemInput, type MenuItemRow, type Variation, type VariationOption } from "../persistence/catalogue.ts";
+import { addMenuItem, createBranch, ensureGroup, getBranch, menuOf, setAvailability, updateBranchProfile, updateMenuItem, type Addon, type BranchProfilePatch, type BranchRow, type MenuItemInput, type MenuItemRow, type Variation, type VariationOption } from "../persistence/catalogue.ts";
 import { audit } from "../persistence/identity.ts";
 import { badRequest, notFound, unprocessable } from "./errors.ts";
 import { require } from "./principal.ts";
@@ -30,6 +30,8 @@ export class CatalogueService {
     if (!Number.isFinite(input.lat) || !Number.isFinite(input.lng)) throw badRequest("LOCATION_REQUIRED", "A branch needs a location");
     require(principal, "restaurant:manage", { type: "branch", country, restaurantGroupId: input.restaurantGroupId }, { activeCountry: country, profile });
     return this.db.tx({ country }, async (sql) => {
+      // Record the brand (restaurant group) so it has a name and can invite franchisees later.
+      await ensureGroup(sql, { id: input.restaurantGroupId, country, name: input.name.trim(), createdBy: principal.userId });
       const branch = await createBranch(sql, {
         country_iso2: country,
         brand_id: profile.experience.brand_id,
@@ -218,7 +220,7 @@ export class CatalogueService {
     return this.db.tx({ country }, async (sql) => {
       const branch = await getBranch(sql, branchId);
       if (!branch) throw notFound("Branch");
-      require(principal, "branch:manage", { type: "branch", country, restaurantGroupId: branch.restaurant_group_id }, { activeCountry: country, profile });
+      require(principal, "branch:manage", { type: "branch", country, branchId, restaurantGroupId: branch.restaurant_group_id }, { activeCountry: country, profile });
       const patch: BranchProfilePatch = {};
       if (input.address !== undefined) patch.address = input.address ? String(input.address).trim().slice(0, 240) || null : null;
       if (input.phone !== undefined) patch.phone = input.phone ? String(input.phone).trim().slice(0, 40) || null : null;
