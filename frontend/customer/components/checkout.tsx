@@ -211,7 +211,8 @@ export function Checkout() {
   const km = quote?.distance_meters !== undefined ? (Math.round(quote.distance_meters / 100) / 10).toFixed(1) : null;
   const dueNow = quote ? (quote.payable ?? quote.membership?.payable_total ?? quote.total) : null;
   const walletCovers = !!(wallet && dueNow && wallet.currency === dueNow.currency && BigInt(wallet.amount_minor) >= BigInt(dueNow.amount_minor));
-  const payOptions = [...(walletCovers ? ["WALLET"] : []), ...methods];
+  // Always offer the wallet to a signed-in customer; it is only selectable once the balance covers the total.
+  const payOptions = [...(wallet ? ["WALLET"] : []), ...methods];
   return (
     <div className="checkout">
       <div className="co-main">
@@ -283,8 +284,8 @@ export function Checkout() {
           <h2>Pay with</h2>
           <div className="pay-list" role="radiogroup" aria-label="Payment method">
             {payOptions.map((m) => (
-              <button type="button" key={m} role="radio" aria-checked={pay === m} className={`pay-opt ${pay === m ? "on" : ""}`} onClick={() => setPay(m as Pay)} disabled={m === "CASH_ON_DELIVERY" && mode !== "DELIVERY"}>
-                <span className="radio" aria-hidden /><span><b>{PAY_LABEL[m]?.[0] ?? m}</b><small>{m === "WALLET" && wallet ? `Balance ${money(wallet)}` : PAY_LABEL[m]?.[1]}</small></span>
+              <button type="button" key={m} role="radio" aria-checked={pay === m} className={`pay-opt ${pay === m ? "on" : ""}`} onClick={() => setPay(m as Pay)} disabled={(m === "CASH_ON_DELIVERY" && mode !== "DELIVERY") || (m === "WALLET" && !walletCovers)}>
+                <span className="radio" aria-hidden /><span><b>{PAY_LABEL[m]?.[0] ?? m}</b><small>{m === "WALLET" && wallet ? (walletCovers ? `Balance ${money(wallet)}` : `Balance ${money(wallet)} · top up to use`) : PAY_LABEL[m]?.[1]}</small></span>
               </button>
             ))}
             {wallet && !walletCovers ? <Link className="wallet-topup-hint" href="/wallet/">Top up your wallet ({money(wallet)}) to pay from your balance →</Link> : null}
