@@ -33,6 +33,7 @@ const NEEDS_RIDER = ["PLACED", "ACCEPTED", "PREPARING", "PACKED", "READY"];
 const RIDER_ACTIVE = ["PLACED", "ACCEPTED", "PREPARING", "PACKED", "READY", "PICKED_UP"];
 
 interface Point { lat: number; lng: number }
+type ShiftRow = { id: string; zone: string; starts_at: Date; ends_at: Date; status: "BOOKED" | "CANCELLED" };
 const unprocessableRider = () => unprocessable("NOT_A_RIDER", "That person is not a rider");
 const road = (a: Point, b: Point) => Math.round(greatCircleMetres(a, b) * ROAD_FACTOR);
 
@@ -156,6 +157,112 @@ export class DispatchService {
         cash_in_hand: { amount_minor: cashAll[0]?.cash ?? "0", currency: ccy },
       };
     });
+  }
+
+  // ── Rider shifts (availability scheduling) ──
+
+  /** POST /v1/rider/shifts: book a time window the rider commits to cover in one of their zones. */
+  async bookShift(principal: Principal, country: string, input: { zone?: string; starts_at?: string; ends_at?: string }) {
+    const zones = DispatchService.riderZones(principal);
+    if (zones.length === 0) throw forbidden("Only riders can book shifts");
+    const zone = String(input.zone ?? "").trim().toLowerCase();
+    if (!zone || !zones.includes(zone)) throw badRequest("ZONE_INVALID", "Book a shift in a zone you ride in");
+    const starts = new Date(String(input.starts_at ?? ""));
+    const ends = new Date(String(input.ends_at ?? ""));
+    if (Number.isNaN(starts.getTime()) || Number.isNaN(ends.getTime())) throw badRequest("TIME_INVALID", "Give a start and an end time");
+    const minutes = (ends.getTime() - starts.getTime()) / 60000;
+    if (minutes <= 0) throw unprocessable("SHIFT_INVALID", "A shift ends after it starts");
+    if (minutes < 30) throw unprocessable("SHIFT_TOO_SHORT", "A shift is at least 30 minutes");
+    if (minutes > 12 * 60) throw unprocessable("SHIFT_TOO_LONG", "A shift is at most 12 hours");
+    const now = this.now().getTime();
+    if (ends.getTime() <= now) throw unprocessable("SHIFT_IN_PAST", "A shift ends in the future");
+    if (starts.getTime() > now + 14 * 86_400_000) throw unprocessable("SHIFT_TOO_FAR", "Book shifts within the next two weeks");
+    return this.db.tx({ country }, async (sql) => {
+      const [clash] = await sql.query<{ id: string }>(
+        "SELECT id FROM dispatch.rider_shift WHERE rider_id = $1 AND status = 'BOOKED' AND tstzrange(starts_at, ends_at) && tstzrange($2, $3) LIMIT 1",
+        [principal.userId, starts, ends],
+      );
+      if (clash) throw conflict("SHIFT_OVERLAP", "That overlaps a shift you have already booked");
+      const [row] = await sql.query<ShiftRow>(
+        "INSERT INTO dispatch.rider_shift (country_iso2, rider_id, zone, starts_at, ends_at) VALUES ($1, $2, $3, $4, $5) RETURNING id, zone, starts_at, ends_at, status",
+        [country, principal.userId, zone, starts, ends],
+      );
+      return this.#shiftView(row!);
+    });
+  }
+
+  /** GET /v1/rider/shifts: the rider's shifts (upcoming first, then recent past), with their zones to choose from. */
+  async myShifts(principal: Principal, country: string) {
+    const zones = DispatchService.riderZones(principal);
+    if (zones.length === 0) throw forbidden("Only riders have shifts");
+    const now = this.now();
+    return this.db.tx({ country }, async (sql) => {
+      const rows = await sql.query<ShiftRow>(
+        `SELECT id, zone, starts_at, ends_at, status FROM dispatch.rider_shift
+          WHERE rider_id = $1 AND (ends_at >= $2::timestamptz - interval '7 days')
+          ORDER BY (status = 'BOOKED' AND ends_at >= $2::timestamptz) DESC, starts_at`,
+        [principal.userId, now],
+      );
+      return { zones, shifts: rows.map((r) => this.#shiftView(r)) };
+    });
+  }
+
+  /** POST /v1/rider/shifts/:id/cancel: drop a booked shift that has not already ended. */
+  async cancelShift(principal: Principal, country: string, shiftId: string) {
+    if (DispatchService.riderZones(principal).length === 0) throw forbidden("Only riders have shifts");
+    return this.db.tx({ country }, async (sql) => {
+      const [row] = await sql.query<ShiftRow>(
+        "UPDATE dispatch.rider_shift SET status = 'CANCELLED', updated_at = $3 WHERE id = $1 AND rider_id = $2 AND status = 'BOOKED' AND ends_at > $3 RETURNING id, zone, starts_at, ends_at, status",
+        [shiftId, principal.userId, this.now()],
+      );
+      if (!row) throw notFound("Shift");
+      return this.#shiftView(row);
+    });
+  }
+
+  /** GET /v1/ops/shifts: the upcoming (and currently running) rider shifts, for the dispatch board. */
+  async shifts(principal: Principal, country: string) {
+    await this.#requireOps(principal, country);
+    const now = this.now();
+    return this.db.tx({ country }, async (sql) => {
+      const rows = await sql.query<ShiftRow & { rider_id: string; name: string | null }>(
+        `SELECT s.id, s.zone, s.starts_at, s.ends_at, s.status, s.rider_id, u.display_name AS name
+           FROM dispatch.rider_shift s JOIN identity.app_user u ON u.id = s.rider_id
+          WHERE s.status = 'BOOKED' AND s.ends_at >= $1::timestamptz AND s.starts_at <= $1::timestamptz + interval '2 days'
+          ORDER BY s.starts_at`,
+        [now],
+      );
+      return {
+        now: now.toISOString(),
+        shifts: rows.map((r) => ({ ...this.#shiftView(r), rider_id: r.rider_id, rider_name: r.name })),
+      };
+    });
+  }
+
+  /** The riders on a booked shift at `at`, grouped by zone (used to prefer them in dispatch). */
+  async #onShiftByZone(sql: Sql, at: Date): Promise<Map<string, Set<string>>> {
+    const rows = await sql.query<{ rider_id: string; zone: string }>(
+      "SELECT rider_id::text, zone FROM dispatch.rider_shift WHERE status = 'BOOKED' AND starts_at <= $1 AND ends_at > $1",
+      [at],
+    );
+    const byZone = new Map<string, Set<string>>();
+    for (const r of rows) {
+      const set = byZone.get(r.zone) ?? new Set<string>();
+      set.add(r.rider_id);
+      byZone.set(r.zone, set);
+    }
+    return byZone;
+  }
+
+  #shiftView(r: ShiftRow) {
+    const starts = new Date(r.starts_at), ends = new Date(r.ends_at);
+    const now = this.now();
+    return {
+      id: r.id, zone: r.zone, status: r.status,
+      starts_at: starts.toISOString(), ends_at: ends.toISOString(),
+      active_now: r.status === "BOOKED" && starts <= now && ends > now,
+      upcoming: r.status === "BOOKED" && starts > now,
+    };
   }
 
   /** The rider's earned balance: riderReceives on every delivered order, minus what they have cashed out. */
@@ -552,15 +659,19 @@ export class DispatchService {
       );
       const principals = new Map<string, Principal>();
       for (const r of riders) principals.set(r.rider_id, await loadPrincipal(sql, r.rider_id));
+      // Riders who have booked a shift covering this moment, by zone: preferred (but not required) for that zone.
+      const onShiftByZone = await this.#onShiftByZone(sql, at);
       const taken = new Set<string>();
       let offered = 0;
       for (const w of waiting) {
         const branch = { lat: Number(w.branch_lat), lng: Number(w.branch_lng) };
         const asked = new Set((await sql.query<{ rider_id: string }>("SELECT rider_id FROM dispatch.offer WHERE order_id = $1", [w.order_id])).map((r) => r.rider_id));
+        const onShift = (w.commune && onShiftByZone.get(w.commune)) || new Set<string>();
         const best = riders
           .filter((r) => !taken.has(r.rider_id) && !asked.has(r.rider_id) && this.#canRide(principals.get(r.rider_id)!, country, w.commune))
           .map((r) => ({ r, meters: road({ lat: Number(r.lat), lng: Number(r.lng) }, branch) }))
-          .sort((a, b) => a.meters - b.meters)[0];
+          // An on-shift rider in this zone is offered first; among equals, the nearest. Off-shift riders still qualify.
+          .sort((a, b) => (onShift.has(a.r.rider_id) ? 0 : 1) - (onShift.has(b.r.rider_id) ? 0 : 1) || a.meters - b.meters)[0];
         if (!best) continue;
         const dropMeters = w.drop ? road(branch, w.drop) : 0;
         await sql.query(
@@ -634,6 +745,9 @@ export class DispatchService {
         [tz, at],
       );
       const deliveredToday = new Map(today.map((t) => [t.rider_id, Number(t.n)]));
+      const onShiftByZone = await this.#onShiftByZone(sql, at);
+      const onShiftNow = new Set<string>();
+      for (const set of onShiftByZone.values()) for (const id of set) onShiftNow.add(id);
       const cash = new Map<string, string>();
       for (const r of riders) cash.set(r.id, (await cashInHand(sql, r.id)).cash);
       const ccy = this.#profile(country).money.settlement_currency;
@@ -654,6 +768,7 @@ export class DispatchService {
           return {
             id: r.id, name: r.name, phone: r.phone, zones: r.zones, vehicle: r.vehicle ?? "MOTO",
             status: job ? "BUSY" : offer ? "OFFERED" : online && fresh(r.updated_at) ? "AVAILABLE" : online ? "SIGNAL_LOST" : "OFFLINE",
+            on_shift: onShiftNow.has(r.id),
             position: r.lat && r.lng ? { lat: Number(r.lat), lng: Number(r.lng) } : null,
             last_seen: r.updated_at ? new Date(r.updated_at).toISOString() : null,
             online_minutes: online && r.online_since ? minutes(r.online_since) : 0,

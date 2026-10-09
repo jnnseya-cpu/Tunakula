@@ -1275,6 +1275,18 @@ section.tight { padding: 44px 0; }
 .r-sos-opts { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
 .r-btn.danger { background: #c01818; color: #fff; }
 
+/* Rider shifts (additive) */
+.r-shift-form { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 12px 0; }
+.r-shift-form label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }
+.r-shift-form label:first-child { grid-column: 1 / -1; }
+.r-shift-form select, .r-shift-form input { padding: 10px; border: 1px solid var(--rule-strong); border-radius: 10px; font: inherit; background: var(--card); }
+.r-shift-list { margin-top: 14px; display: grid; gap: 8px; }
+.r-shift { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--rule); border-radius: 12px; }
+.r-shift.live { border-color: var(--ok, #0a7d33); background: color-mix(in srgb, var(--ok, #0a7d33) 8%, transparent); }
+.r-shift-tag { display: inline-block; margin-left: 8px; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: var(--tint); color: var(--muted); }
+.r-shift-tag.live { background: var(--ok, #0a7d33); color: #fff; }
+.r-shift-tag.past { opacity: .6; }
+
 /* Rider tier + quests (additive) */
 .r-tier { display: flex; align-items: center; gap: 10px; border: 2px solid var(--rule); border-radius: var(--radius); padding: 10px 12px; margin-bottom: 10px; }
 .r-tier-badge { color: #fff; font-weight: 800; letter-spacing: .04em; font-size: 12px; padding: 3px 10px; border-radius: 999px; }

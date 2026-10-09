@@ -446,6 +446,26 @@ export class RiderController {
     const principal = await this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
     return this.dispatch.respond(principal, country(req), id, false, body?.reason);
   }
+
+  /** The rider's availability shifts. */
+  @Get("shifts")
+  async shifts(@Req() req: FastifyRequest) {
+    const principal = await this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+    return this.dispatch.myShifts(principal, country(req));
+  }
+
+  @Post("shifts")
+  async bookShift(@Req() req: FastifyRequest, @Body() body: { zone?: string; starts_at?: string; ends_at?: string }) {
+    const principal = await this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+    return this.dispatch.bookShift(principal, country(req), body ?? {});
+  }
+
+  @Post("shifts/:id/cancel")
+  @HttpCode(200)
+  async cancelShift(@Req() req: FastifyRequest, @Param("id") id: string) {
+    const principal = await this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+    return this.dispatch.cancelShift(principal, country(req), id);
+  }
 }
 
 /** Operations: the dispatch board, (re)assigning riders, cash hand-ins, refunds and rider applications. */
@@ -482,6 +502,12 @@ export class OpsController {
   @Get("incidents")
   async incidents(@Req() req: FastifyRequest) {
     return this.dispatch.incidents(await this.#me(req), country(req));
+  }
+
+  /** The upcoming rider shifts, for the dispatch board. */
+  @Get("shifts")
+  async shifts(@Req() req: FastifyRequest) {
+    return this.dispatch.shifts(await this.#me(req), country(req));
   }
 
   @Get("quests")

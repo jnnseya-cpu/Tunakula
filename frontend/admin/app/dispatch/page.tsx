@@ -16,6 +16,7 @@ interface Rider {
   id: string; name: string; phone: string | null; zones: string[]; vehicle: string; status: "AVAILABLE" | "OFFERED" | "BUSY" | "OFFLINE" | "SIGNAL_LOST";
   position: { lat: number; lng: number } | null; last_seen: string | null; online_minutes: number;
   job: { order_id: string; ref: string; state: string } | null; delivered_today: number; cash_in_hand: { amount_minor: string; currency: string };
+  on_shift?: boolean;
 }
 interface Order {
   order_id: string; ref: string; state: string; pickup: { name: string; lat: number; lng: number }; drop: { lat: number; lng: number } | null;
@@ -157,7 +158,7 @@ function Dispatch() {
             <tbody>
               {board.riders.map((r) => (
                 <tr key={r.id} className={selected === `r:${r.id}` ? "sel" : ""} onClick={() => setSelected(`r:${r.id}`)}>
-                  <td><b>{r.name}</b><div className="muted small">{r.phone} · {r.vehicle.toLowerCase()}</div></td>
+                  <td><b>{r.name}</b>{r.on_shift ? <span className="shift-badge" title={L("En service (créneau réservé)", "On a booked shift")}>{L("en service", "on shift")}</span> : null}<div className="muted small">{r.phone} · {r.vehicle.toLowerCase()}</div></td>
                   <td><span className={`st ${r.status.toLowerCase()}`}>{L(STATUS[r.status][0], STATUS[r.status][1])}</span></td>
                   <td className="muted">{r.zones.length > 3 ? `${r.zones.slice(0, 3).join(", ")} +${r.zones.length - 3}` : r.zones.join(", ")}</td>
                   <td>{r.job ? <>#{r.job.ref} · {L(...(STATE[r.job.state] ?? [r.job.state, r.job.state]))}</> : "—"}</td>

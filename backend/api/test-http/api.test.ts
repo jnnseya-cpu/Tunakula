@@ -2895,3 +2895,78 @@ describe("menu scheduling (dayparting)", () => {
     assert.equal(bad.body.code, "HOURS_INVALID");
   });
 });
+
+describe("rider shifts (availability scheduling)", () => {
+  const iso = (msFromNow: number) => new Date(Date.now() + msFromNow).toISOString();
+
+  test("a rider books, lists and cancels shifts; ops see who is on shift", async () => {
+    // A rider books a shift in a zone they ride (the test rider is RIDER@gombe).
+    const booked = await call("POST", "/v1/rider/shifts", { token: rider.token, country: "CD", body: { zone: "gombe", starts_at: iso(-5 * 60_000), ends_at: iso(2 * 3_600_000) } });
+    assert.equal(booked.status, 201, JSON.stringify(booked.body));
+    assert.equal(booked.body.zone, "gombe");
+    assert.equal(booked.body.active_now, true, "a shift spanning now is active");
+    const shiftId = booked.body.id;
+
+    // A non-rider cannot book; a rider cannot book in a zone they do not cover.
+    assert.equal((await call("POST", "/v1/rider/shifts", { token: customer.token, country: "CD", body: { zone: "gombe", starts_at: iso(3_600_000), ends_at: iso(7_200_000) } })).status, 403);
+    assert.equal((await call("POST", "/v1/rider/shifts", { token: rider.token, country: "CD", body: { zone: "lemba", starts_at: iso(3_600_000), ends_at: iso(7_200_000) } })).body.code, "ZONE_INVALID");
+    // Overlapping another booked shift is refused.
+    assert.equal((await call("POST", "/v1/rider/shifts", { token: rider.token, country: "CD", body: { zone: "gombe", starts_at: iso(60_000), ends_at: iso(3_600_000) } })).body.code, "SHIFT_OVERLAP");
+    // A zero/negative window is refused.
+    assert.equal((await call("POST", "/v1/rider/shifts", { token: rider.token, country: "CD", body: { zone: "gombe", starts_at: iso(7_200_000), ends_at: iso(3_600_000) } })).body.code, "SHIFT_INVALID");
+
+    // The rider lists their shifts and the zones they can book in.
+    const mine = await call("GET", "/v1/rider/shifts", { token: rider.token, country: "CD" });
+    assert.ok(mine.body.zones.includes("gombe"));
+    assert.ok(mine.body.shifts.some((s: { id: string; active_now: boolean }) => s.id === shiftId && s.active_now));
+
+    // Ops see the rider on shift now, both on the board and in the upcoming-shifts list.
+    const board = await call("GET", "/v1/ops/dispatch", { token: ops.token, country: "CD" });
+    const onBoard = board.body.riders.find((r: { id: string }) => r.id === rider.userId);
+    assert.equal(onBoard?.on_shift, true, "the dispatch board marks the rider on shift");
+    const opsShifts = await call("GET", "/v1/ops/shifts", { token: ops.token, country: "CD" });
+    assert.ok(opsShifts.body.shifts.some((s: { id: string; rider_id: string }) => s.id === shiftId && s.rider_id === rider.userId));
+    // A rider cannot read the ops shift list.
+    assert.equal((await call("GET", "/v1/ops/shifts", { token: rider.token, country: "CD" })).status, 403);
+
+    // Cancelling frees the rider; they are no longer on shift.
+    const cancelled = await call("POST", `/v1/rider/shifts/${shiftId}/cancel`, { token: rider.token, country: "CD" });
+    assert.equal(cancelled.status, 200, JSON.stringify(cancelled.body));
+    assert.equal(cancelled.body.status, "CANCELLED");
+    assert.equal((await call("POST", `/v1/rider/shifts/${shiftId}/cancel`, { token: rider.token, country: "CD" })).status, 404, "cannot cancel twice");
+    const board2 = await call("GET", "/v1/ops/dispatch", { token: ops.token, country: "CD" });
+    assert.equal(board2.body.riders.find((r: { id: string }) => r.id === rider.userId)?.on_shift, false);
+  });
+
+  test("the dispatcher prefers an on-shift rider in the zone, even one who is further away", async () => {
+    // An isolated zone so only the two riders set up here can take the order.
+    const SPOT = { lat: -4.4000, lng: 15.3300 };
+    const DROPZ = { lat: -4.4100, lng: 15.3400 };
+    const br = await call("POST", "/v1/branches", { token: admin.token, country: "CD", body: { name: "Masina Grill", restaurant_group_id: "rg-chez-maman", city: "kinshasa", commune: "masina", lat: SPOT.lat, lng: SPOT.lng } });
+    const zbranch = br.body.id;
+    const dish = await call("POST", `/v1/branches/${zbranch}/items`, { token: restaurantOwner.token, country: "CD", body: { names: { fr: "Brochette", en: "Skewer" }, prices: { USD: "6.00" } } });
+
+    // Two riders in masina: NEAR (off shift, at the branch) and FAR (on shift, ~2 km away).
+    const near = await signIn("+243810000240");
+    const far = await signIn("+243810000241");
+    await grant({ userId: near.userId, role: "RIDER", scope: { type: "ZONE", id: "masina" } });
+    await grant({ userId: far.userId, role: "RIDER", scope: { type: "ZONE", id: "masina" } });
+    await call("POST", "/v1/rider/presence", { token: near.token, country: "CD", body: { online: true, lat: SPOT.lat, lng: SPOT.lng } });
+    await call("POST", "/v1/rider/presence", { token: far.token, country: "CD", body: { online: true, lat: -4.4200, lng: 15.3500 } });
+    // The far rider is on shift now.
+    assert.equal((await call("POST", "/v1/rider/shifts", { token: far.token, country: "CD", body: { zone: "masina", starts_at: iso(-5 * 60_000), ends_at: iso(2 * 3_600_000) } })).status, 201);
+
+    // Place and pay for a delivery order from the masina branch.
+    const q = await call("POST", "/v1/carts/quote", { country: "CD", body: { branch_id: zbranch, items: [{ item_id: dish.body.id, quantity: 1 }], order_type: "DELIVERY", delivery: DROPZ } });
+    const placed = await call("POST", "/v1/orders", { token: customer.token, country: "CD", body: { branch_id: zbranch, items: [{ item_id: dish.body.id, quantity: 1 }], order_type: "DELIVERY", delivery: DROPZ, payment_mode: "PREPAID", expected_total: q.body.total } });
+    assert.equal(placed.status, 201, JSON.stringify(placed.body));
+    await call("POST", "/v1/payments/intents", { token: customer.token, country: "CD", body: { order_id: placed.body.order_id, method_type: "MOBILE_MONEY_PUSH", payer: { msisdn: "+243810000001" } } });
+
+    // The dispatcher offers this order to the on-shift (far) rider, not the nearer off-shift one.
+    await api.get<DispatchService>(TOKENS.dispatch).tick("CD");
+    const farJobs = await call("GET", "/v1/rider/jobs", { token: far.token, country: "CD" });
+    const nearJobs = await call("GET", "/v1/rider/jobs", { token: near.token, country: "CD" });
+    assert.equal(farJobs.body.offer?.job.order_id, placed.body.order_id, "the on-shift rider is offered the order");
+    assert.notEqual(nearJobs.body.offer?.job.order_id, placed.body.order_id, "the nearer off-shift rider is not preferred");
+  });
+});

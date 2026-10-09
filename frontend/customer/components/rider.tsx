@@ -67,6 +67,7 @@ export function RiderApp() {
   const [gpsError, setGpsError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [showEarn, setShowEarn] = useState(false);
+  const [showShifts, setShowShifts] = useState(false);
   const watch = useRef<number | null>(null);
   const lastSent = useRef<{ at: number; pos: Pos } | null>(null);
   const lastOffer = useRef<string | null>(null);
@@ -198,7 +199,9 @@ export function RiderApp() {
         <div><small>Cash in hand</small><b>{money(jobs.cash_in_hand)}</b><span>hand in at the hub</span></div>
       </div>
       <button type="button" className="r-earn-link" onClick={() => setShowEarn(true)}>Earnings &amp; instant cash-out →</button>
+      <button type="button" className="r-earn-link" onClick={() => setShowShifts(true)}>My shifts — book when you&apos;ll ride →</button>
       {showEarn ? <EarningsPanel onClose={() => setShowEarn(false)} /> : null}
+      {showShifts ? <ShiftsPanel onClose={() => setShowShifts(false)} /> : null}
       <SosButton pos={pos} orderId={job?.order_id ?? null} />
     </Frame>
   );
@@ -236,6 +239,59 @@ function SosButton({ pos, orderId }: { pos: Pos | null; orderId: string | null }
         </div>
       ) : null}
     </>
+  );
+}
+
+interface Shift { id: string; zone: string; status: string; starts_at: string; ends_at: string; active_now: boolean; upcoming: boolean }
+
+/** Book availability shifts (a zone + a time window) so dispatch prefers you for jobs in that zone. */
+function ShiftsPanel({ onClose }: { onClose: () => void }) {
+  const [zones, setZones] = useState<string[]>([]);
+  const [shifts, setShifts] = useState<Shift[]>([]);
+  const [zone, setZone] = useState("");
+  const [start, setStart] = useState("");
+  const [end, setEnd] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = () => api<{ zones: string[]; shifts: Shift[] }>("/v1/rider/shifts")
+    .then((r) => { setZones(r.zones); setShifts(r.shifts); setZone((z) => z || r.zones[0] || ""); })
+    .catch((e: ApiError) => setError(e.message));
+  useEffect(() => { void load(); }, []);
+
+  const book = async () => {
+    if (!zone || !start || !end) { setError("Pick a zone, a start and an end."); return; }
+    setBusy(true); setError(null);
+    try {
+      await api("/v1/rider/shifts", { method: "POST", body: { zone, starts_at: new Date(start).toISOString(), ends_at: new Date(end).toISOString() } });
+      setStart(""); setEnd(""); await load();
+    } catch (e) { setError((e as ApiError).message); } finally { setBusy(false); }
+  };
+  const cancel = async (id: string) => { try { await api(`/v1/rider/shifts/${id}/cancel`, { method: "POST", body: {} }); await load(); } catch (e) { setError((e as ApiError).message); } };
+  const when = (iso: string) => new Date(iso).toLocaleString("fr-FR", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+
+  return (
+    <div className="r-sheet" role="dialog" aria-modal="true" aria-label="My shifts" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="r-sheet-card">
+        <div className="r-sheet-head"><h2>My shifts</h2><button type="button" className="picker-x" onClick={onClose} aria-label="Close">✕</button></div>
+        <p className="muted">Book when and where you&apos;ll ride. On-shift riders get first pick of jobs in their zone — booking is optional, and saying no to a job never counts against you.</p>
+        <div className="r-shift-form">
+          <label>Zone<select value={zone} onChange={(e) => setZone(e.target.value)}>{zones.map((z) => <option key={z} value={z}>{z}</option>)}</select></label>
+          <label>Start<input type="datetime-local" value={start} onChange={(e) => setStart(e.target.value)} /></label>
+          <label>End<input type="datetime-local" value={end} onChange={(e) => setEnd(e.target.value)} /></label>
+        </div>
+        {error ? <p className="r-error" role="alert">{error}</p> : null}
+        <button type="button" className="r-btn go" disabled={busy} onClick={book}>{busy ? "Booking…" : "Book this shift"}</button>
+        <div className="r-shift-list">
+          {shifts.length === 0 ? <p className="muted">No shifts yet.</p> : shifts.map((s) => (
+            <div key={s.id} className={`r-shift ${s.active_now ? "live" : ""}`}>
+              <div><b>{s.zone}</b>{s.active_now ? <span className="r-shift-tag live">On shift now</span> : s.upcoming ? <span className="r-shift-tag">Upcoming</span> : <span className="r-shift-tag past">Past</span>}<br /><small>{when(s.starts_at)} → {when(s.ends_at)}</small></div>
+              {s.status === "BOOKED" && new Date(s.ends_at).getTime() > Date.now() ? <button type="button" className="link-btn" onClick={() => cancel(s.id)}>Cancel</button> : s.status === "CANCELLED" ? <small className="muted">Cancelled</small> : null}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
   );
 }
 
