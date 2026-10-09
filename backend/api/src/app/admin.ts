@@ -578,12 +578,13 @@ export class AdminService {
       const rows = await sql.query<{
         order_id: string; state: string; type: string; payment_mode: string; total_minor: string; currency: string; created_at: Date; updated_at: Date;
         branch_id: string; customer_name: string | null; rider_id: string | null; rider_name: string | null; lines: unknown; times: Record<string, string> | null;
-        packages: number | null; labels: string[] | null; confirmation_model: string | null; kitchen_note: string | null;
+        packages: number | null; labels: string[] | null; confirmation_model: string | null; kitchen_note: string | null; scheduled_for: string | null;
       }>(
         `SELECT o.order_id, o.state, o.type, o.payment_mode, o.total_minor::text AS total_minor, o.currency, o.created_at, o.updated_at, o.branch_id,
                 u.display_name AS customer_name, o.rider_id, r.display_name AS rider_name,
                 (SELECT d.payload->'snapshot'->'lines' FROM ordering.order_event d WHERE d.order_id = o.order_id AND d.type = 'ORDER_DRAFTED' LIMIT 1) AS lines,
                 (SELECT d.payload->'snapshot'->>'kitchenNote' FROM ordering.order_event d WHERE d.order_id = o.order_id AND d.type = 'ORDER_DRAFTED' LIMIT 1) AS kitchen_note,
+                (SELECT d.payload->'snapshot'->>'scheduledFor' FROM ordering.order_event d WHERE d.order_id = o.order_id AND d.type = 'ORDER_DRAFTED' LIMIT 1) AS scheduled_for,
                 (SELECT d.payload->'snapshot'->>'confirmationModel' FROM ordering.order_event d WHERE d.order_id = o.order_id AND d.type = 'ORDER_DRAFTED' LIMIT 1) AS confirmation_model,
                 (SELECT jsonb_object_agg(e.payload->>'to', e.at) FROM ordering.order_event e WHERE e.order_id = o.order_id AND e.type = 'STATE_CHANGED') AS times,
                 (SELECT (e.payload->'evidence'->>'packageCount')::int FROM ordering.order_event e WHERE e.order_id = o.order_id AND e.type = 'STATE_CHANGED' AND e.payload->>'to' = 'PACKED' ORDER BY e.seq DESC LIMIT 1) AS packages,
@@ -616,6 +617,7 @@ export class AdminService {
             id: l.id, name: l.name, quantity: l.quantity, options: l.options ?? [], allergens: l.allergenFlags ?? [], ...(l.note ? { note: l.note } : {}),
           })),
           ...(o.kitchen_note ? { kitchen_note: o.kitchen_note } : {}),
+          ...(o.scheduled_for ? { scheduled_for: new Date(o.scheduled_for).toISOString() } : {}),
           confirmation_model: o.confirmation_model ?? "RESTAURANT_FIRST",
           packages: o.packages ?? null,
           labels: o.labels ?? [],

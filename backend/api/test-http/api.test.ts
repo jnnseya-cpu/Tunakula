@@ -2023,3 +2023,33 @@ describe("table bookings (dine-in reservations)", () => {
     assert.equal((await call("GET", `/v1/admin/branches/${branchId}/reservations`, { token: customer.token, country: "CD" })).status, 403);
   });
 });
+
+describe("scheduled orders", () => {
+  const ahead = (mins: number) => new Date(Date.now() + mins * 60_000).toISOString();
+
+  test("a time too soon or too far is refused", async () => {
+    const q = await call("POST", "/v1/carts/quote", { country: "CD", body: cart() });
+    const soon = await call("POST", "/v1/orders", { token: customer.token, country: "CD", body: { ...cart(), payment_mode: "CASH_ON_DELIVERY", expected_total: q.body.total, scheduled_for: ahead(10) } });
+    assert.equal(soon.body.code, "SCHEDULE_TOO_SOON");
+    const far = await call("POST", "/v1/orders", { token: customer.token, country: "CD", body: { ...cart(), payment_mode: "CASH_ON_DELIVERY", expected_total: q.body.total, scheduled_for: ahead(60 * 24 * 9) } });
+    assert.equal(far.body.code, "SCHEDULE_TOO_FAR");
+  });
+
+  test("a scheduled order is placed, held until due, then released", async () => {
+    const at = ahead(180); // three hours out
+    const q = await call("POST", "/v1/carts/quote", { country: "CD", body: cart() });
+    const r = await call("POST", "/v1/orders", { token: customer.token, country: "CD", body: { ...cart(), payment_mode: "CASH_ON_DELIVERY", expected_total: q.body.total, scheduled_for: at } });
+    assert.equal(r.status, 201, JSON.stringify(r.body));
+    assert.equal(r.body.state, "PLACED");
+    // The customer sees the scheduled time back on the order.
+    const v = await call("GET", `/v1/orders/${r.body.order_id}`, { token: customer.token, country: "CD" });
+    assert.equal(v.body.scheduled_for, new Date(at).toISOString());
+    // A dispatcher pass now must NOT cancel it — it is not due yet.
+    await api.get<DispatchService>(TOKENS.dispatch).tick("CD");
+    assert.equal((await call("GET", `/v1/orders/${r.body.order_id}`, { token: customer.token, country: "CD" })).body.state, "PLACED");
+    // Past its release time with no kitchen answer, a dispatcher pass cancels it — proving it was released on schedule.
+    const future = new DispatchService(db, api.get<CommerceService>(TOKENS.commerce), () => new Date(Date.parse(at) + (KITCHEN_TIMEOUT_MIN + 1) * 60_000));
+    await future.tick("CD");
+    assert.equal((await call("GET", `/v1/orders/${r.body.order_id}`, { token: customer.token, country: "CD" })).body.state, "CANCELLED");
+  });
+});

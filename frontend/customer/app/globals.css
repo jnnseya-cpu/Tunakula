@@ -1170,6 +1170,13 @@ section.tight { padding: 44px 0; }
 .book-error { color: var(--bad, #c0391b); font-weight: 600; margin: 8px 0; }
 @media (max-width: 460px) { .book-grid { grid-template-columns: 1fr; } }
 
+/* Scheduled orders (additive) */
+.sched-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+.sched-grid .field span { font-size: 12px; color: var(--muted); display: block; margin-bottom: 4px; }
+.sched-grid input, .sched-grid select { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--rule-strong); background: var(--bg, #fff); }
+.sched-badge { font-size: 12px; font-weight: 700; border-radius: 6px; padding: 2px 8px; color: #8a4b00; background: color-mix(in srgb, #e0901a 16%, transparent); }
+@media (max-width: 460px) { .sched-grid { grid-template-columns: 1fr; } }
+
 .booking-list { list-style: none; padding: 0; margin: 16px 0; display: grid; gap: 10px; }
 .booking-card { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: var(--radius); background: var(--paper); border: 1px solid var(--rule-strong); }
 .booking-main { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }

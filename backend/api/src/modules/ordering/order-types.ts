@@ -128,6 +128,8 @@ export interface OrderSnapshot {
   readonly deliveryNote?: string;
   /** A free-text note for the kitchen ("no cutlery", "extra spicy"). Free text: never allergen or payment data. */
   readonly kitchenNote?: string;
+  /** ISO time the customer scheduled the order for; held until due, then released to the kitchen and dispatch. */
+  readonly scheduledFor?: string;
   readonly geofenceRadiusM: number;
 }
 

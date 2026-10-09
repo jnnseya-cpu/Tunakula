@@ -27,6 +27,8 @@ const PRESENCE_FRESH_MS = 2 * 60_000;
 const MAX_ACTIVE_JOBS = 1;
 /** A kitchen that has not accepted a placed order after this long: the order is cancelled for the customer. */
 export const KITCHEN_TIMEOUT_MIN = 10;
+/** A scheduled order is released to the kitchen and to dispatch this long before its scheduled time. */
+export const SCHEDULE_RELEASE_LEAD_MIN = 30;
 const NEEDS_RIDER = ["PLACED", "ACCEPTED", "PREPARING", "PACKED", "READY"];
 const RIDER_ACTIVE = ["PLACED", "ACCEPTED", "PREPARING", "PACKED", "READY", "PICKED_UP"];
 
@@ -504,11 +506,18 @@ export class DispatchService {
       const expired = await sql.query("UPDATE dispatch.offer SET status = 'EXPIRED', responded_at = $1 WHERE status = 'OFFERED' AND expires_at <= $1 RETURNING id", [at]);
 
       // Kitchens that never answered: cancel so the customer can order elsewhere (refund follows the cancel).
+      // For a scheduled order the answer clock starts when it is released (its scheduled time minus the lead),
+      // so greatest(placed, releaseTime) is the point we measure the timeout from. greatest() ignores NULLs,
+      // so a normal (unscheduled) order simply measures from when it was placed.
       const stale = await sql.query<{ order_id: string }>(
         `SELECT o.order_id FROM ordering.order_view o
           WHERE o.state = 'PLACED'
-            AND (SELECT max(e.at) FROM ordering.order_event e WHERE e.order_id = o.order_id AND e.type = 'STATE_CHANGED' AND e.payload->>'to' = 'PLACED') <= $1`,
-        [new Date(at.getTime() - KITCHEN_TIMEOUT_MIN * 60_000)],
+            AND greatest(
+                  (SELECT max(e.at) FROM ordering.order_event e WHERE e.order_id = o.order_id AND e.type = 'STATE_CHANGED' AND e.payload->>'to' = 'PLACED'),
+                  (SELECT (d.payload->'snapshot'->>'scheduledFor')::timestamptz - make_interval(mins => $2)
+                     FROM ordering.order_event d WHERE d.order_id = o.order_id AND d.type = 'ORDER_DRAFTED')
+                ) <= $1`,
+        [new Date(at.getTime() - KITCHEN_TIMEOUT_MIN * 60_000), SCHEDULE_RELEASE_LEAD_MIN],
       );
       let cancelled = 0;
       for (const s of stale) {
@@ -526,8 +535,11 @@ export class DispatchService {
            JOIN ordering.order_event d ON d.order_id = o.order_id AND d.type = 'ORDER_DRAFTED'
           WHERE o.rider_id IS NULL AND o.type = ANY($1) AND o.state = ANY($2)
             AND NOT EXISTS (SELECT 1 FROM dispatch.offer f WHERE f.order_id = o.order_id AND f.status = 'OFFERED')
+            -- A scheduled order is not offered to a rider until it is released (its scheduled time minus the lead).
+            AND ((d.payload->'snapshot'->>'scheduledFor') IS NULL
+                 OR (d.payload->'snapshot'->>'scheduledFor')::timestamptz - make_interval(mins => $3) <= $4)
           ORDER BY o.created_at`,
-        [RIDER_ORDER_TYPES, NEEDS_RIDER],
+        [RIDER_ORDER_TYPES, NEEDS_RIDER, SCHEDULE_RELEASE_LEAD_MIN, at],
       );
       if (!waiting.length) return { expired: expired.length, cancelled, offered: 0 };
 

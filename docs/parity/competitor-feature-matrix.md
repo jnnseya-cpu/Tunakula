@@ -53,7 +53,7 @@ Delivery + pickup/takeaway are universal; **dine-in and scheduled/pre-order appe
 | Delivery | ✔ | ✔ | ✔ | ✔ | ✔ |
 | Pickup / takeaway | ~ [INF] | ✔ | ✔ | ✔ | ✔ |
 | Dine-in (table/QR) | ~ [INF, v8] | ✘ | ✘ | ✘ | ✘ | **Tunakula: ✔ table bookings built** — a customer books a table for a party of 1+ at a chosen time; the restaurant confirms, seats, completes, declines or marks no-show; customer tracks and cancels on /bookings (REQUESTED→CONFIRMED→SEATED→COMPLETED, plus CANCELLED/NO_SHOW) |
-| Scheduled / pre-order | ✔ | ✔ | ✔ | ~ | ✔ |
+| Scheduled / pre-order | ✔ | ✔ | ✔ | ~ | ✔ | **Tunakula: ✔ built** — customer schedules a delivery/takeaway for a future day+time at checkout (30 min to 7 days ahead); the order is placed but held, then released to the kitchen and to dispatch 30 min before the slot (no early rider offer, no early kitchen-timeout cancel); the kitchen board and the customer's orders show the scheduled time |
 | Group order + bill split | ✘ | ✔ | ✔ | ? | ? |
 | Cart edit (qty, remove, item notes) | ~ [INF] | ✔ | ✔ | ✔ | ✔ |
 | Delivery instructions / note to rider | ~ [INF] | ✔ | ✔ | ✔ | ✔ |

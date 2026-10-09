@@ -16,7 +16,7 @@ interface OrderView {
   rider: { name: string; position?: { lat: number; lng: number; updated_at: string }; meters_to_you?: number } | null;
   drop: { lat: number; lng: number } | null;
 }
-interface Row { order_id: string; state: string; type: string; total: MoneyWire; created_at: string; branch: { id: string; name: string; commune: string | null } }
+interface Row { order_id: string; state: string; type: string; total: MoneyWire; created_at: string; scheduled_for?: string; branch: { id: string; name: string; commune: string | null } }
 
 const RIDER_STEPS = ["PLACED", "ACCEPTED", "PREPARING", "READY", "PICKED_UP", "DELIVERED"];
 const COUNTER_STEPS = ["PLACED", "ACCEPTED", "PREPARING", "READY", "DELIVERED"];
@@ -225,7 +225,7 @@ export function OrderHistory() {
           {rows.map((r) => (
             <li key={r.order_id} data-reveal>
               <Link href={`/track/?id=${r.order_id}`} className="order-row">
-                <span className="or-main"><b>{r.branch.name}</b><small>{day(r.created_at)} · {time(r.created_at)} · {r.type === "DELIVERY" ? "Delivery" : r.type === "TAKEAWAY" ? "Collected" : r.type}</small></span>
+                <span className="or-main"><b>{r.branch.name}</b><small>{r.scheduled_for ? <>⏰ Scheduled {day(r.scheduled_for)} · {time(r.scheduled_for)}</> : <>{day(r.created_at)} · {time(r.created_at)}</>} · {r.type === "DELIVERY" ? "Delivery" : r.type === "TAKEAWAY" ? "Collected" : r.type}</small></span>
                 <span className={`state-chip s-${r.state.toLowerCase()}`}>{STATE_LABEL[r.state] ?? r.state}</span>
                 <b className="num">{money(r.total)}</b>
               </Link>

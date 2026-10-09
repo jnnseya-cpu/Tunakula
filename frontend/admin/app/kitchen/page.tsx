@@ -14,7 +14,7 @@ interface Line { id: string; name: string; quantity: number; options: string[]; 
 interface KOrder {
   order_id: string; ref: string; state: string; type: string; payment_mode: string; total: { amount_minor: string; currency: string };
   branch_id: string; customer: string | null; rider: { id: string; name: string } | null; lines: Line[]; times: Record<string, string>; created_at: string;
-  packages: number | null; labels: string[]; confirmation_model: string; kitchen_note?: string;
+  packages: number | null; labels: string[]; confirmation_model: string; kitchen_note?: string; scheduled_for?: string;
 }
 interface Board { now: string; branches: { id: string; name: string; commune: string | null; status: string; can_pause: boolean }[]; orders: KOrder[] }
 
@@ -171,6 +171,7 @@ function Kitchen() {
                       <span className={`k-type ${rider ? "del" : "col"}`}>{rider ? L("Livraison", "Delivery") : L("À emporter", "Collect")}</span>
                       <span className={`k-timer ${late ? "late" : ""}`} title={L("Depuis l'étape actuelle", "Time in this step")}>{sinceMin(stateAt, now)} min</span>
                     </header>
+                    {o.scheduled_for ? <p className="k-sched">⏰ {L("Prévue pour", "Scheduled for")} {new Date(o.scheduled_for).toLocaleString(lang === "fr" ? "fr-FR" : "en-GB", { weekday: "short", hour: "2-digit", minute: "2-digit" })}</p> : null}
                     <ul className="k-lines">
                       {o.lines.map((l) => (
                         <li key={l.id}><b className="k-qty">{l.quantity}×</b> <span>{l.name}{l.options.length ? <small> · {l.options.join(", ")}</small> : null}{l.note ? <em className="k-note">“{l.note}”</em> : null}</span></li>

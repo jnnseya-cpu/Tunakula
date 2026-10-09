@@ -50,6 +50,8 @@ export interface PlaceOrderInput extends QuoteInput {
   readonly ageConfirmed?: boolean;
   /** A free-text note for the kitchen ("no cutlery", "extra napkins"). Never allergen or payment data. */
   readonly kitchenNote?: string;
+  /** When set, the order is scheduled for this future time; it is held until it is due, then released to the kitchen and to dispatch. */
+  readonly scheduledFor?: string;
 }
 
 export interface Quote {
@@ -80,6 +82,9 @@ export interface Quote {
 /** Default geofence for drop completion; becomes a Country Profile setting with the dispatch context. */
 const GEOFENCE_M = 150;
 const MAX_QUANTITY = 99;
+/** A scheduled order must be at least this far ahead, and at most this many days out. */
+const SCHEDULE_MIN_LEAD_MIN = 30;
+const SCHEDULE_MAX_DAYS = 7;
 const COD_SHARE_MIN_SAMPLE = 100n;
 
 /** Order states that notify the customer, and the catalogue event each fires. */
@@ -210,6 +215,17 @@ export class CommerceService {
     }
   }
 
+  /** Validates a requested scheduled time: a real future time, at least the minimum lead ahead and within the window. */
+  #validateSchedule(raw: string | undefined): Date | undefined {
+    if (raw === undefined) return undefined;
+    const at = new Date(raw);
+    if (Number.isNaN(at.getTime())) throw badRequest("SCHEDULE_INVALID", "Send a valid scheduled time");
+    const now = this.now().getTime();
+    if (at.getTime() < now + SCHEDULE_MIN_LEAD_MIN * 60_000) throw unprocessable("SCHEDULE_TOO_SOON", `Schedule an order at least ${SCHEDULE_MIN_LEAD_MIN} minutes ahead`);
+    if (at.getTime() > now + SCHEDULE_MAX_DAYS * 86_400_000) throw unprocessable("SCHEDULE_TOO_FAR", `Schedule an order at most ${SCHEDULE_MAX_DAYS} days ahead`);
+    return at;
+  }
+
   /** Resolves the customer's live membership benefit against a priced order, if any applies. */
   async #memberBenefit(sql: Sql, country: string, customerId: string | undefined, breakdown: PriceBreakdown): Promise<Quote["membership"] | undefined> {
     if (!customerId || !this.membership) return undefined;
@@ -242,6 +258,7 @@ export class CommerceService {
         throw conflict("PRICE_CHANGED", "The price changed since you last saw it; please confirm the new total", { quote: serialiseQuote(quote) });
       }
       if (quote.ageRestricted && input.ageConfirmed !== true) throw unprocessable("AGE_CONFIRMATION_REQUIRED", "This order contains an age-restricted item; confirm you are 18 or older");
+      const scheduledFor = this.#validateSchedule(input.scheduledFor);
       if (input.paymentMode === "CASH_ON_DELIVERY") await this.#assertCodAllowed(sql, profile, principal.userId, total);
       if (input.orderType === "XBO" && !input.recipient) throw badRequest("RECIPIENT_REQUIRED", "Cross-border orders name a recipient");
 
@@ -303,6 +320,7 @@ export class CommerceService {
         ...(input.delivery ? { dropLocation: { lat: input.delivery.lat, lng: input.delivery.lng } } : {}),
         ...(input.address?.landmark?.trim() ? { deliveryNote: input.address.landmark.trim().slice(0, 280) } : {}),
         ...(input.kitchenNote?.trim() ? { kitchenNote: input.kitchenNote.trim().slice(0, 280) } : {}),
+        ...(scheduledFor ? { scheduledFor: scheduledFor.toISOString() } : {}),
         geofenceRadiusM: GEOFENCE_M,
       };
       const actor: Actor = { kind: "CUSTOMER", id: principal.userId };
@@ -336,8 +354,9 @@ export class CommerceService {
   /** GET /v1/me/orders: the signed-in customer's own orders in this market, newest first. */
   async myOrders(country: string, principal: Principal, limit = 30) {
     return this.db.tx({ country }, async (sql) => {
-      const rows = await sql.query<{ order_id: string; state: string; type: string; total_minor: string; currency: string; created_at: Date; branch_id: string; branch_name: string; commune: string | null }>(
-        `SELECT o.order_id, o.state, o.type, o.total_minor::text, o.currency, o.created_at, b.id AS branch_id, b.name AS branch_name, b.commune
+      const rows = await sql.query<{ order_id: string; state: string; type: string; total_minor: string; currency: string; created_at: Date; branch_id: string; branch_name: string; commune: string | null; scheduled_for: string | null }>(
+        `SELECT o.order_id, o.state, o.type, o.total_minor::text, o.currency, o.created_at, b.id AS branch_id, b.name AS branch_name, b.commune,
+                (SELECT d.payload->'snapshot'->>'scheduledFor' FROM ordering.order_event d WHERE d.order_id = o.order_id AND d.type = 'ORDER_DRAFTED') AS scheduled_for
            FROM ordering.order_view o JOIN catalogue.branch b ON b.id = o.branch_id
           WHERE o.customer_id = $1 ORDER BY o.created_at DESC LIMIT $2`,
         [principal.userId, Math.min(Math.max(limit, 1), 100)],
@@ -345,6 +364,7 @@ export class CommerceService {
       return rows.map((r) => ({
         order_id: r.order_id, state: r.state, type: r.type, total: { amount_minor: r.total_minor, currency: r.currency },
         created_at: new Date(r.created_at).toISOString(), branch: { id: r.branch_id, name: r.branch_name, commune: r.commune },
+        ...(r.scheduled_for ? { scheduled_for: new Date(r.scheduled_for).toISOString() } : {}),
       }));
     });
   }

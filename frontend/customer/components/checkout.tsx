@@ -34,6 +34,20 @@ const PAY_LABEL: Record<string, [string, string]> = {
 };
 const TIPS = ["0", "0.50", "1.00", "2.00"];
 
+/** Half-hour slots for the chosen day, at least the schedule lead ahead (the API enforces the real floor). */
+const SCHEDULE_LEAD_MIN = 30;
+function scheduleSlots(day: string): [string, string][] {
+  const out: [string, string][] = [];
+  const base = new Date(`${day}T00:00:00`);
+  const floor = Date.now() + SCHEDULE_LEAD_MIN * 60_000;
+  for (let m = 8 * 60; m <= 22 * 60; m += 30) {
+    const d = new Date(base.getTime() + m * 60_000);
+    if (d.getTime() < floor) continue;
+    out.push([d.toISOString(), d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })]);
+  }
+  return out;
+}
+
 export function Checkout() {
   const { place, setPlace, setPickerOpen } = useLocationCtx();
   const [addresses, setAddresses] = useState<SavedAddress[]>([]);
@@ -43,6 +57,9 @@ export function Checkout() {
   const [mode, setMode] = useState<Mode>("DELIVERY");
   const [landmark, setLandmark] = useState("");
   const [kitchenNote, setKitchenNote] = useState("");
+  const [when, setWhen] = useState<"ASAP" | "LATER">("ASAP");
+  const [schedDay, setSchedDay] = useState(() => new Date().toISOString().slice(0, 10));
+  const [schedTime, setSchedTime] = useState("");
   const [tip, setTip] = useState("0");
   const [quote, setQuote] = useState<Quote | null>(null);
   const [quoteError, setQuoteError] = useState<string | null>(null);
@@ -154,7 +171,7 @@ export function Checkout() {
         setBusy("Placing your order…");
         const r = await api<{ order_id: string; recipient_code: string; state: string }>("/v1/orders", {
           method: "POST", key: attempt.current.key,
-          body: { ...body, payment_mode: pay === "CASH_ON_DELIVERY" ? "CASH_ON_DELIVERY" : "PREPAID", expected_total: due, ...(quote.age_restricted ? { age_confirmed: true } : {}), ...(kitchenNote.trim() ? { kitchen_note: kitchenNote.trim() } : {}), ...(landmark.trim() ? { address: { landmark: landmark.trim() } } : {}) },
+          body: { ...body, payment_mode: pay === "CASH_ON_DELIVERY" ? "CASH_ON_DELIVERY" : "PREPAID", expected_total: due, ...(quote.age_restricted ? { age_confirmed: true } : {}), ...(kitchenNote.trim() ? { kitchen_note: kitchenNote.trim() } : {}), ...(when === "LATER" ? { scheduled_for: schedTime || scheduleSlots(schedDay)[0]?.[0] } : {}), ...(landmark.trim() ? { address: { landmark: landmark.trim() } } : {}) },
         });
         orderId = r.order_id;
         placed.current = orderId;
@@ -201,6 +218,27 @@ export function Checkout() {
               </button>
             ))}
           </div>
+        </section>
+
+        <section className="co-sec">
+          <h2>When?</h2>
+          <div className="seg2 big" role="radiogroup" aria-label="Now or scheduled">
+            {(["ASAP", "LATER"] as const).map((w) => (
+              <button type="button" key={w} role="radio" aria-checked={when === w} className={when === w ? "on" : ""} onClick={() => setWhen(w)}>
+                <b>{w === "ASAP" ? "As soon as possible" : "Schedule for later"}</b><small>{w === "ASAP" ? "We start cooking now" : "Pick a day and time"}</small>
+              </button>
+            ))}
+          </div>
+          {when === "LATER" ? (
+            <div className="sched-grid">
+              <label className="field"><span>Day</span><input type="date" min={new Date().toISOString().slice(0, 10)} value={schedDay} onChange={(e) => { setSchedDay(e.target.value); setSchedTime(""); }} /></label>
+              <label className="field"><span>Time</span>
+                <select value={schedTime || scheduleSlots(schedDay)[0]?.[0] || ""} onChange={(e) => setSchedTime(e.target.value)}>
+                  {scheduleSlots(schedDay).length ? scheduleSlots(schedDay).map(([v, l]) => <option key={v} value={v}>{l}</option>) : <option value="">No slots left today</option>}
+                </select>
+              </label>
+            </div>
+          ) : null}
         </section>
 
         {mode === "DELIVERY" ? (

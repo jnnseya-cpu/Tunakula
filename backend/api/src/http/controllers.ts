@@ -182,7 +182,7 @@ export class OrdersController {
   }
 
   @Post("orders")
-  async place(@Req() req: FastifyRequest, @Body() body: QuoteBody & { payment_mode: PlaceOrderInput["paymentMode"]; expected_total: PlaceOrderInput["expectedTotal"]; recipient?: PlaceOrderInput["recipient"]; gifted?: boolean; contactless?: boolean; age_confirmed?: boolean; kitchen_note?: string; address?: { landmark?: string; voice_note_url?: string } }) {
+  async place(@Req() req: FastifyRequest, @Body() body: QuoteBody & { payment_mode: PlaceOrderInput["paymentMode"]; expected_total: PlaceOrderInput["expectedTotal"]; recipient?: PlaceOrderInput["recipient"]; gifted?: boolean; contactless?: boolean; age_confirmed?: boolean; kitchen_note?: string; scheduled_for?: string; address?: { landmark?: string; voice_note_url?: string } }) {
     const uid = userId(req, this.tokens);
     const principal = await this.db.tx({}, (sql) => loadPrincipal(sql, uid));
     const key = req.headers["idempotency-key"] as string;
@@ -195,6 +195,7 @@ export class OrdersController {
       ...(body.contactless ? { contactless: true } : {}),
       ...(body.age_confirmed ? { ageConfirmed: true } : {}),
       ...(typeof body.kitchen_note === "string" && body.kitchen_note.trim() ? { kitchenNote: body.kitchen_note } : {}),
+      ...(body.scheduled_for ? { scheduledFor: String(body.scheduled_for) } : {}),
       ...(body.address?.landmark ? { address: { landmark: String(body.address.landmark) } } : {}),
     }, key);
     return { order_id: r.orderId, state: r.state, recipient_code: r.recipientCode, quote: serialiseQuote(r.quote) };
@@ -1005,6 +1006,7 @@ function orderView(o: OrderAggregate) {
     lines: s.lines.map((l) => ({ name: l.name, quantity: l.quantity, allergens: l.allergenFlags, options: l.options, ...(l.note ? { note: l.note } : {}) })),
     ...(s.kitchenNote ? { kitchen_note: s.kitchenNote } : {}),
     ...(s.deliveryNote ? { delivery_note: s.deliveryNote } : {}),
+    ...(s.scheduledFor ? { scheduled_for: s.scheduledFor } : {}),
     flagged_for_review: o.flaggedForReview,
     version: o.version,
   };
