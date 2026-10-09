@@ -21,6 +21,7 @@ import type { RefundService } from "../app/refunds.ts";
 import type { WalletService } from "../app/wallet.ts";
 import type { ReferralService } from "../app/referrals.ts";
 import type { LoyaltyService } from "../app/loyalty.ts";
+import type { CashbackService } from "../app/cashback.ts";
 import type { MerchantOnboardingService } from "../app/merchant-onboarding.ts";
 import type { NotificationService } from "../app/comms.ts";
 import { serialiseQuote, type CommerceService, type PlaceOrderInput, type QuoteInput } from "../app/commerce.ts";
@@ -1277,6 +1278,45 @@ export class LoyaltyController {
   @HttpCode(200)
   async setConfig(@Req() req: FastifyRequest, @Body() body: { enabled?: boolean; earn_bps?: number; redeem_minor_per_point?: number; min_redeem_points?: number }) {
     return this.loyalty.setConfig(country(req), await this.#p(req), body ?? {});
+  }
+}
+
+/** Cashback campaigns: a time-boxed "X% back to your wallet" promotion the customer sees and a market admin runs. */
+@Controller("v1")
+export class CashbackController {
+  constructor(
+    @Inject(TOKENS.db) private readonly db: Db,
+    @Inject(TOKENS.tokens) private readonly tokens: TokenService,
+    @Inject(TOKENS.cashback) private readonly cashback: CashbackService,
+  ) {}
+
+  #p(req: FastifyRequest) {
+    return this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+  }
+
+  /** The cashback offer a customer can earn right now (public). */
+  @Get("cashback")
+  async offer(@Req() req: FastifyRequest) {
+    return this.cashback.offer(country(req));
+  }
+
+  /** Admin: list the market's cashback campaigns. */
+  @Get("admin/cashback")
+  async list(@Req() req: FastifyRequest) {
+    return this.cashback.list(country(req), await this.#p(req));
+  }
+
+  /** Admin: create a cashback campaign. */
+  @Post("admin/cashback")
+  async create(@Req() req: FastifyRequest, @Body() body: unknown) {
+    return this.cashback.create(country(req), await this.#p(req), (body ?? {}) as never);
+  }
+
+  /** Admin: update or switch a cashback campaign. */
+  @Post("admin/cashback/:id")
+  @HttpCode(200)
+  async update(@Req() req: FastifyRequest, @Param("id") id: string, @Body() body: unknown) {
+    return this.cashback.update(country(req), await this.#p(req), id, (body ?? {}) as never);
   }
 }
 

@@ -327,6 +327,11 @@ dl.kv dt { color: var(--muted); }
 .dsp-heat-chip.hot { background: #c01818; }
 .dsp-heat-chip.busy { background: #e8740c; }
 .dsp-heat-chip.steady { background: #1f6feb; }
+.st.live { background: rgba(27, 175, 122, 0.15); color: #0f6b3a; }
+.st.up { background: rgba(31, 111, 235, 0.14); color: #1a4fb0; }
+.st.end { background: rgba(120, 130, 150, 0.16); color: #556; }
+.st.off { background: rgba(192, 24, 24, 0.12); color: #a01414; }
+td .link-btn + .link-btn { margin-left: 14px; }
 .st.busy { background: rgba(250, 210, 14, 0.25); color: #7a5b00; }
 .st.offered { background: rgba(232, 123, 164, 0.2); color: #9a2f5c; }
 .st.signal_lost { background: rgba(208, 59, 59, 0.12); color: var(--critical); }

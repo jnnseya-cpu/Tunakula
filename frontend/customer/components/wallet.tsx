@@ -5,11 +5,29 @@
  */
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { getSession, money, walletBalance, walletHistory, walletTopup, type MoneyWire, type WalletTxn } from "../lib/api";
+import { cashbackOffer, getSession, money, walletBalance, walletHistory, walletTopup, type CashbackOffer, type MoneyWire, type WalletTxn } from "../lib/api";
 import { ReferralInvite, ReferralClaimCard } from "./referral";
 import { LoyaltyCard } from "./loyalty";
 
-const KIND_LABEL: Record<WalletTxn["kind"], string> = { TOPUP: "Top-up", ORDER_PAYMENT: "Order", REFUND: "Refund", ADJUSTMENT: "Adjustment", REFERRAL: "Referral reward", LOYALTY: "Points redeemed" };
+const KIND_LABEL: Record<WalletTxn["kind"], string> = { TOPUP: "Top-up", ORDER_PAYMENT: "Order", REFUND: "Refund", ADJUSTMENT: "Adjustment", REFERRAL: "Referral reward", LOYALTY: "Points redeemed", CASHBACK: "Cashback" };
+
+/** A live cashback promotion banner, shown when a campaign is running in this market. */
+function CashbackBanner() {
+  const [offer, setOffer] = useState<CashbackOffer | null>(null);
+  useEffect(() => { cashbackOffer().then(setOffer).catch(() => undefined); }, []);
+  if (!offer) return null;
+  const min = BigInt(offer.min_spend.amount_minor) > 0n ? ` on orders over ${money(offer.min_spend)}` : "";
+  const cap = offer.max_cashback ? ` (up to ${money(offer.max_cashback)})` : "";
+  return (
+    <section className="app-card cashback-banner">
+      <span className="cb-pct">{offer.percent}%</span>
+      <div>
+        <b>{offer.name}</b>
+        <p className="muted small">Get {offer.percent}% back to your wallet{min}{cap}. It lands automatically once your order is delivered.</p>
+      </div>
+    </section>
+  );
+}
 const TOPUP_AMOUNTS = ["5.00", "10.00", "20.00", "50.00"];
 
 export function Wallet() {
@@ -62,6 +80,7 @@ export function Wallet() {
         <button type="button" className="btn accent wide" disabled={busy} onClick={topup}>{busy ? "Topping up…" : `Top up $${amount}`}</button>
       </section>
 
+      <CashbackBanner />
       <LoyaltyCard onRedeemed={load} />
       <ReferralClaimCard />
       <ReferralInvite />

@@ -40,6 +40,7 @@ import type { PaymentService } from "../app/payments.ts";
 import type { WalletService } from "../app/wallet.ts";
 import type { ReferralService } from "../app/referrals.ts";
 import type { LoyaltyService } from "../app/loyalty.ts";
+import type { CashbackService } from "../app/cashback.ts";
 import { createApi } from "./app.ts";
 import { TOKENS } from "./common.ts";
 
@@ -125,6 +126,7 @@ if (dispatchMs > 0) {
   const wallet = app.get<WalletService>(TOKENS.wallet);
   const referrals = app.get<ReferralService>(TOKENS.referrals);
   const loyalty = app.get<LoyaltyService>(TOKENS.loyalty);
+  const cashback = app.get<CashbackService>(TOKENS.cashback);
   let running = false;
   const loop = setInterval(async () => {
     if (running) return;
@@ -146,6 +148,9 @@ if (dispatchMs > 0) {
         // Delivered orders earn loyalty points.
         const loyaltyAwards = await loyalty.awardSweep(c.iso2);
         if (loyaltyAwards.awarded) log.info("loyalty", { country: c.iso2, ...loyaltyAwards });
+        // Delivered orders placed during a cashback campaign are credited back to the wallet.
+        const cashbackAwards = await cashback.awardSweep(c.iso2);
+        if (cashbackAwards.awarded) log.info("cashback", { country: c.iso2, ...cashbackAwards });
       }
     } catch (error) { log.error("dispatch failed", { error }); } finally { running = false; }
   }, dispatchMs);

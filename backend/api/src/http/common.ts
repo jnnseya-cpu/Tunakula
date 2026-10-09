@@ -31,6 +31,7 @@ export const TOKENS = {
   wallet: "WALLET_SERVICE",
   referrals: "REFERRAL_SERVICE",
   loyalty: "LOYALTY_SERVICE",
+  cashback: "CASHBACK_SERVICE",
   onboardingMerchant: "MERCHANT_ONBOARDING_SERVICE",
   logger: "LOGGER",
 } as const;

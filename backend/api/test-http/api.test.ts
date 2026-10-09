@@ -18,6 +18,7 @@ import { TOKENS } from "../src/http/common.ts";
 import { DispatchService, KITCHEN_TIMEOUT_MIN } from "../src/app/dispatch.ts";
 import type { WalletService } from "../src/app/wallet.ts";
 import type { LoyaltyService } from "../src/app/loyalty.ts";
+import type { CashbackService } from "../src/app/cashback.ts";
 import type { ReferralService } from "../src/app/referrals.ts";
 import type { CommerceService } from "../src/app/commerce.ts";
 import type { PaymentService } from "../src/app/payments.ts";
@@ -2992,5 +2993,94 @@ describe("busy-areas heatmap", () => {
     // A plain customer sees neither the rider nor the ops heatmap.
     assert.equal((await call("GET", "/v1/rider/heatmap", { token: customer.token, country: "CD" })).status, 403);
     assert.equal((await call("GET", "/v1/ops/heatmap", { token: customer.token, country: "CD" })).status, 403);
+  });
+});
+
+describe("cashback campaigns", () => {
+  const iso = (ms: number) => new Date(Date.now() + ms).toISOString();
+  const walletUsd = async (token: string) => {
+    const r = await call("GET", "/v1/me/wallet", { token, country: "CD" });
+    const usd = r.body.balances.find((b: { currency: string }) => b.currency === "USD");
+    return usd ? BigInt(usd.amount_minor) : 0n;
+  };
+  let clabel = 0;
+  // Drives one fresh wallet-paid order to DELIVERED for the given customer; returns the order total in minor units.
+  const deliverOnce = async (who: { token: string; userId: string }) => {
+    const q = await call("POST", "/v1/carts/quote", { token: who.token, country: "CD", body: cart() });
+    const total = BigInt(q.body.total.amount_minor);
+    const placed = await call("POST", "/v1/orders", { token: who.token, country: "CD", body: { ...cart(), payment_mode: "WALLET", expected_total: q.body.total } });
+    assert.equal(placed.status, 201, JSON.stringify(placed.body));
+    const orderId = placed.body.order_id, code = placed.body.recipient_code, lb = `CB-${++clabel}`;
+    await transition(ops, orderId, { type: "ASSIGN_RIDER", riderId: rider.userId });
+    await transition(kitchen, orderId, { type: "ACCEPT" });
+    await transition(kitchen, orderId, { type: "START_PREPARING" });
+    await transition(kitchen, orderId, { type: "PACK", confirmedLineIds: ["l1"], packageCount: 1, allergenAcknowledged: true });
+    await transition(kitchen, orderId, { type: "MARK_READY", packages: [{ labelId: lb, sealId: `${lb}-S` }], packPhotoRef: "photo://pack" });
+    await transition(rider, orderId, { type: "PICK_UP", scannedLabelIds: [lb], restaurantConfirmed: true, sealsIntact: true, location: KINSHASA });
+    const done = await transition(rider, orderId, { type: "DELIVER", scannedLabelId: lb, location: DROP, sealIntact: true, verification: { method: "CODE", code }, proofPhotoRef: "photo://door" });
+    assert.equal(done.body.state, "DELIVERED", JSON.stringify(done.body));
+    return total;
+  };
+  const sweep = () => api.get<CashbackService>(TOKENS.cashback).awardSweep("CD");
+
+  test("a live campaign gives cashback to the wallet on a delivered order, capped and idempotent", async () => {
+    const shopper = await signIn("+243810000250");
+    // Only a market admin runs campaigns.
+    assert.equal((await call("POST", "/v1/admin/cashback", { token: shopper.token, country: "CD", body: { name: "x", percent_bps: 1000, starts_at: iso(-1000), ends_at: iso(3_600_000) } })).status, 403);
+    const made = await call("POST", "/v1/admin/cashback", { token: admin.token, country: "CD", body: { name: "Weekend 10% back", percent_bps: 1000, min_spend: "0", max_cashback: "1.00", starts_at: iso(-60_000), ends_at: iso(3_600_000) } });
+    assert.equal(made.status, 201, JSON.stringify(made.body));
+    assert.equal(made.body.status, "LIVE");
+    assert.equal(made.body.percent, 10);
+
+    // The customer sees the live offer.
+    const offer = await call("GET", "/v1/cashback", { token: shopper.token, country: "CD" });
+    assert.equal(offer.body.offer.percent, 10);
+    assert.equal(offer.body.offer.max_cashback.amount_minor, "100");
+
+    // Fund the wallet and deliver an order placed during the campaign.
+    await call("POST", "/v1/me/wallet/topup", { token: shopper.token, country: "CD", body: { amount_minor: "10000", currency: "USD", method_type: "MOBILE_MONEY_PUSH", payer: { msisdn: "+243810000250" } } });
+    const afterTopup = await walletUsd(shopper.token);
+    const total = await deliverOnce(shopper);
+    const afterOrder = await walletUsd(shopper.token);
+    assert.equal(afterOrder, afterTopup - total, "the order total is debited from the wallet");
+
+    // The sweep credits cashback = min(10% of the total, the $1.00 cap).
+    const expected = (total * 1000n) / 10000n;
+    const capped = expected > 100n ? 100n : expected;
+    assert.ok(capped > 0n, "the order earns some cashback");
+    const swept = await sweep();
+    assert.ok(swept.awarded >= 1, JSON.stringify(swept));
+    assert.equal(await walletUsd(shopper.token), afterOrder + capped, "cashback credited to the wallet (capped)");
+    // The wallet history shows the cashback credit.
+    const hist = await call("GET", "/v1/me/wallet/transactions", { token: shopper.token, country: "CD" });
+    assert.ok(hist.body.transactions.some((t: { kind: string }) => t.kind === "CASHBACK"));
+
+    // The sweep is idempotent: running it again credits nothing more.
+    await sweep();
+    assert.equal(await walletUsd(shopper.token), afterOrder + capped, "no double cashback");
+
+    // The books still balance after the promotional credit.
+    const [bal] = await inspect("CD", "SELECT sum(amount_minor)::text AS s FROM money.ledger_entry WHERE currency = 'USD'");
+    assert.equal(bal.s, "0", "the ledger still balances");
+
+    // Switching the campaign off ends the offer; a later order earns nothing.
+    await call("POST", `/v1/admin/cashback/${made.body.id}`, { token: admin.token, country: "CD", body: { active: false } });
+    assert.equal((await call("GET", "/v1/cashback", { token: shopper.token, country: "CD" })).body.offer, null);
+    await call("POST", "/v1/me/wallet/topup", { token: shopper.token, country: "CD", body: { amount_minor: "10000", currency: "USD", method_type: "MOBILE_MONEY_PUSH", payer: { msisdn: "+243810000250" } } });
+    const before2 = await walletUsd(shopper.token);
+    const total2 = await deliverOnce(shopper);
+    await sweep();
+    assert.equal(await walletUsd(shopper.token), before2 - total2, "no cashback once the campaign is off");
+  });
+
+  test("an order below the campaign's minimum spend earns no cashback", async () => {
+    // A campaign with a minimum far above any order total.
+    await call("POST", "/v1/admin/cashback", { token: admin.token, country: "CD", body: { name: "Big spenders 15%", percent_bps: 1500, min_spend: "10000.00", starts_at: iso(-60_000), ends_at: iso(3_600_000) } });
+    const shopper = await signIn("+243810000251");
+    await call("POST", "/v1/me/wallet/topup", { token: shopper.token, country: "CD", body: { amount_minor: "10000", currency: "USD", method_type: "MOBILE_MONEY_PUSH", payer: { msisdn: "+243810000251" } } });
+    const before = await walletUsd(shopper.token);
+    const total = await deliverOnce(shopper);
+    await sweep();
+    assert.equal(await walletUsd(shopper.token), before - total, "no cashback below the minimum spend");
   });
 });

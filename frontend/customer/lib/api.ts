@@ -156,7 +156,7 @@ export const myBookings = () => api<{ bookings: Booking[] }>("/v1/me/reservation
 export const cancelBooking = (id: string) => api<{ id: string; status: BookingStatus }>(`/v1/reservations/${id}/cancel`, { method: "POST" });
 
 // ── Wallet ──
-export interface WalletTxn { id: string; kind: "TOPUP" | "ORDER_PAYMENT" | "REFUND" | "ADJUSTMENT" | "REFERRAL" | "LOYALTY"; amount: MoneyWire; balance_after: MoneyWire; order_id: string | null; reference: string | null; created_at: string }
+export interface WalletTxn { id: string; kind: "TOPUP" | "ORDER_PAYMENT" | "REFUND" | "ADJUSTMENT" | "REFERRAL" | "LOYALTY" | "CASHBACK"; amount: MoneyWire; balance_after: MoneyWire; order_id: string | null; reference: string | null; created_at: string }
 export const walletBalance = () => api<{ balances: MoneyWire[] }>("/v1/me/wallet").then((r) => r.balances);
 export const walletHistory = () => api<{ transactions: WalletTxn[] }>("/v1/me/wallet/transactions").then((r) => r.transactions);
 export const walletTopup = (amountMinor: string, currency: string, methodType: string, msisdn?: string) =>
@@ -176,6 +176,10 @@ export const myLoyalty = () => api<LoyaltySummary>("/v1/me/loyalty");
 export const myLoyaltyHistory = () => api<{ transactions: LoyaltyTxn[] }>("/v1/me/loyalty/transactions").then((r) => r.transactions);
 export const redeemLoyalty = (points: number) =>
   api<{ points_balance: number; credited?: MoneyWire; wallet_balance: MoneyWire }>("/v1/me/loyalty/redeem", { method: "POST", body: { points } });
+
+// ── Cashback campaigns ──
+export interface CashbackOffer { name: string; percent: number; min_spend: MoneyWire; max_cashback: MoneyWire | null; ends_at: string }
+export const cashbackOffer = () => api<{ offer: CashbackOffer | null }>("/v1/cashback").then((r) => r.offer);
 
 // ── Refund requests ──
 export type RefundStatus = "PENDING" | "APPROVED" | "DECLINED";

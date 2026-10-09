@@ -1222,6 +1222,12 @@ section.tight { padding: 44px 0; }
 .wallet-split input { margin-top: 2px; flex: none; width: 17px; height: 17px; }
 .wallet-split b { font-weight: 700; }
 
+/* Cashback banner (additive) */
+.cashback-banner { display: flex; align-items: center; gap: 14px; background: linear-gradient(135deg, #0a7d33, #0f9d44); color: #fff; }
+.cashback-banner b { color: #fff; }
+.cashback-banner .muted { color: rgba(255,255,255,0.88); }
+.cb-pct { flex: none; font-size: 30px; font-weight: 800; letter-spacing: -0.02em; background: rgba(255,255,255,0.18); border-radius: 14px; padding: 8px 12px; }
+
 /* Loyalty points (additive) */
 .loyalty-card .loyalty-balance { display: flex; align-items: baseline; gap: 10px; margin: 8px 0 6px; }
 .loyalty-points { font-size: 32px; font-weight: 800; letter-spacing: -0.02em; color: var(--accent-ink, #8a4b00); }
