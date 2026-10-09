@@ -822,6 +822,10 @@ section.tight { padding: 44px 0; }
 
 /* Live storefront */
 .live-cover { position: relative; height: 280px; overflow: hidden; }
+.live-cover .cover-photo { width: 100%; height: 100%; object-fit: cover; display: block; }
+.live-head .mlogo-photo { width: 96px; height: 96px; object-fit: cover; }
+.store-about { color: var(--muted, #555); margin: 2px 0 6px; max-width: 60ch; }
+.store-contact { color: var(--muted, #555); font-size: 14px; margin: 0 0 8px; }
 .live-cover .cover-plates .cp { position: absolute; filter: drop-shadow(0 20px 26px rgba(0, 0, 0, 0.35)); }
 .live-cover .cp0 { width: 420px; left: 34%; top: -90px; }
 .live-cover .cp1 { width: 280px; left: 4%; top: 40px; }

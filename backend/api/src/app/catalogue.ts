@@ -4,7 +4,7 @@ import type { CountryProfile } from "@tunakula/ts-contracts";
 import type { Db, Sql } from "../db/db.ts";
 import type { CountryConfigRegistry } from "../modules/config/config-registry.ts";
 import type { Principal } from "../modules/identity/policy.ts";
-import { addMenuItem, createBranch, getBranch, menuOf, setAvailability, updateMenuItem, type Addon, type MenuItemInput, type MenuItemRow, type Variation, type VariationOption } from "../persistence/catalogue.ts";
+import { addMenuItem, createBranch, getBranch, menuOf, setAvailability, updateBranchProfile, updateMenuItem, type Addon, type BranchProfilePatch, type BranchRow, type MenuItemInput, type MenuItemRow, type Variation, type VariationOption } from "../persistence/catalogue.ts";
 import { audit } from "../persistence/identity.ts";
 import { badRequest, notFound, unprocessable } from "./errors.ts";
 import { require } from "./principal.ts";
@@ -198,19 +198,85 @@ export class CatalogueService {
     return this.db.tx({ country }, async (sql) => {
       const branch = await getBranch(sql, branchId);
       if (!branch) throw notFound("Branch");
-      return { branch: { id: branch.id, name: branch.name, commune: branch.commune, status: branch.status }, items: (await menuOf(sql, branchId)).map(publicItem) };
+      return { branch: branchProfile(branch), items: (await menuOf(sql, branchId)).map(publicItem) };
     });
   }
 
-  /** Public: the bytes of a food photo (MENU_ITEM media only). The storefront and Tunakula Nzela show these. */
-  async menuImage(country: string, id: string): Promise<{ content_type: string; bytes: Buffer }> {
+  /** Public: the bytes of a public image — a food photo, logo or cover. The storefront and Tunakula Nzela show these. */
+  async publicImage(country: string, id: string): Promise<{ content_type: string; bytes: Buffer }> {
     if (!/^[0-9a-f-]{36}$/.test(id)) throw notFound("Image");
     return this.db.tx({ country }, async (sql) => {
-      const [row] = await sql.query<{ content_type: string; bytes: Buffer }>("SELECT content_type, bytes FROM media.object WHERE id = $1 AND purpose = 'MENU_ITEM'", [id]);
+      const [row] = await sql.query<{ content_type: string; bytes: Buffer }>("SELECT content_type, bytes FROM media.object WHERE id = $1 AND purpose IN ('MENU_ITEM', 'BRANCH_LOGO', 'BRANCH_COVER')", [id]);
       if (!row) throw notFound("Image");
       return { content_type: row.content_type, bytes: Buffer.from(row.bytes) };
     });
   }
+
+  /** Merchant: set a branch's business profile — address, contact, about, cuisines, order minimum, logo and cover. */
+  async updateProfile(country: string, principal: Principal, branchId: string, input: ProfileInput) {
+    const profile = this.#profile(country);
+    return this.db.tx({ country }, async (sql) => {
+      const branch = await getBranch(sql, branchId);
+      if (!branch) throw notFound("Branch");
+      require(principal, "branch:manage", { type: "branch", country, restaurantGroupId: branch.restaurant_group_id }, { activeCountry: country, profile });
+      const patch: BranchProfilePatch = {};
+      if (input.address !== undefined) patch.address = input.address ? String(input.address).trim().slice(0, 240) || null : null;
+      if (input.phone !== undefined) patch.phone = input.phone ? String(input.phone).trim().slice(0, 40) || null : null;
+      if (input.email !== undefined) {
+        const e = input.email ? String(input.email).trim().slice(0, 160) : "";
+        if (e && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)) throw badRequest("EMAIL_INVALID", "Enter a valid email address");
+        patch.email = e || null;
+      }
+      if (input.description !== undefined) {
+        const d: Record<string, string> = {};
+        for (const [k, v] of Object.entries(input.description ?? {})) if (typeof v === "string" && v.trim()) d[k.slice(0, 2)] = v.trim().slice(0, 1000);
+        patch.description = d;
+      }
+      if (input.cuisines !== undefined) {
+        if (!Array.isArray(input.cuisines)) throw badRequest("CUISINES_INVALID", "cuisines is a list");
+        patch.cuisines = [...new Set(input.cuisines.map((c) => String(c).trim().toLowerCase()).filter(Boolean))].slice(0, 12);
+      }
+      if (input.min_order !== undefined) {
+        if (input.min_order === null || input.min_order === "") patch.minOrderMinor = null;
+        else { try { patch.minOrderMinor = Money.of(String(input.min_order), profile.money.settlement_currency).minor.toString(); } catch (e) { throw badRequest("MIN_ORDER_INVALID", (e as Error).message); } }
+      }
+      if (input.logo_id !== undefined) { await this.#assertBranchImage(sql, input.logo_id, "BRANCH_LOGO"); patch.logoId = input.logo_id || null; }
+      if (input.cover_id !== undefined) { await this.#assertBranchImage(sql, input.cover_id, "BRANCH_COVER"); patch.coverId = input.cover_id || null; }
+      await updateBranchProfile(sql, branchId, patch);
+      await audit(sql, { actor: principal.userId, action: "branch.profile_updated", target: `branch:${branchId}`, country });
+      return branchProfile((await getBranch(sql, branchId)) as BranchRow);
+    });
+  }
+
+  /** Confirms a referenced logo/cover exists and is of the expected branch-image purpose (never a private photo). */
+  async #assertBranchImage(sql: Sql, id: string | null | undefined, purpose: "BRANCH_LOGO" | "BRANCH_COVER"): Promise<void> {
+    if (!id) return;
+    const [m] = await sql.query<{ id: string }>("SELECT id FROM media.object WHERE id = $1 AND purpose = $2", [id, purpose]);
+    if (!m) throw badRequest("IMAGE_INVALID", "Upload the image first, then attach it");
+  }
+}
+
+interface ProfileInput {
+  address?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  description?: Record<string, string>;
+  cuisines?: string[];
+  min_order?: string | null;
+  logo_id?: string | null;
+  cover_id?: string | null;
+}
+
+/** The public shape of a branch, including its business profile, for the storefront and the console editor. */
+function branchProfile(b: BranchRow) {
+  return {
+    id: b.id, name: b.name, commune: b.commune, city: b.city, status: b.status,
+    lat: Number(b.lat), lng: Number(b.lng),
+    address: b.address ?? null, phone: b.phone ?? null, email: b.email ?? null,
+    description: b.description ?? {}, cuisines: b.cuisines ?? [],
+    min_order_minor: b.min_order_minor ?? null,
+    logo_id: b.logo_id ?? null, cover_id: b.cover_id ?? null,
+  };
 }
 
 interface ItemInput {

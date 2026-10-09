@@ -114,9 +114,27 @@ export class CatalogueController {
   /** Public: serve a food photo for <img>. Country comes from ?c= so a plain image URL works (no header). */
   @Get("menu-images/:id")
   async menuImage(@Param("id") id: string, @Query("c") c: string, @Res() reply: FastifyReply) {
+    await this.#serveImage(id, c, reply);
+  }
+
+  /** Public: serve any public image (food photo, logo or cover) for <img>, country in ?c=. */
+  @Get("images/:id")
+  async publicImage(@Param("id") id: string, @Query("c") c: string, @Res() reply: FastifyReply) {
+    await this.#serveImage(id, c, reply);
+  }
+
+  async #serveImage(id: string, c: string, reply: FastifyReply) {
     if (typeof c !== "string" || !/^[A-Z]{2}$/.test(c)) throw badRequest("COUNTRY_REQUIRED", "Send the market as ?c=CD");
-    const img = await this.catalogue.menuImage(c, id);
+    const img = await this.catalogue.publicImage(c, id);
     await reply.header("content-type", img.content_type).header("cache-control", "public, max-age=86400").send(img.bytes);
+  }
+
+  /** Merchant: set a branch's business profile (address, contact, about, cuisines, order minimum, logo, cover). */
+  @Post("branches/:id/profile")
+  @HttpCode(200)
+  async setProfile(@Req() req: FastifyRequest, @Param("id") id: string, @Body() body: ProfileBody) {
+    const principal = await this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+    return this.catalogue.updateProfile(country(req), principal, id, body ?? {});
   }
 
   @Post("branches")
@@ -157,6 +175,7 @@ export class CatalogueController {
 }
 
 type ItemBody = { names: Record<string, string>; description?: Record<string, string>; prices: Record<string, string>; category?: string | null; veg?: boolean | null; tags?: string[]; allergens?: string[]; recommended?: boolean; variations?: unknown; addons?: unknown; image_id?: string | null };
+type ProfileBody = { address?: string | null; phone?: string | null; email?: string | null; description?: Record<string, string>; cuisines?: string[]; min_order?: string | null; logo_id?: string | null; cover_id?: string | null };
 type QuoteItemBody = { item_id: string; quantity: number; options?: { group: string; choices: string[] }[]; addons?: string[]; note?: string };
 type QuoteBody = { branch_id: string; items: QuoteItemBody[]; order_type: QuoteInput["orderType"]; delivery?: { lat: number; lng: number; rural?: boolean }; tip?: string; coupon_code?: string };
 

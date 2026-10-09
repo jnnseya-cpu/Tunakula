@@ -2505,3 +2505,50 @@ describe("food photos", () => {
     assert.equal(bad.body.code, "IMAGE_INVALID", JSON.stringify(bad.body));
   });
 });
+
+describe("business profile", () => {
+  const png = (seed: number) => Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(32, seed)]).toString("base64");
+
+  test("a merchant sets address, contact, about, cuisines, order minimum, logo and cover", async () => {
+    const owner = await signIn("+243810000230");
+    const reg = await call("POST", "/v1/merchant/register", { token: owner.token, country: "CD", body: { business_name: "Chez Profil" } });
+    const br = await call("POST", "/v1/merchant/branches", { token: owner.token, country: "CD", body: { group_id: reg.body.group_id, name: "Chez Profil — Gombe", lat: -4.32, lng: 15.31, commune: "gombe" } });
+    const branchId = br.body.branch_id;
+
+    const logo = await call("POST", "/v1/media", { token: owner.token, country: "CD", body: { purpose: "BRANCH_LOGO", content_type: "image/png", data_base64: png(1) } });
+    const cover = await call("POST", "/v1/media", { token: owner.token, country: "CD", body: { purpose: "BRANCH_COVER", content_type: "image/png", data_base64: png(2) } });
+    assert.equal(logo.status, 201, JSON.stringify(logo.body));
+
+    const saved = await call("POST", `/v1/branches/${branchId}/profile`, { token: owner.token, country: "CD", body: {
+      address: "12 Avenue du Commerce, Gombe", phone: "+243810000230", email: "hello@chezprofil.cd",
+      description: { fr: "Cuisine congolaise maison.", en: "Home-style Congolese food." },
+      cuisines: ["Congolais", "Grillades"], min_order: "5.00", logo_id: logo.body.id, cover_id: cover.body.id,
+    } });
+    assert.equal(saved.status, 200, JSON.stringify(saved.body));
+    assert.equal(saved.body.address, "12 Avenue du Commerce, Gombe");
+    assert.equal(saved.body.phone, "+243810000230");
+    assert.deepEqual(saved.body.cuisines, ["congolais", "grillades"]);
+    assert.equal(saved.body.min_order_minor, "500");
+    assert.equal(saved.body.logo_id, logo.body.id);
+
+    // The storefront menu read carries the profile, and the logo/cover serve publicly.
+    const menu = await call("GET", `/v1/branches/${branchId}/menu`, { country: "CD" });
+    assert.equal(menu.body.branch.address, "12 Avenue du Commerce, Gombe");
+    assert.equal(menu.body.branch.logo_id, logo.body.id);
+    const img = await api.inject({ method: "GET", url: `/v1/images/${logo.body.id}?c=CD` });
+    assert.equal(img.statusCode, 200);
+
+    // A bad email is refused; a private photo cannot be used as a logo.
+    assert.equal((await call("POST", `/v1/branches/${branchId}/profile`, { token: owner.token, country: "CD", body: { email: "nope" } })).body.code, "EMAIL_INVALID");
+    const rider = await call("POST", "/v1/media", { token: owner.token, country: "CD", body: { purpose: "RIDER_ID", content_type: "image/png", data_base64: png(3) } });
+    assert.equal((await call("POST", `/v1/branches/${branchId}/profile`, { token: owner.token, country: "CD", body: { logo_id: rider.body.id } })).body.code, "IMAGE_INVALID");
+  });
+
+  test("only someone who manages the branch can edit its profile", async () => {
+    const owner = await signIn("+243810000231");
+    const reg = await call("POST", "/v1/merchant/register", { token: owner.token, country: "CD", body: { business_name: "Chez Garde" } });
+    const br = await call("POST", "/v1/merchant/branches", { token: owner.token, country: "CD", body: { group_id: reg.body.group_id, name: "Chez Garde — Limete", lat: -4.33, lng: 15.33 } });
+    const stranger = await signIn("+243810000232");
+    assert.equal((await call("POST", `/v1/branches/${br.body.branch_id}/profile`, { token: stranger.token, country: "CD", body: { address: "nope" } })).status, 403);
+  });
+});

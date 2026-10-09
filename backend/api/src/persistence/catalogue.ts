@@ -14,6 +14,26 @@ export interface BranchRow {
   status: "OPEN" | "CLOSED" | "PAUSED";
   hours?: Record<string, [string, string][]>;
   special_hours?: Record<string, [string, string][]>;
+  address?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  description?: Record<string, string>;
+  cuisines?: string[];
+  min_order_minor?: string | null;
+  logo_id?: string | null;
+  cover_id?: string | null;
+}
+
+/** The editable business-profile fields of a branch (address, contact, about, cuisines, order minimum, logo, cover). */
+export interface BranchProfilePatch {
+  address?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  description?: Record<string, string>;
+  cuisines?: string[];
+  minOrderMinor?: string | null;
+  logoId?: string | null;
+  coverId?: string | null;
 }
 
 export interface VariationOption { id: string; name: string; price: string }
@@ -75,10 +95,29 @@ export async function publishBranch(sql: Sql, branchId: string): Promise<void> {
 
 export async function getBranch(sql: Sql, id: string): Promise<BranchRow | undefined> {
   const rows = await sql.query<BranchRow & Record<string, unknown>>(
-    "SELECT id, country_iso2, brand_id, restaurant_group_id, name, city, commune, lat::text, lng::text, status, hours, special_hours FROM catalogue.branch WHERE id = $1",
+    `SELECT id, country_iso2, brand_id, restaurant_group_id, name, city, commune, lat::text, lng::text, status, hours, special_hours,
+            address, phone, email, description, cuisines, min_order_minor::text AS min_order_minor, logo_id::text AS logo_id, cover_id::text AS cover_id
+       FROM catalogue.branch WHERE id = $1`,
     [id],
   );
   return rows[0];
+}
+
+/** Updates only the profile fields that are present in the patch; leaves the rest unchanged. */
+export async function updateBranchProfile(sql: Sql, branchId: string, p: BranchProfilePatch): Promise<void> {
+  const sets: string[] = [];
+  const vals: unknown[] = [branchId];
+  const add = (col: string, val: unknown) => { vals.push(val); sets.push(`${col} = $${vals.length}`); };
+  if (p.address !== undefined) add("address", p.address);
+  if (p.phone !== undefined) add("phone", p.phone);
+  if (p.email !== undefined) add("email", p.email);
+  if (p.description !== undefined) add("description", JSON.stringify(p.description));
+  if (p.cuisines !== undefined) add("cuisines", p.cuisines);
+  if (p.minOrderMinor !== undefined) add("min_order_minor", p.minOrderMinor);
+  if (p.logoId !== undefined) add("logo_id", p.logoId);
+  if (p.coverId !== undefined) add("cover_id", p.coverId);
+  if (sets.length === 0) return;
+  await sql.query(`UPDATE catalogue.branch SET ${sets.join(", ")}, updated_at = now() WHERE id = $1`, vals);
 }
 
 export async function addMenuItem(sql: Sql, branch: BranchRow, i: MenuItemInput): Promise<MenuItemRow> {

@@ -19,7 +19,8 @@ const DIETARY_LABEL: Record<string, string> = { VEGETARIAN: "Vegetarian", VEGAN:
 const DIETARY_FILTERS = ["VEGETARIAN", "VEGAN", "HALAL", "GLUTEN_FREE", "DAIRY_FREE", "NUT_FREE"] as const;
 /** A dish's effective dietary tags, treating the legacy `veg` flag as VEGETARIAN. */
 const dietaryOf = (i: MenuItem): string[] => [...new Set([...(i.dietary ?? []), ...(i.veg === true ? ["VEGETARIAN"] : [])])];
-interface Menu { branch: { id: string; name: string; commune: string | null; status: string }; items: MenuItem[] }
+interface Branch { id: string; name: string; commune: string | null; status: string; address?: string | null; phone?: string | null; description?: Record<string, string>; cuisines?: string[]; logo_id?: string | null; cover_id?: string | null }
+interface Menu { branch: Branch; items: MenuItem[] }
 const hasOptions = (i: MenuItem) => (i.variations?.length ?? 0) > 0 || (i.addons?.length ?? 0) > 0;
 interface Eta { distance_km: string; eta: { low: number; high: number; basis: string }; delivery_fee: MoneyWire; open: boolean }
 
@@ -112,15 +113,19 @@ export function LiveStore() {
   return (
     <>
       <div className="live-cover" style={{ background: bg }}>
-        <div className="cover-plates" aria-hidden>
-          {dishes.map((r, k) => <PlateArt key={k} className={`cp cp${k}`} recipe={r} seed={`${menu.branch.id}-${k}`} />)}
-        </div>
+        {menu.branch.cover_id ? <img className="cover-photo" src={foodPhotoUrl(menu.branch.cover_id)} alt="" /> : (
+          <div className="cover-plates" aria-hidden>
+            {dishes.map((r, k) => <PlateArt key={k} className={`cp cp${k}`} recipe={r} seed={`${menu.branch.id}-${k}`} />)}
+          </div>
+        )}
       </div>
       <div className="wrap live-head">
-        <span className="mlogo" style={{ width: 96, height: 96, background: bg, color: accent, fontSize: 32 }}>{initials(menu.branch.name)}</span>
+        {menu.branch.logo_id ? <img className="mlogo mlogo-photo" src={foodPhotoUrl(menu.branch.logo_id)} alt="" /> : <span className="mlogo" style={{ width: 96, height: 96, background: bg, color: accent, fontSize: 32 }}>{initials(menu.branch.name)}</span>}
         <div>
-          <p className="eyebrow"><Link href="/order/">Kinshasa</Link>{menu.branch.commune ? ` · ${menu.branch.commune}` : ""}</p>
+          <p className="eyebrow"><Link href="/order/">Kinshasa</Link>{menu.branch.commune ? ` · ${menu.branch.commune}` : ""}{menu.branch.cuisines?.length ? ` · ${menu.branch.cuisines.join(", ")}` : ""}</p>
           <h1 className="store-name">{menu.branch.name}</h1>
+          {menu.branch.description?.en || menu.branch.description?.fr ? <p className="store-about">{menu.branch.description.en ?? menu.branch.description.fr}</p> : null}
+          {menu.branch.address || menu.branch.phone ? <p className="store-contact">{[menu.branch.address, menu.branch.phone].filter(Boolean).join(" · ")}</p> : null}
           <div className="store-meta">
             <span className={`open-badge ${open ? "on" : "off"}`}>{open ? "Open" : "Closed now"}</span>
             {rating && rating.average !== null ? <span className="store-rating">★ {rating.average} <small>({rating.count})</small></span> : null}

@@ -4,6 +4,17 @@
  */
 export const API_BASE = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080").replace(/\/$/, "");
 
+/** The public URL of any public image (food photo, logo, cover) for an <img src>; country goes in the query. */
+export const publicImageUrl = (imageId: string, country: string) => `${API_BASE}/v1/images/${imageId}?c=${country}`;
+
+/** Reads a File as base64 (without the data: prefix), for upload to the media store. */
+export const fileToBase64 = (file: File) => new Promise<string>((resolve, reject) => {
+  const r = new FileReader();
+  r.onload = () => resolve(String(r.result).split(",")[1] ?? "");
+  r.onerror = () => reject(new Error("read failed"));
+  r.readAsDataURL(file);
+});
+
 const TOKEN_KEY = "tk-admin-token";
 const COUNTRY_KEY = "tk-admin-country";
 
