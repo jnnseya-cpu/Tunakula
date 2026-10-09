@@ -37,6 +37,7 @@ import { loadVersions } from "../persistence/config.ts";
 import { cachedRouting, googleRoutesRouting, osrmRouting, straightLineRouting, withFallback } from "../app/routing.ts";
 import type { DispatchService } from "../app/dispatch.ts";
 import type { PaymentService } from "../app/payments.ts";
+import type { WalletService } from "../app/wallet.ts";
 import { createApi } from "./app.ts";
 import { TOKENS } from "./common.ts";
 
@@ -119,6 +120,7 @@ const dispatchMs = Number(env("TUNAKULA_DISPATCH_MS") ?? 5000);
 if (dispatchMs > 0) {
   const dispatcher = app.get<DispatchService>(TOKENS.dispatch);
   const payments = app.get<PaymentService>(TOKENS.payments);
+  const wallet = app.get<WalletService>(TOKENS.wallet);
   let running = false;
   const loop = setInterval(async () => {
     if (running) return;
@@ -131,6 +133,9 @@ if (dispatchMs > 0) {
         // Paid orders that ended before delivery get their money back automatically.
         const refunds = await payments.refundSweep(c.iso2);
         if (refunds.refunded || refunds.failed) log.info("refunds", { country: c.iso2, ...refunds });
+        // Wallet-funded orders that ended before delivery are credited back to the wallet.
+        const walletRefunds = await wallet.refundSweep(c.iso2);
+        if (walletRefunds.refunded) log.info("wallet refunds", { country: c.iso2, ...walletRefunds });
       }
     } catch (error) { log.error("dispatch failed", { error }); } finally { running = false; }
   }, dispatchMs);

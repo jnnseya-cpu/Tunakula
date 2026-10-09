@@ -5,7 +5,7 @@
  */
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { api, ApiError, getSession, listAddresses, live, loadCart, money, rememberCode, saveAddress, saveCart, type Cart, type MoneyWire, type SavedAddress } from "../lib/api";
+import { api, ApiError, getSession, listAddresses, live, loadCart, money, rememberCode, saveAddress, saveCart, walletBalance, type Cart, type MoneyWire, type SavedAddress } from "../lib/api";
 import { useLocationCtx } from "./location";
 
 interface Quote {
@@ -24,10 +24,11 @@ interface Quote {
   age_restricted?: boolean;
 }
 type Mode = "DELIVERY" | "TAKEAWAY";
-type Pay = "MOBILE_MONEY_PUSH" | "CARD" | "CASH_ON_DELIVERY";
+type Pay = "MOBILE_MONEY_PUSH" | "CARD" | "CASH_ON_DELIVERY" | "WALLET";
 
 const LINE_LABEL: Record<string, string> = { GOODS: "Food", SERVICE_CHARGE: "Service charge (10%)", DELIVERY_FEE: "Delivery", DELIVERY_PROMOTION: "Delivery offer", TIP: "Tip for your rider" };
 const PAY_LABEL: Record<string, [string, string]> = {
+  WALLET: ["Wallet", "Pay instantly from your Tunakula balance"],
   MOBILE_MONEY_PUSH: ["Mobile money", "M-Pesa, Orange Money or Airtel Money — approve on your phone"],
   CARD: ["Card", "Visa or Mastercard"],
   CASH_ON_DELIVERY: ["Cash on delivery", "Pay the rider in francs or dollars"],
@@ -64,6 +65,7 @@ export function Checkout() {
   const [quote, setQuote] = useState<Quote | null>(null);
   const [quoteError, setQuoteError] = useState<string | null>(null);
   const [methods, setMethods] = useState<string[]>([]);
+  const [wallet, setWallet] = useState<MoneyWire | null>(null);
   const [pay, setPay] = useState<Pay>("MOBILE_MONEY_PUSH");
   const [msisdn, setMsisdn] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
@@ -83,6 +85,7 @@ export function Checkout() {
     if (id) setCart(loadCart(id));
     const s = getSession();
     setSignedIn(!!s);
+    if (s) walletBalance().then((bs) => setWallet(bs.find((b) => b.currency === "USD") ?? bs[0] ?? null)).catch(() => undefined);
     if (s) {
       setMsisdn(s.phone);
       listAddresses().then((a) => { setAddresses(a); const d = a.find((x) => x.is_default); if (d && !place) pickAddress(d); }).catch(() => undefined);
@@ -137,7 +140,7 @@ export function Checkout() {
         const usable = r.data.filter((m) => m === "MOBILE_MONEY_PUSH" || m === "CARD" || m === "CASH_ON_DELIVERY");
         if (mode === "DELIVERY" && !usable.includes("CASH_ON_DELIVERY")) usable.push("CASH_ON_DELIVERY");
         setMethods(usable);
-        if (!usable.includes(pay)) setPay((usable[0] as Pay) ?? "MOBILE_MONEY_PUSH");
+        if (pay !== "WALLET" && !usable.includes(pay)) setPay((usable[0] as Pay) ?? "MOBILE_MONEY_PUSH");
       })
       .catch(() => setMethods(["MOBILE_MONEY_PUSH", "CASH_ON_DELIVERY"]));
   }, [quote?.total.amount_minor, quote?.membership?.payable_total.amount_minor, mode]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -171,13 +174,14 @@ export function Checkout() {
         setBusy("Placing your order…");
         const r = await api<{ order_id: string; recipient_code: string; state: string }>("/v1/orders", {
           method: "POST", key: attempt.current.key,
-          body: { ...body, payment_mode: pay === "CASH_ON_DELIVERY" ? "CASH_ON_DELIVERY" : "PREPAID", expected_total: due, ...(quote.age_restricted ? { age_confirmed: true } : {}), ...(kitchenNote.trim() ? { kitchen_note: kitchenNote.trim() } : {}), ...(when === "LATER" ? { scheduled_for: schedTime || scheduleSlots(schedDay)[0]?.[0] } : {}), ...(landmark.trim() ? { address: { landmark: landmark.trim() } } : {}) },
+          body: { ...body, payment_mode: pay === "CASH_ON_DELIVERY" ? "CASH_ON_DELIVERY" : pay === "WALLET" ? "WALLET" : "PREPAID", expected_total: due, ...(quote.age_restricted ? { age_confirmed: true } : {}), ...(kitchenNote.trim() ? { kitchen_note: kitchenNote.trim() } : {}), ...(when === "LATER" ? { scheduled_for: schedTime || scheduleSlots(schedDay)[0]?.[0] } : {}), ...(landmark.trim() ? { address: { landmark: landmark.trim() } } : {}) },
         });
         orderId = r.order_id;
         placed.current = orderId;
         rememberCode(orderId, r.recipient_code);
       }
-      if (pay !== "CASH_ON_DELIVERY") {
+      // Cash and wallet orders are placed already paid; only card/mobile money need a payment intent.
+      if (pay !== "CASH_ON_DELIVERY" && pay !== "WALLET") {
         setBusy(pay === "MOBILE_MONEY_PUSH" ? "Approve the payment on your phone…" : "Processing your card…");
         const intent = await api<{ status: string; reason_code?: string; next_action?: { url?: string } }>("/v1/payments/intents", {
           method: "POST", key: `pay-${orderId}-${pay}-${msisdn}`,
@@ -203,6 +207,9 @@ export function Checkout() {
   };
 
   const km = quote?.distance_meters !== undefined ? (Math.round(quote.distance_meters / 100) / 10).toFixed(1) : null;
+  const dueNow = quote ? (quote.payable ?? quote.membership?.payable_total ?? quote.total) : null;
+  const walletCovers = !!(wallet && dueNow && wallet.currency === dueNow.currency && BigInt(wallet.amount_minor) >= BigInt(dueNow.amount_minor));
+  const payOptions = [...(walletCovers ? ["WALLET"] : []), ...methods];
   return (
     <div className="checkout">
       <div className="co-main">
@@ -273,11 +280,12 @@ export function Checkout() {
         <section className="co-sec">
           <h2>Pay with</h2>
           <div className="pay-list" role="radiogroup" aria-label="Payment method">
-            {methods.map((m) => (
+            {payOptions.map((m) => (
               <button type="button" key={m} role="radio" aria-checked={pay === m} className={`pay-opt ${pay === m ? "on" : ""}`} onClick={() => setPay(m as Pay)} disabled={m === "CASH_ON_DELIVERY" && mode !== "DELIVERY"}>
-                <span className="radio" aria-hidden /><span><b>{PAY_LABEL[m]?.[0] ?? m}</b><small>{PAY_LABEL[m]?.[1]}</small></span>
+                <span className="radio" aria-hidden /><span><b>{PAY_LABEL[m]?.[0] ?? m}</b><small>{m === "WALLET" && wallet ? `Balance ${money(wallet)}` : PAY_LABEL[m]?.[1]}</small></span>
               </button>
             ))}
+            {wallet && !walletCovers ? <Link className="wallet-topup-hint" href="/wallet/">Top up your wallet ({money(wallet)}) to pay from your balance →</Link> : null}
           </div>
           {pay === "MOBILE_MONEY_PUSH" ? <label className="field"><span>Mobile money number</span><input inputMode="tel" value={msisdn} onChange={(e) => setMsisdn(e.target.value)} /></label> : null}
         </section>

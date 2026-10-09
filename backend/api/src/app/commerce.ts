@@ -25,6 +25,11 @@ import { ApiError, badRequest, conflict, notFound, unprocessable } from "./error
 import { require } from "./principal.ts";
 import type { RoutingProvider } from "./routing.ts";
 
+/** The wallet operation the order placement needs: debit the customer's balance for an order. */
+export interface WalletFunder {
+  payForOrder(sql: Sql, country: string, userId: string, orderId: string, total: Money): Promise<void>;
+}
+
 export interface LineOptionSelection { readonly group: string; readonly choices: readonly string[] }
 export interface QuoteInput {
   readonly branchId: string;
@@ -39,7 +44,7 @@ export interface QuoteInput {
 }
 
 export interface PlaceOrderInput extends QuoteInput {
-  readonly paymentMode: "PREPAID" | "CASH_ON_DELIVERY";
+  readonly paymentMode: "PREPAID" | "CASH_ON_DELIVERY" | "WALLET";
   /** The total the customer saw and accepted (§11.2 confirm-before-pay). */
   readonly expectedTotal: { readonly amount_minor: string; readonly currency: string };
   readonly address?: { readonly landmark?: string; readonly voiceNoteUrl?: string };
@@ -107,6 +112,7 @@ export class CommerceService {
   private readonly notifier: OrderNotifier | undefined;
   private membership: MembershipLookup | undefined;
   private coupons: CouponLookup | undefined;
+  private wallet: WalletFunder | undefined;
 
   constructor(db: Db, registry: CountryConfigRegistry, routing: RoutingProvider, now: () => Date = () => new Date(), notifier?: OrderNotifier) {
     this.db = db;
@@ -124,6 +130,11 @@ export class CommerceService {
   /** Wires the coupon service after construction. */
   useCoupons(coupons: CouponLookup): void {
     this.coupons = coupons;
+  }
+
+  /** Wires the wallet service after construction (lets a customer pay for an order from their balance). */
+  useWallet(wallet: WalletFunder): void {
+    this.wallet = wallet;
   }
 
   /** Tells the customer about an order state change (best-effort, outside the state transaction). */
@@ -259,6 +270,10 @@ export class CommerceService {
       }
       if (quote.ageRestricted && input.ageConfirmed !== true) throw unprocessable("AGE_CONFIRMATION_REQUIRED", "This order contains an age-restricted item; confirm you are 18 or older");
       const scheduledFor = this.#validateSchedule(input.scheduledFor);
+      const walletFunded = input.paymentMode === "WALLET";
+      // A wallet order settles like a prepaid one; the money comes from the balance instead of a provider charge.
+      const settledMode: "PREPAID" | "CASH_ON_DELIVERY" = walletFunded ? "PREPAID" : input.paymentMode;
+      if (walletFunded && !this.wallet) throw unprocessable("WALLET_UNAVAILABLE", "Wallet payment is not available");
       if (input.paymentMode === "CASH_ON_DELIVERY") await this.#assertCodAllowed(sql, profile, principal.userId, total);
       if (input.orderType === "XBO" && !input.recipient) throw badRequest("RECIPIENT_REQUIRED", "Cross-border orders name a recipient");
 
@@ -309,7 +324,8 @@ export class CommerceService {
           ...(quote.membership ? { membershipDiscount: quote.membership.discount } : {}),
           ...(quote.coupon ? { couponDiscount: quote.coupon.discount } : {}),
         },
-        paymentMode: input.paymentMode,
+        paymentMode: settledMode,
+        ...(walletFunded ? { walletFunded: true } : {}),
         configuredConfirmationModel: configured,
         // AGENT_OPTIMISED is decided per order by the Dispatch Optimiser (A2); until it runs, restaurant-first.
         confirmationModel: configured === "AGENT_OPTIMISED" ? "RESTAURANT_FIRST" : configured,
@@ -330,7 +346,14 @@ export class CommerceService {
       if (quote.coupon && this.coupons) {
         await this.coupons.record(sql, country, quote.coupon.couponId, principal.userId, orderId, Money.fromJSON(quote.coupon.discount));
       }
-      const next: OrderCommand = input.paymentMode === "PREPAID" ? { type: "START_CHECKOUT" } : { type: "PLACE_CASH_ORDER" };
+      if (walletFunded) {
+        // Reserve the money from the balance, then settle the order as paid at once.
+        await this.wallet!.payForOrder(sql, country, principal.userId, orderId, total);
+        await this.#run(sql, tenant, orderId, actor, `${idempotencyKey}:checkout`, { type: "START_CHECKOUT" });
+        const { order } = await this.#run(sql, tenant, orderId, actor, `${idempotencyKey}:wallet-confirm`, { type: "CONFIRM_PAYMENT", paymentIntentId: `wallet:${orderId}` });
+        return { orderId, state: order.state, recipientCode, quote };
+      }
+      const next: OrderCommand = settledMode === "PREPAID" ? { type: "START_CHECKOUT" } : { type: "PLACE_CASH_ORDER" };
       const { order } = await this.#run(sql, tenant, orderId, actor, `${idempotencyKey}:${next.type}`, next);
       return { orderId, state: order.state, recipientCode, quote };
     });
@@ -461,8 +484,9 @@ export class CommerceService {
     const ccy0 = Money.fromJSON(s.total).currency;
     const discount = m.membershipDiscount ? Money.fromJSON(m.membershipDiscount) : Money.zero(ccy0);
     const couponDisc = m.couponDiscount ? Money.fromJSON(m.couponDiscount) : Money.zero(ccy0);
+    const cashAccount = s.walletFunded ? "customer_wallet" : s.paymentMode === "PREPAID" ? "psp_clearing" : "cod_cash_in_transit";
     return [
-      { account: s.paymentMode === "PREPAID" ? "psp_clearing" : "cod_cash_in_transit", country: c, amount: Money.fromJSON(s.total) },
+      { account: cashAccount, country: c, amount: Money.fromJSON(s.total) },
       { account: "subscription_revenue", country: c, amount: discount },
       { account: "promotion_expense", country: c, amount: couponDisc },
       { account: "restaurant_payable", country: c, amount: neg(m.merchantReceives) },

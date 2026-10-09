@@ -16,6 +16,7 @@ import type { Db } from "../src/db/db.ts";
 import { createApi } from "../src/http/app.ts";
 import { TOKENS } from "../src/http/common.ts";
 import { DispatchService, KITCHEN_TIMEOUT_MIN } from "../src/app/dispatch.ts";
+import type { WalletService } from "../src/app/wallet.ts";
 import type { CommerceService } from "../src/app/commerce.ts";
 import type { PaymentService } from "../src/app/payments.ts";
 import { addBinding, verifyAuditChain, type NewBinding } from "../src/persistence/identity.ts";
@@ -2134,5 +2135,84 @@ describe("refund requests", () => {
   test("a bad reason is refused", async () => {
     const { orderId } = await deliverFresh();
     assert.equal((await call("POST", `/v1/orders/${orderId}/refund-request`, { token: customer.token, country: "CD", body: { reason_code: "BECAUSE" } })).body.code, "REASON_INVALID");
+  });
+});
+
+describe("wallet", () => {
+  const balance = async (token: string) => {
+    const r = await call("GET", "/v1/me/wallet", { token, country: "CD" });
+    const usd = r.body.balances.find((b: { currency: string }) => b.currency === "USD");
+    return usd ? BigInt(usd.amount_minor) : 0n;
+  };
+  const walletLedger = async () =>
+    BigInt((await inspect("CD", "SELECT coalesce(sum(amount_minor),0)::text AS t FROM money.ledger_entry WHERE account = 'customer_wallet' AND country_iso2 = 'CD' AND currency = 'USD'"))[0].t);
+
+  test("a customer tops up, and the books record the stored value", async () => {
+    assert.equal(await balance(customer.token), 0n);
+    const ledgerBefore = await walletLedger();
+    const topKey = "wallet-topup-test-1";
+    const top = await call("POST", "/v1/me/wallet/topup", { token: customer.token, country: "CD", key: topKey, body: { amount_minor: "5000", currency: "USD", method_type: "MOBILE_MONEY_PUSH", payer: { msisdn: "+243810000001" } } });
+    assert.equal(top.body.status, "SUCCEEDED", JSON.stringify(top.body));
+    assert.equal(top.body.balance.amount_minor, "5000");
+    assert.equal(await balance(customer.token), 5000n);
+    // The platform now owes the customer their stored value (customer_wallet is credited, i.e. more negative).
+    assert.equal(await walletLedger(), ledgerBefore - 5000n);
+    // A repeat with the same idempotency key does not charge again.
+    const again = await call("POST", "/v1/me/wallet/topup", { token: customer.token, country: "CD", key: topKey, body: { amount_minor: "5000", currency: "USD", method_type: "MOBILE_MONEY_PUSH", payer: { msisdn: "+243810000001" } } });
+    assert.equal(again.body.status, "SUCCEEDED");
+    assert.equal(await balance(customer.token), 5000n);
+    const hist = await call("GET", "/v1/me/wallet/transactions", { token: customer.token, country: "CD" });
+    assert.equal(hist.body.transactions[0].kind, "TOPUP");
+  });
+
+  test("a customer pays for an order from the wallet; the balance drops and settlement draws from it", async () => {
+    // Top up enough to cover the order.
+    await call("POST", "/v1/me/wallet/topup", { token: customer.token, country: "CD", body: { amount_minor: "10000", currency: "USD", method_type: "MOBILE_MONEY_PUSH", payer: { msisdn: "+243810000001" } } });
+    const before = await balance(customer.token);
+    const q = await call("POST", "/v1/carts/quote", { country: "CD", body: cart() });
+    const total = BigInt(q.body.total.amount_minor);
+    const placed = await call("POST", "/v1/orders", { token: customer.token, country: "CD", body: { ...cart(), payment_mode: "WALLET", expected_total: q.body.total } });
+    assert.equal(placed.status, 201, JSON.stringify(placed.body));
+    // A wallet order is paid at once — it is PLACED, not PENDING_PAYMENT.
+    assert.equal(placed.body.state, "PLACED");
+    assert.equal(await balance(customer.token), before - total, "wallet debited by the order total");
+    // The order carries the wallet-funded flag and can be driven to delivery and settled.
+    const code = placed.body.recipient_code;
+    const orderId = placed.body.order_id;
+    await transition(ops, orderId, { type: "ASSIGN_RIDER", riderId: rider.userId });
+    await transition(kitchen, orderId, { type: "ACCEPT" });
+    await transition(kitchen, orderId, { type: "START_PREPARING" });
+    await transition(kitchen, orderId, { type: "PACK", confirmedLineIds: ["l1"], packageCount: 1, allergenAcknowledged: true });
+    await transition(kitchen, orderId, { type: "MARK_READY", packages: [{ labelId: "W-1", sealId: "W-1-S" }], packPhotoRef: "photo://pack" });
+    await transition(rider, orderId, { type: "PICK_UP", scannedLabelIds: ["W-1"], restaurantConfirmed: true, sealsIntact: true, location: KINSHASA });
+    const done = await transition(rider, orderId, { type: "DELIVER", scannedLabelId: "W-1", location: DROP, sealIntact: true, verification: { method: "CODE", code }, proofPhotoRef: "photo://door" });
+    assert.equal(done.body.state, "DELIVERED", JSON.stringify(done.body));
+    // The settlement drew the order total from customer_wallet (not psp_clearing).
+    const draw = await inspect("CD", "SELECT e.amount_minor::text AS amount FROM money.ledger_entry e JOIN money.journal j ON j.id = e.journal_id WHERE j.idempotency_key = $1 AND e.account = 'customer_wallet'", [`order:${orderId}:settlement`]);
+    assert.equal(draw[0]?.amount, total.toString());
+  });
+
+  test("paying from an empty wallet is refused and no order is created", async () => {
+    const poor = await signIn("+243810000071");
+    const q = await call("POST", "/v1/carts/quote", { country: "CD", body: cart() });
+    const r = await call("POST", "/v1/orders", { token: poor.token, country: "CD", body: { ...cart(), payment_mode: "WALLET", expected_total: q.body.total } });
+    assert.equal(r.body.code, "INSUFFICIENT_WALLET_BALANCE");
+    // Nothing was placed for this customer.
+    const mine = await call("GET", "/v1/me/orders", { token: poor.token, country: "CD" });
+    assert.equal(mine.body.data.length, 0);
+  });
+
+  test("a cancelled wallet order is credited back to the wallet", async () => {
+    await call("POST", "/v1/me/wallet/topup", { token: customer.token, country: "CD", key: "topup-cancel-1", body: { amount_minor: "10000", currency: "USD", method_type: "MOBILE_MONEY_PUSH", payer: { msisdn: "+243810000001" } } });
+    const before = await balance(customer.token);
+    const q = await call("POST", "/v1/carts/quote", { country: "CD", body: cart() });
+    const total = BigInt(q.body.total.amount_minor);
+    const placed = await call("POST", "/v1/orders", { token: customer.token, country: "CD", body: { ...cart(), payment_mode: "WALLET", expected_total: q.body.total } });
+    assert.equal(await balance(customer.token), before - total);
+    // The customer cancels before acceptance; the wallet sweep then credits the money back and marks it refunded.
+    await transition(customer, placed.body.order_id, { type: "CANCEL", reasonCode: "CHANGED_MIND" });
+    await api.get<WalletService>(TOKENS.wallet).refundSweep("CD");
+    assert.equal(await balance(customer.token), before, "wallet made whole after cancellation");
+    assert.equal((await call("GET", `/v1/orders/${placed.body.order_id}`, { token: customer.token, country: "CD" })).body.state, "REFUNDED");
   });
 });

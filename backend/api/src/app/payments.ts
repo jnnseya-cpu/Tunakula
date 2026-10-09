@@ -188,6 +188,31 @@ export class PaymentService {
     });
   }
 
+  /**
+   * Charges the payer through a provider without an order, for a wallet top-up. Returns the outcome;
+   * a synchronous SUCCEEDED carries the provider reference. The caller records the wallet credit and
+   * the ledger movement. No payment_intent row is persisted (intents are order-scoped).
+   */
+  async chargeStandalone(country: string, input: { amount: { currency: string; minor: string }; methodType: PaymentMethodType; payerCountry: string; payer: { msisdn?: string; token?: string }; description: string }, idempotencyKey: string): Promise<{ status: "SUCCEEDED" | "PENDING" | "DECLINED" | "FAILED"; providerRef?: string; connectorId?: string; reasonCode?: string }> {
+    const profile = this.commerce.profile(country);
+    const outcome = await this.router.pay(profile, {
+      id: idempotencyKey,
+      idempotencyKey,
+      amount: input.amount,
+      methodType: input.methodType,
+      payerCountry: input.payerCountry,
+      marketCountry: country,
+      payer: input.payer,
+      description: input.description,
+    });
+    switch (outcome.status) {
+      case "SUCCEEDED": return { status: "SUCCEEDED", providerRef: outcome.result.providerRef, connectorId: outcome.connectorId };
+      case "PENDING": return { status: "PENDING", providerRef: outcome.result.providerRef, connectorId: outcome.connectorId };
+      case "DECLINED": return { status: "DECLINED", reasonCode: outcome.reasonCode };
+      default: return { status: "FAILED", reasonCode: "PROVIDER_UNAVAILABLE" };
+    }
+  }
+
   async get(country: string, principal: Principal, intentId: string) {
     return this.db.tx({ country }, async (sql) => {
       const intent = await intentById(sql, intentId);

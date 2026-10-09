@@ -1196,6 +1196,22 @@ section.tight { padding: 44px 0; }
 .refund-chip.s-approved { color: var(--ok, #0a7d33); background: color-mix(in srgb, var(--ok, #0a7d33) 12%, transparent); }
 .refund-chip.s-declined { color: var(--bad, #c0391b); background: color-mix(in srgb, var(--bad, #c0391b) 12%, transparent); }
 .refund-chip.s-pending { color: #8a4b00; background: color-mix(in srgb, #e0901a 16%, transparent); }
+
+/* Wallet (additive) */
+.wallet-balance { display: flex; flex-direction: column; gap: 2px; margin: 10px 0 18px; padding: 18px 20px; border-radius: var(--radius); background: linear-gradient(135deg, var(--ink, #1f305d), color-mix(in srgb, var(--ink, #1f305d) 78%, #000)); color: #fff; }
+.wallet-balance .muted { color: rgba(255,255,255,0.7); font-size: 13px; }
+.wallet-amount { font-size: 34px; font-weight: 800; letter-spacing: -0.02em; }
+.wallet-other { color: rgba(255,255,255,0.85); font-size: 14px; }
+.topup-amounts { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.topup-amounts button { padding: 8px 16px; border-radius: 999px; border: 1px solid var(--rule-strong); background: var(--paper); font-weight: 700; cursor: pointer; }
+.topup-amounts button.on { background: var(--ink, #1f305d); color: #fff; border-color: var(--ink, #1f305d); }
+.wallet-txns { list-style: none; padding: 0; margin: 8px 0 0; display: grid; gap: 2px; }
+.wallet-txns li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--rule, #eee); }
+.wt-main { display: flex; flex-direction: column; }
+.wt-main small { color: var(--muted); font-size: 12px; }
+.wallet-txns .num.credit { color: var(--ok, #0a7d33); }
+.wallet-txns .num.debit { color: var(--ink); }
+.wallet-topup-hint { display: block; margin-top: 8px; font-size: 13px; font-weight: 600; color: var(--accent-ink, #8a4b00); }
 .g-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
 .g-status { font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 999px; background: var(--tint); color: var(--muted); }
 .g-status.open { background: color-mix(in srgb, var(--ok, #0a7d33) 12%, transparent); color: var(--ok, #0a7d33); }

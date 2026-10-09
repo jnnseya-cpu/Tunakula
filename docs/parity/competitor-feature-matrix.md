@@ -73,7 +73,7 @@ Delivery + pickup/takeaway are universal; **dine-in and scheduled/pre-order appe
 | Cards (gateway-tokenized) | ✔ | ✔ | ✔ | ✔ | ✔ |
 | Pluggable multi-gateway (Stripe/PayPal/Razorpay/Paystack/Flutterwave/SSLCommerz/bKash/…) | ✔ [INF] | ✘ | ✘ | ✘ | ✘ |
 | Mobile money / local wallets | ✔ [INF] | ✘ | ✘ | ✘ | ✘ |
-| In-app wallet + add-fund + partial pay | ✔ | ~ (credits) | ~ (credits) | ~ (credit) | ? |
+| In-app wallet + add-fund + partial pay | ✔ | ~ (credits) | ~ (credits) | ~ (credit) | ? | **Tunakula: wallet ✔ built** — balance + history on /wallet, top-up through the same providers, pay-with-wallet at checkout (order placed already paid), auto-credit back on cancellation, settlement drawn from the customer_wallet ledger account so the books balance; partial pay (wallet + another method on one order) is the remaining piece |
 | Apple Pay / Google Pay | ~ (gateway-dependent) | ✔ | ✔ | ✔ | ✔ |
 | PayPal | ~ [INF] | ? | ? | ? | ✔ (Takeaway) |
 | Offline / manual payment (admin-verified) | ✔ | ✘ | ✘ | ✘ | ✘ |

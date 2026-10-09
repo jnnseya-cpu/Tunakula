@@ -1,6 +1,7 @@
 /** /v1 endpoints (§25.2). Controllers are thin: parse, authenticate, delegate, shape the response. */
 import { Body, Controller, Delete, Get, HttpCode, Inject, Param, Post, Query, Req } from "@nestjs/common";
 import type { FastifyRequest } from "fastify";
+import { randomUUID } from "node:crypto";
 import { currencies, currencyFlag, Money } from "@tunakula/ts-money";
 import type { PaymentMethodType } from "@tunakula/ts-contracts";
 import type { AdminService } from "../app/admin.ts";
@@ -17,6 +18,7 @@ import type { ReviewService } from "../app/reviews.ts";
 import type { AddressService } from "../app/addresses.ts";
 import type { ReservationService, BookingStatus } from "../app/reservations.ts";
 import type { RefundService } from "../app/refunds.ts";
+import type { WalletService } from "../app/wallet.ts";
 import type { NotificationService } from "../app/comms.ts";
 import { serialiseQuote, type CommerceService, type PlaceOrderInput, type QuoteInput } from "../app/commerce.ts";
 import { badRequest, notFound } from "../app/errors.ts";
@@ -1036,6 +1038,45 @@ export class RefundController {
   @HttpCode(200)
   async decide(@Req() req: FastifyRequest, @Param("id") id: string, @Body() body: { approve?: boolean; note?: string }) {
     return this.refunds.decide(country(req), await this.#p(req), id, body?.approve === true, body?.note);
+  }
+}
+
+/** The in-app customer wallet: balance, history, and top-up. Paying an order from the wallet is done at checkout. */
+@Controller("v1/me/wallet")
+export class WalletController {
+  constructor(
+    @Inject(TOKENS.db) private readonly db: Db,
+    @Inject(TOKENS.tokens) private readonly tokens: TokenService,
+    @Inject(TOKENS.wallet) private readonly wallet: WalletService,
+  ) {}
+
+  #p(req: FastifyRequest) {
+    return this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+  }
+
+  /** The customer's wallet balance per currency. */
+  @Get()
+  async balance(@Req() req: FastifyRequest) {
+    return this.wallet.balances(country(req), await this.#p(req));
+  }
+
+  /** The customer's recent wallet movements. */
+  @Get("transactions")
+  async history(@Req() req: FastifyRequest, @Query("limit") limit?: string) {
+    return this.wallet.history(country(req), await this.#p(req), limit ? Number(limit) : undefined);
+  }
+
+  /** Top up the wallet through a payment provider. */
+  @Post("topup")
+  @HttpCode(200)
+  async topup(@Req() req: FastifyRequest, @Body() body: { amount_minor?: string; currency?: string; method_type?: string; payer?: { msisdn?: string; token?: string } }) {
+    const key = (req.headers["idempotency-key"] as string) || randomUUID();
+    return this.wallet.topup(country(req), await this.#p(req), {
+      amountMinor: String(body?.amount_minor ?? ""),
+      ...(body?.currency ? { currency: String(body.currency) } : {}),
+      methodType: String(body?.method_type ?? "MOBILE_MONEY_PUSH") as PaymentMethodType,
+      payer: body?.payer ?? {},
+    }, key);
   }
 }
 

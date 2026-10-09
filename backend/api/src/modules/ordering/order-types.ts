@@ -130,6 +130,8 @@ export interface OrderSnapshot {
   readonly kitchenNote?: string;
   /** ISO time the customer scheduled the order for; held until due, then released to the kitchen and dispatch. */
   readonly scheduledFor?: string;
+  /** The order was paid from the customer's wallet; settlement draws from the customer_wallet ledger account. */
+  readonly walletFunded?: boolean;
   readonly geofenceRadiusM: number;
 }
 

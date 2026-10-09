@@ -152,6 +152,13 @@ export const bookTable = (b: { branch_id: string; party_size: number; at: string
 export const myBookings = () => api<{ bookings: Booking[] }>("/v1/me/reservations").then((r) => r.bookings);
 export const cancelBooking = (id: string) => api<{ id: string; status: BookingStatus }>(`/v1/reservations/${id}/cancel`, { method: "POST" });
 
+// ── Wallet ──
+export interface WalletTxn { id: string; kind: "TOPUP" | "ORDER_PAYMENT" | "REFUND" | "ADJUSTMENT"; amount: MoneyWire; balance_after: MoneyWire; order_id: string | null; reference: string | null; created_at: string }
+export const walletBalance = () => api<{ balances: MoneyWire[] }>("/v1/me/wallet").then((r) => r.balances);
+export const walletHistory = () => api<{ transactions: WalletTxn[] }>("/v1/me/wallet/transactions").then((r) => r.transactions);
+export const walletTopup = (amountMinor: string, currency: string, methodType: string, msisdn?: string) =>
+  api<{ status: string; balance?: MoneyWire; reason_code?: string }>("/v1/me/wallet/topup", { method: "POST", body: { amount_minor: amountMinor, currency, method_type: methodType, ...(msisdn ? { payer: { msisdn } } : {}) } });
+
 // ── Refund requests ──
 export type RefundStatus = "PENDING" | "APPROVED" | "DECLINED";
 export interface RefundRequestView { id: string; order_id: string; reason_code: string; comment: string | null; status: RefundStatus; amount: MoneyWire; resolution_note: string | null; resolved_at: string | null; created_at: string }
