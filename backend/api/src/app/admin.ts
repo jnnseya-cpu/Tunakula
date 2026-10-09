@@ -369,20 +369,26 @@ export class AdminService {
       const vis = await this.#visibility(sql, principal, country, profile);
       const manage = this.#can(principal, "restaurant:manage", { type: "scope", country }, profile);
       const list = vis.all || manage ? await this.#branches(sql) : vis.branches;
-      if (list.length === 0 && !manage) throw forbidden("No branches you can see in this market");
+      // A self-serve merchant with no branch yet is not an error: the console shows them how to set up.
+      const ownerGroup = principal.bindings.find((b) => "role" in b && b.role === "RESTAURANT_OWNER" && b.scope.type === "RESTAURANT_GROUP" && "id" in b.scope);
+      const groupId = ownerGroup && "id" in ownerGroup.scope ? (ownerGroup.scope.id as string) : null;
       const since = new Date(this.now().getTime() - 30 * 86_400_000);
-      const stats = await sql.query<{ branch_id: string; items: string; available: string; orders: string }>(
+      const stats = await sql.query<{ branch_id: string; items: string; available: string; orders: string; published: boolean }>(
         `SELECT b.id AS branch_id,
                 (SELECT count(*) FROM catalogue.menu_item m WHERE m.branch_id = b.id) AS items,
                 (SELECT count(*) FROM catalogue.menu_item m WHERE m.branch_id = b.id AND m.available) AS available,
-                (SELECT count(*) FROM ordering.order_view o WHERE o.branch_id = b.id AND o.created_at >= $2 AND NOT (o.state = ANY($3))) AS orders
+                (SELECT count(*) FROM ordering.order_view o WHERE o.branch_id = b.id AND o.created_at >= $2 AND NOT (o.state = ANY($3))) AS orders,
+                (b.published_at IS NOT NULL) AS published
            FROM catalogue.branch b WHERE b.id = ANY($1::uuid[])`,
         [list.map((b) => b.id), since, NOT_PLACED],
       );
       const by = new Map(stats.map((s) => [s.branch_id, s]));
       return {
         can_create: manage,
-        data: list.map((b) => ({ ...b, items: Number(by.get(b.id)?.items ?? 0), available_items: Number(by.get(b.id)?.available ?? 0), orders_30d: Number(by.get(b.id)?.orders ?? 0) })),
+        // Whether the signed-in person already owns a business (a restaurant group) and may self-serve from the console.
+        has_business: groupId !== null,
+        ...(groupId ? { group_id: groupId } : {}),
+        data: list.map((b) => ({ ...b, items: Number(by.get(b.id)?.items ?? 0), available_items: Number(by.get(b.id)?.available ?? 0), orders_30d: Number(by.get(b.id)?.orders ?? 0), published: by.get(b.id)?.published === true })),
       };
     });
   }

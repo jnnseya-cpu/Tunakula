@@ -62,7 +62,6 @@ const Icon = ({ k }: { k: string }) => <svg viewBox="0 0 24 24" width="18" heigh
 
 const NAV: { group: Key; items: NavItem[] }[] = [
   { group: "g_operations", items: [
-    { href: "/get-started/", key: "get_started", always: true },
     { href: "/", key: "overview", cap: "overview" },
     { href: "/dispatch/", key: "dispatch", cap: "dispatch" },
     { href: "/kitchen/", key: "kitchen", cap: "kitchen" },
@@ -71,7 +70,7 @@ const NAV: { group: Key; items: NavItem[] }[] = [
     { href: "/support/", key: "support", soon: true },
   ] },
   { group: "g_business", items: [
-    { href: "/merchants/", key: "merchants", cap: "catalogue" },
+    { href: "/merchants/", key: "merchants", always: true },
     { href: "/menu/", key: "menu", cap: "catalogue" },
     { href: "/scorecards/", key: "scorecards", cap: "overview" },
     { href: "/zones/", key: "zones", soon: true },
@@ -124,8 +123,9 @@ export function Shell({ title, children, actions }: { title: Key; children: Reac
       const m = await api<Me>("/v1/me", { country: c });
       setMe(m);
       setError(null);
-      // Kitchen teams have no dashboard: their home is the live board.
-      if (window.location.pathname === "/" && !m.capabilities.overview && m.capabilities.kitchen) router.replace("/kitchen/");
+      // People without a dashboard land on their home: kitchen teams on the live board; a new or self-serve
+      // merchant on the Merchants hub, where they set up and manage their business.
+      if (window.location.pathname === "/" && !m.capabilities.overview) router.replace(m.capabilities.kitchen ? "/kitchen/" : "/merchants/");
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) router.replace("/login/");
       else setError((e as Error).message);

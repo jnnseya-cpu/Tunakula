@@ -2436,4 +2436,26 @@ describe("self-serve merchant onboarding", () => {
     const r = await call("POST", "/v1/merchant/branches", { token: stranger.token, country: "CD", body: { group_id: "rg-someone-else", name: "Pirate branch", lat: KIN2.lat, lng: KIN2.lng } });
     assert.equal(r.status, 403);
   });
+
+  test("the console's branches view guides a brand-new merchant through the same screens (no separate wizard)", async () => {
+    const merchant = await signIn("+243810000202");
+    // A brand-new user is not refused: the console shows them the set-up path.
+    const empty = await call("GET", "/v1/admin/branches", { token: merchant.token, country: "CD" });
+    assert.equal(empty.status, 200, JSON.stringify(empty.body));
+    assert.equal(empty.body.has_business, false);
+    assert.equal(empty.body.can_create, false);
+    assert.equal(empty.body.data.length, 0);
+    // They register, then the same endpoint reports they now own a business.
+    const reg = await call("POST", "/v1/merchant/register", { token: merchant.token, country: "CD", body: { business_name: "Chez Espoir" } });
+    const groupId = reg.body.group_id;
+    const owned = await call("GET", "/v1/admin/branches", { token: merchant.token, country: "CD" });
+    assert.equal(owned.body.has_business, true);
+    assert.equal(owned.body.group_id, groupId);
+    // They add a branch from the console; it shows up in their branches list as a draft (unpublished).
+    const br = await call("POST", "/v1/merchant/branches", { token: merchant.token, country: "CD", body: { group_id: groupId, name: "Chez Espoir — Ngaliema", lat: KIN2.lat, lng: KIN2.lng, commune: "ngaliema" } });
+    const withBranch = await call("GET", "/v1/admin/branches", { token: merchant.token, country: "CD" });
+    const row = (withBranch.body.data as { id: string; published: boolean }[]).find((b) => b.id === br.body.branch_id);
+    assert.ok(row, "the new branch appears in the console");
+    assert.equal(row!.published, false, "it is a draft until published");
+  });
 });

@@ -46,8 +46,9 @@ function Menu() {
   const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
+    const wanted = new URLSearchParams(window.location.search).get("branch");
     api<{ data: Branch[] }>("/v1/admin/branches", { country })
-      .then((r) => { setBranches(r.data); if (r.data[0]) setBranchId((b) => b || r.data[0]!.id); })
+      .then((r) => { setBranches(r.data); const pick = (wanted && r.data.some((b) => b.id === wanted)) ? wanted : r.data[0]?.id; if (pick) setBranchId((b) => b || pick); })
       .catch((e: Error) => setError(e.message));
     api<Config>(`/v1/countries/${country}/config`, { country }).then((c) => setSettlement(c.money.currencies.settlement)).catch(() => undefined);
   }, [country]);
