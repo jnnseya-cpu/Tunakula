@@ -8,6 +8,7 @@ import { addMenuItem, createBranch, createZone, deleteZone, ensureGroup, getBran
 import { audit } from "../persistence/identity.ts";
 import { badRequest, notFound, unprocessable } from "./errors.ts";
 import { require } from "./principal.ts";
+import { isOpenNow, parseWeekly, type WeeklyHours } from "../modules/catalogue/hours.ts";
 
 export class CatalogueService {
   private readonly db: Db;
@@ -79,6 +80,7 @@ export class CatalogueService {
       ...(input.variations !== undefined ? { variations: this.#variations(input.variations, delta) } : {}),
       ...(input.addons !== undefined ? { addons: this.#addons(input.addons, delta) } : {}),
       ...(input.image_id !== undefined ? { imageId: input.image_id ? String(input.image_id) : null } : {}),
+      ...(input.availability_hours !== undefined ? { availabilityHours: parseItemHours(input.availability_hours) } : {}),
     };
   }
 
@@ -237,10 +239,13 @@ export class CatalogueService {
   }
 
   async menu(country: string, branchId: string) {
+    const profile = this.#profile(country);
+    const tz = profile.country.timezones[0] ?? "UTC";
+    const now = new Date();
     return this.db.tx({ country }, async (sql) => {
       const branch = await getBranch(sql, branchId);
       if (!branch) throw notFound("Branch");
-      return { branch: branchProfile(branch), items: (await menuOf(sql, branchId)).map(publicItem) };
+      return { branch: branchProfile(branch), items: (await menuOf(sql, branchId)).map((i) => publicItem(i, now, tz)) };
     });
   }
 
@@ -448,6 +453,7 @@ interface ItemInput {
   variations?: unknown;
   addons?: unknown;
   image_id?: string | null;
+  availability_hours?: unknown;
 }
 
 /** Structured dietary tags a customer can filter by (the EU/UK compliance + discovery set). */
@@ -480,7 +486,16 @@ interface ImportRow extends ItemInput {
   available?: boolean;
 }
 
-function publicItem(i: MenuItemRow) {
+/** Validates a per-dish availability schedule (reuses the opening-hours weekly shape). */
+function parseItemHours(value: unknown): WeeklyHours {
+  if (value === null || value === undefined) return {};
+  try { return parseWeekly(value); } catch (e) { throw badRequest("HOURS_INVALID", (e as Error).message); }
+}
+
+/** A dish shaped for the storefront/console. `at`/`tz`, when given, add a computed `available_now` for dayparting. */
+function publicItem(i: MenuItemRow, at?: Date, tz?: string) {
+  const hours = i.availability_hours ?? {};
+  const scheduled = Object.keys(hours).length > 0;
   return {
     id: i.id,
     names: i.names,
@@ -500,5 +515,9 @@ function publicItem(i: MenuItemRow) {
     addons: i.addons,
     // The food photo's media id; the client builds the public URL /v1/menu-images/<id>?c=<country>.
     image_id: i.image_id,
+    // Dayparting: the weekly windows the dish is orderable (empty = always), and — when the caller knows the
+    // time and zone — whether it is orderable right now.
+    availability_hours: hours,
+    ...(at && tz ? { available_now: !scheduled || isOpenNow(hours, {}, at, tz) } : {}),
   };
 }

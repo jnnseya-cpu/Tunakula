@@ -22,8 +22,11 @@ export const DIETARY_LABEL: Record<string, [string, string]> = {
 };
 export const CATEGORIES = ["Restaurant", "Cuisine Locale", "Fast Food", "Boisson", "Dessert", "Végétarienne", "Accompagnements", "Fruits et Légumes", "Viande et Poisson", "Boulangeries", "Pizzérias", "Taco", "Menu Enfant", "Supermarché", "Épiceries", "Essentiel", "Promo"];
 
-export const blankDish = () => ({ id: "", name_fr: "", name_en: "", desc_fr: "", category: "", price: "", veg: "" as "" | "veg" | "non", recommended: false, age_restricted: false, tags: "", allergens: "", dietary: [] as string[], kcal: "", protein_g: "", carbs_g: "", fat_g: "", image_id: "", variations: [] as FormVariation[], addons: [] as FormAddon[] });
+export const blankDish = () => ({ id: "", name_fr: "", name_en: "", desc_fr: "", category: "", price: "", veg: "" as "" | "veg" | "non", recommended: false, age_restricted: false, tags: "", allergens: "", dietary: [] as string[], kcal: "", protein_g: "", carbs_g: "", fat_g: "", image_id: "", variations: [] as FormVariation[], addons: [] as FormAddon[], availability_hours: {} as Record<string, [string, string][]> });
 export type DishFormValue = ReturnType<typeof blankDish>;
+
+/** Weekday rows for the availability editor, Monday first; the number is the schedule key (0=Sunday). */
+const WEEK_DAYS: [number, string, string][] = [[1, "Lun", "Mon"], [2, "Mar", "Tue"], [3, "Mer", "Wed"], [4, "Jeu", "Thu"], [5, "Ven", "Fri"], [6, "Sam", "Sat"], [0, "Dim", "Sun"]];
 
 /** Builds the item-create/update API body from the form, in the given settlement currency. */
 export function dishPayload(form: DishFormValue, settlement: string) {
@@ -48,6 +51,8 @@ export function dishPayload(form: DishFormValue, settlement: string) {
       options: v.options.filter((o) => o.name.trim()).map((o) => ({ name: o.name.trim(), price: o.price.trim() || "0" })),
     })),
     addons: form.addons.filter((a) => a.name.trim()).map((a) => ({ name: a.name.trim(), price: a.price.trim() || "0" })),
+    // Dayparting: {} = always available; otherwise the weekday windows the dish is orderable.
+    availability_hours: form.availability_hours ?? {},
   };
 }
 
@@ -128,6 +133,47 @@ export function DishFields({ form, setForm, settlement, lang, country, L }: Prop
           ))}
         </div>
       </div>
+      <AvailabilityEditor form={form} setForm={setForm} lang={lang} L={L} />
+    </div>
+  );
+}
+
+/** Dayparting editor: when a dish is available (always, or only in a weekly window — breakfast, lunch…). */
+function AvailabilityEditor({ form, setForm, lang, L }: { form: DishFormValue; setForm: Setter; lang: Lang; L: (fr: string, en: string) => string }) {
+  const hours = form.availability_hours ?? {};
+  const scheduled = Object.keys(hours).length > 0;
+  const setDay = (d: number, window: [string, string] | null) => {
+    const next: Record<string, [string, string][]> = { ...hours };
+    if (window) next[String(d)] = [window]; else delete next[String(d)];
+    setForm({ ...form, availability_hours: next });
+  };
+  const enableSchedule = (on: boolean) => {
+    // Turning scheduling on seeds a sensible breakfast window on every day; off clears it (always available).
+    setForm({ ...form, availability_hours: on ? Object.fromEntries(WEEK_DAYS.map(([d]) => [String(d), [["07:00", "11:00"]]])) : {} });
+  };
+  return (
+    <div className="wide">
+      <span className="ff-label">{L("Disponibilité horaire (dayparting)", "Time availability (dayparting)")}</span>
+      <label className="chk"><input type="checkbox" checked={!scheduled} onChange={(e) => enableSchedule(!e.target.checked)} /> {L("Disponible à toute heure (quand l'établissement est ouvert)", "Available any time (while the branch is open)")}</label>
+      {scheduled ? (
+        <div className="avail-grid">
+          {WEEK_DAYS.map(([d, fr, en]) => {
+            const w = hours[String(d)]?.[0];
+            return (
+              <div className="avail-row" key={d}>
+                <label className="chk"><input type="checkbox" checked={!!w} onChange={(e) => setDay(d, e.target.checked ? ["07:00", "11:00"] : null)} /> <span className="avail-day">{lang === "fr" ? fr : en}</span></label>
+                {w ? (
+                  <span className="avail-times">
+                    <input type="time" className="input" value={w[0]} onChange={(e) => setDay(d, [e.target.value || "00:00", w[1]])} />
+                    <span>→</span>
+                    <input type="time" className="input" value={w[1]} onChange={(e) => setDay(d, [w[0], e.target.value || "23:59"])} />
+                  </span>
+                ) : <span className="muted small">{L("indisponible", "unavailable")}</span>}
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
     </div>
   );
 }

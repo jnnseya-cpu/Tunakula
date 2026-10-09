@@ -22,6 +22,7 @@ interface Item {
   tags: string[]; allergens: string[]; available: boolean; recommended: boolean;
   variations: ApiVariation[]; addons: ApiOption[];
   dietary?: string[]; nutrition?: Record<string, number>; age_restricted?: boolean; image_id?: string | null;
+  availability_hours?: Record<string, [string, string][]>; available_now?: boolean;
 }
 interface Config { money: { currencies: { settlement: string; accepted: { code: string }[] } } }
 
@@ -84,6 +85,7 @@ function Menu() {
     variations: (it.variations ?? []).map((v) => ({ name: v.name, type: v.type, required: v.required, options: v.options.map((o) => ({ name: o.name, price: decimal(o.price, settlement) })) })),
     addons: (it.addons ?? []).map((a) => ({ name: a.name, price: decimal(a.price, settlement) })),
     image_id: it.image_id ?? "",
+    availability_hours: it.availability_hours ?? {},
   });
 
   const branchName = branches?.find((b) => b.id === branchId)?.name ?? "menu";

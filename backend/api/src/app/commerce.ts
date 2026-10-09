@@ -48,6 +48,8 @@ export interface QuoteInput {
   readonly customerId?: string;
   /** A promo code to apply (requires customerId for limit checks). */
   readonly couponCode?: string;
+  /** For a scheduled order, the intended time: dayparting (per-dish hours) is checked against it, not now. */
+  readonly scheduledFor?: string;
 }
 
 export interface PlaceOrderInput extends QuoteInput {
@@ -192,6 +194,10 @@ export class CommerceService {
     const tz = profile.country.timezones[0] ?? "UTC";
     if (!isOpenNow(branch.hours ?? {}, branch.special_hours ?? {}, this.now(), tz)) throw unprocessable("BRANCH_CLOSED", `${branch.name} is closed right now`);
     const menu = new Map((await menuOf(sql, branch.id)).map((m) => [m.id, m]));
+    // Dayparting: a dish with an availability schedule is orderable only inside it. For a scheduled order we check
+    // the intended time; otherwise now. A dish with no schedule is always available (backward-compatible).
+    const scheduledAt = input.scheduledFor ? new Date(input.scheduledFor) : undefined;
+    const effectiveAt = scheduledAt && !Number.isNaN(scheduledAt.getTime()) ? scheduledAt : this.now();
 
     let goods = Money.zero(ccy);
     const lines: Quote["lines"][number][] = [];
@@ -201,6 +207,10 @@ export class CommerceService {
       const item = menu.get(itemId);
       if (!item) throw unprocessable("ITEM_NOT_ON_MENU", `Item ${itemId} is not on ${branch.name}'s menu`);
       if (!item.available) throw unprocessable("ITEM_UNAVAILABLE", `${nameOf(item.names, lang)} is not available right now`, { itemId });
+      const schedule = item.availability_hours ?? {};
+      if (Object.keys(schedule).length > 0 && !isOpenNow(schedule, {}, effectiveAt, tz)) {
+        throw unprocessable("ITEM_OFF_SCHEDULE", `${nameOf(item.names, lang)} is only available at certain times`, { itemId });
+      }
       const price = item.prices[ccy];
       // MR-2: a missing price would be converted by quote; until FX quoting is wired, refuse rather than guess.
       if (price === undefined) throw unprocessable("PRICE_MISSING", `${nameOf(item.names, lang)} has no ${ccy} price`, { itemId });

@@ -12,7 +12,16 @@ import { BookTable } from "./book-table";
 
 interface VOption { id: string; name: string; price: string }
 interface Variation { id: string; name: string; type: "SINGLE" | "MULTI"; required: boolean; min: number; max: number; options: VOption[] }
-interface MenuItem { id: string; names: Record<string, string>; prices: Record<string, MoneyWire>; tags: string[]; allergens: string[]; available: boolean; variations?: Variation[]; addons?: VOption[]; veg?: boolean | null; dietary?: string[]; nutrition?: Record<string, number>; age_restricted?: boolean; image_id?: string | null }
+interface MenuItem { id: string; names: Record<string, string>; prices: Record<string, MoneyWire>; tags: string[]; allergens: string[]; available: boolean; variations?: Variation[]; addons?: VOption[]; veg?: boolean | null; dietary?: string[]; nutrition?: Record<string, number>; age_restricted?: boolean; image_id?: string | null; availability_hours?: Record<string, [string, string][]>; available_now?: boolean }
+
+/** Dayparting: whether the dish has a schedule, and a short label of today's window (for the storefront badge). */
+const isScheduled = (i: MenuItem) => Object.keys(i.availability_hours ?? {}).length > 0;
+const todaysWindow = (i: MenuItem): string | null => {
+  const w = (i.availability_hours ?? {})[String(new Date().getDay())]?.[0];
+  return w ? `${w[0]}–${w[1]}` : null;
+};
+/** A dish is orderable when it is in stock and, if it has a schedule, inside its window right now. */
+const orderable = (i: MenuItem) => i.available && i.available_now !== false;
 
 const DIETARY_LABEL: Record<string, string> = { VEGETARIAN: "Vegetarian", VEGAN: "Vegan", HALAL: "Halal", KOSHER: "Kosher", GLUTEN_FREE: "Gluten-free", DAIRY_FREE: "Dairy-free", NUT_FREE: "Nut-free", ORGANIC: "Organic", SPICY: "Spicy" };
 /** The dietary tags the storefront offers as quick filters. */
@@ -162,12 +171,15 @@ export function LiveStore() {
               const plainLine = cart.lines.find((l) => l.item_id === i.id && !l.options && !l.addons);
               const inCart = cart.lines.filter((l) => l.item_id === i.id).reduce((n, l) => n + l.qty, 0);
               const optioned = hasOptions(i);
+              const canOrder = orderable(i);
+              const window = todaysWindow(i);
               return (
-                <article key={i.id} className={`live-item ${i.available ? "" : "off"}`} data-reveal>
+                <article key={i.id} className={`live-item ${canOrder ? "" : "off"}`} data-reveal>
                   <div className="li-text">
                     <h3>{name}</h3>
                     {nameOf(i.names, "en") !== name ? <p className="muted">{nameOf(i.names, "en")}</p> : null}
                     {optioned ? <p className="muted small">{(i.variations?.length ?? 0) > 0 ? "Choices" : "Add-ons"} available</p> : null}
+                    {isScheduled(i) ? <p className="li-hours">🕒 {i.available_now === false ? (window ? `Available ${window}` : "Not available today") : (window ? `Available ${window}` : "Available at set times")}</p> : null}
                     {dietaryOf(i).length || i.nutrition?.kcal !== undefined || i.age_restricted ? (
                       <p className="diet-badges">
                         {i.age_restricted ? <span className="diet-tag age">18+</span> : null}
@@ -180,11 +192,11 @@ export function LiveStore() {
                   </div>
                   <div className="li-pic" style={{ background: bg }}>
                     {i.image_id ? <img className="pic li-photo" src={foodPhotoUrl(i.image_id)} alt="" loading="lazy" /> : <PlateArt className="pic" recipe={recipeFor(name)} seed={i.id} />}
-                    {i.available ? (
+                    {canOrder ? (
                       !optioned && plainLine ? (
                         <span className="qty-pill"><button type="button" onClick={() => change(plainLine.key, -1)} aria-label={`One less ${name}`}>−</button><b>{inCart}</b><button type="button" onClick={() => add(i)} aria-label={`One more ${name}`}>+</button></span>
                       ) : <button type="button" className="add-btn" onClick={() => add(i)} aria-label={optioned ? `Choose ${name}` : `Add ${name}`} disabled={!open}>{inCart > 0 ? inCart : "+"}</button>
-                    ) : <span className="sold-out">Sold out</span>}
+                    ) : <span className="sold-out">{i.available === false ? "Sold out" : window ? window : "Off hours"}</span>}
                   </div>
                 </article>
               );

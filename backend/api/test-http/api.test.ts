@@ -2853,3 +2853,45 @@ describe("delivery zones", () => {
     assert.equal((await call("GET", `/v1/branches/${zbranch}/delivery-zones`, { country: "CD" })).body.zones.length, 0);
   });
 });
+
+describe("menu scheduling (dayparting)", () => {
+  // CD runs on Africa/Kinshasa (UTC+1, no DST), so a UTC instant maps to local +1h.
+  const AT_0800_LOCAL = "2030-06-03T07:00:00Z"; // 08:00 in Kinshasa — inside a 07:00–11:00 window
+  const AT_1500_LOCAL = "2030-06-03T14:00:00Z"; // 15:00 in Kinshasa — outside it
+  const everyDay = (open: string, close: string) => Object.fromEntries(["0", "1", "2", "3", "4", "5", "6"].map((d) => [d, [[open, close]]]));
+
+  test("a breakfast dish is only orderable inside its window; an empty schedule stays always available", async () => {
+    // Add a breakfast-only dish (07:00–11:00 every day) to the existing branch.
+    const made = await call("POST", `/v1/branches/${branchId}/items`, { token: restaurantOwner.token, country: "CD", body: { names: { fr: "Omelette", en: "Omelette" }, prices: { USD: "5.00" }, availability_hours: everyDay("07:00", "11:00") } });
+    assert.equal(made.status, 201, JSON.stringify(made.body));
+    const breakfast = made.body.id;
+    assert.deepEqual(made.body.availability_hours["1"], [["07:00", "11:00"]], "the schedule is stored");
+
+    const bcart = (at: string) => ({ branch_id: branchId, items: [{ item_id: breakfast, quantity: 1 }], order_type: "DELIVERY", delivery: DROP, scheduled_for: at });
+    // At 08:00 local the dish is in its window → the quote succeeds.
+    assert.equal((await call("POST", "/v1/carts/quote", { country: "CD", body: bcart(AT_0800_LOCAL) })).status, 200);
+    // At 15:00 local it is outside the window → the quote refuses just that dish.
+    const off = await call("POST", "/v1/carts/quote", { country: "CD", body: bcart(AT_1500_LOCAL) });
+    assert.equal(off.body.code, "ITEM_OFF_SCHEDULE", JSON.stringify(off.body));
+
+    // The storefront menu exposes the schedule and a computed availability flag.
+    const menu = await call("GET", `/v1/branches/${branchId}/menu`, { country: "CD" });
+    const shown = menu.body.items.find((i: { id: string }) => i.id === breakfast);
+    assert.ok(shown, "the dish is on the menu");
+    assert.deepEqual(shown.availability_hours["3"], [["07:00", "11:00"]]);
+    assert.equal(typeof shown.available_now, "boolean", "the menu computes whether it is orderable now");
+    // A dish with no schedule carries an empty object and no restriction.
+    const anytime = menu.body.items.find((i: { id: string }) => i.id === itemId);
+    assert.deepEqual(anytime.availability_hours, {});
+
+    // Clearing the schedule makes the dish orderable at any hour again.
+    const cleared = await call("POST", `/v1/branches/${branchId}/items/${breakfast}`, { token: restaurantOwner.token, country: "CD", body: { names: { fr: "Omelette", en: "Omelette" }, prices: { USD: "5.00" }, availability_hours: {} } });
+    assert.equal(cleared.status, 200, JSON.stringify(cleared.body));
+    assert.equal((await call("POST", "/v1/carts/quote", { country: "CD", body: bcart(AT_1500_LOCAL) })).status, 200, "no schedule → always available");
+
+    // A malformed schedule is rejected.
+    const bad = await call("POST", `/v1/branches/${branchId}/items`, { token: restaurantOwner.token, country: "CD", body: { names: { fr: "X" }, prices: { USD: "1.00" }, availability_hours: { "9": [["07:00", "11:00"]] } } });
+    assert.equal(bad.status, 400, JSON.stringify(bad.body));
+    assert.equal(bad.body.code, "HOURS_INVALID");
+  });
+});

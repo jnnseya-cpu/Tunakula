@@ -228,7 +228,7 @@ type ItemBody = { names: Record<string, string>; description?: Record<string, st
 type ProfileBody = { address?: string | null; phone?: string | null; email?: string | null; description?: Record<string, string>; cuisines?: string[]; min_order?: string | null; logo_id?: string | null; cover_id?: string | null };
 type ZoneBody = { name?: string; centre_lat?: number | string; centre_lng?: number | string; radius_m?: number | string; flat_fee?: string | number | null; min_order?: string | number | null; active?: boolean };
 type QuoteItemBody = { item_id: string; quantity: number; options?: { group: string; choices: string[] }[]; addons?: string[]; note?: string };
-type QuoteBody = { branch_id: string; items: QuoteItemBody[]; order_type: QuoteInput["orderType"]; delivery?: { lat: number; lng: number; rural?: boolean }; tip?: string; coupon_code?: string };
+type QuoteBody = { branch_id: string; items: QuoteItemBody[]; order_type: QuoteInput["orderType"]; delivery?: { lat: number; lng: number; rural?: boolean }; tip?: string; coupon_code?: string; scheduled_for?: string };
 
 const toQuoteInput = (b: QuoteBody): QuoteInput => {
   if (!b || typeof b.branch_id !== "string" || !Array.isArray(b.items)) throw badRequest("BODY_INVALID", "Send branch_id, items and order_type");
@@ -239,6 +239,7 @@ const toQuoteInput = (b: QuoteBody): QuoteInput => {
     ...(b.delivery ? { delivery: b.delivery } : {}),
     ...(b.tip ? { tip: b.tip } : {}),
     ...(b.coupon_code ? { couponCode: String(b.coupon_code) } : {}),
+    ...(b.scheduled_for ? { scheduledFor: String(b.scheduled_for) } : {}),
   };
 };
 
