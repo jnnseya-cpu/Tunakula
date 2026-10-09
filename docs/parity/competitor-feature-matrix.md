@@ -73,7 +73,7 @@ Delivery + pickup/takeaway are universal; **dine-in and scheduled/pre-order appe
 | Cards (gateway-tokenized) | ✔ | ✔ | ✔ | ✔ | ✔ |
 | Pluggable multi-gateway (Stripe/PayPal/Razorpay/Paystack/Flutterwave/SSLCommerz/bKash/…) | ✔ [INF] | ✘ | ✘ | ✘ | ✘ |
 | Mobile money / local wallets | ✔ [INF] | ✘ | ✘ | ✘ | ✘ |
-| In-app wallet + add-fund + partial pay | ✔ | ~ (credits) | ~ (credits) | ~ (credit) | ? | **Tunakula: wallet ✔ built** — balance + history on /wallet, top-up through the same providers, pay-with-wallet at checkout (order placed already paid), auto-credit back on cancellation, settlement drawn from the customer_wallet ledger account so the books balance; partial pay (wallet + another method on one order) is the remaining piece |
+| In-app wallet + add-fund + partial pay | ✔ | ~ (credits) | ~ (credits) | ~ (credit) | ? | **Tunakula: wallet ✔ built** — balance + history on /wallet, top-up through the same providers, pay-with-wallet at checkout (order placed already paid), auto-credit back on cancellation, settlement drawn from the customer_wallet ledger account so the books balance; partial pay (wallet + another method on one order) is the remaining piece. **Referral ✔ built** — a shareable code; the referee gets 10% off their first order, the referrer earns 10 (settlement currency) to their wallet once the referee has spent 50 on the platform (funded from promotion_expense) |
 | Apple Pay / Google Pay | ~ (gateway-dependent) | ✔ | ✔ | ✔ | ✔ |
 | PayPal | ~ [INF] | ? | ? | ? | ✔ (Takeaway) |
 | Offline / manual payment (admin-verified) | ✔ | ✘ | ✘ | ✘ | ✘ |

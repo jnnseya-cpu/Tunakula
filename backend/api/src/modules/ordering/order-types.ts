@@ -112,6 +112,8 @@ export interface OrderSnapshot {
     readonly membershipDiscount?: MoneyJSON;
     /** Coupon/promo discount the platform funded on this order. */
     readonly couponDiscount?: MoneyJSON;
+    /** Referral first-order discount the platform funded on this order. */
+    readonly referralDiscount?: MoneyJSON;
   };
   readonly paymentMode: "PREPAID" | "CASH_ON_DELIVERY";
   /** As configured (§10.2); AGENT_OPTIMISED must be resolved at placement. */

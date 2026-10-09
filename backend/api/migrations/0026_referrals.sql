@@ -1,7 +1,7 @@
 -- Referral program. Every customer has a shareable referral code. A new customer who applies a code
--- (the referee) earns a reward to their wallet, but it stays locked until that referee has spent a
--- threshold amount on the platform; on crossing it, the reward unlocks (the referee and the referrer are
--- each credited) as real, spendable wallet money. Amounts are in the market's settlement currency.
+-- (the referee) gets a discount on their first order; the referrer earns a reward to their wallet, held
+-- until the referee has spent a threshold on the platform, then credited as real, spendable money.
+-- Amounts are in the market's settlement currency.
 -- Additive. The claim's status changes over its life, so it is mutable (not append-only). Tenant, RLS.
 CREATE SCHEMA IF NOT EXISTS referral;
 
@@ -21,9 +21,13 @@ CREATE TABLE referral.claim (
   code text NOT NULL,
   referrer_user_id uuid NOT NULL REFERENCES identity.app_user (id),
   referee_user_id uuid NOT NULL REFERENCES identity.app_user (id),
+  -- The referrer's reward, held until the referee's spend reaches the threshold.
   reward_minor bigint NOT NULL CHECK (reward_minor > 0),
   threshold_minor bigint NOT NULL CHECK (threshold_minor > 0),
   currency char(3) NOT NULL,
+  -- The referee's first-order discount (basis points of the order), applied once.
+  discount_bps int NOT NULL DEFAULT 1000 CHECK (discount_bps BETWEEN 0 AND 10000),
+  discount_used_at timestamptz,
   status text NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'UNLOCKED', 'EXPIRED')),
   unlocked_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),

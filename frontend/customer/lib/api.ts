@@ -160,11 +160,11 @@ export const walletTopup = (amountMinor: string, currency: string, methodType: s
   api<{ status: string; balance?: MoneyWire; reason_code?: string }>("/v1/me/wallet/topup", { method: "POST", body: { amount_minor: amountMinor, currency, method_type: methodType, ...(msisdn ? { payer: { msisdn } } : {}) } });
 
 // ── Referrals ──
-export interface ReferralSummary { code: string; reward: MoneyWire; spend_threshold: MoneyWire; invited: number; rewarded: number; earned: MoneyWire }
-export interface ReferralClaim { status: "PENDING" | "UNLOCKED" | "EXPIRED"; reward: MoneyWire; spend_threshold: MoneyWire; spent: MoneyWire; unlocked_at: string | null }
+export interface ReferralSummary { code: string; reward: MoneyWire; spend_threshold: MoneyWire; friend_discount_pct: number; invited: number; rewarded: number; earned: MoneyWire }
+export interface ReferralClaim { first_order_discount_pct: number; discount_available: boolean; discount_used: boolean }
 export const myReferral = () => api<ReferralSummary>("/v1/me/referral");
 export const myReferralClaim = () => api<{ claim: ReferralClaim | null }>("/v1/me/referral/claim").then((r) => r.claim);
-export const claimReferral = (code: string) => api<{ id: string; status: string; reward: MoneyWire; spend_threshold: MoneyWire }>("/v1/referrals/claim", { method: "POST", body: { code } });
+export const claimReferral = (code: string) => api<{ id: string; first_order_discount_pct: number }>("/v1/referrals/claim", { method: "POST", body: { code } });
 
 // ── Refund requests ──
 export type RefundStatus = "PENDING" | "APPROVED" | "DECLINED";

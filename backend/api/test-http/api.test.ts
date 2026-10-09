@@ -2227,8 +2227,10 @@ describe("referrals", () => {
   // Drives one fresh paid order for a given customer all the way to DELIVERED (counts as spend).
   let rlabel = 0;
   const spendOnce = async (who: { token: string; userId: string }) => {
-    const q = await call("POST", "/v1/carts/quote", { country: "CD", body: cart() });
-    const placed = await call("POST", "/v1/orders", { token: who.token, country: "CD", body: { ...cart(), payment_mode: "PREPAID", expected_total: q.body.total } });
+    // A quote authenticated as the customer so any referral first-order discount is reflected.
+    const q = await call("POST", "/v1/carts/quote", { token: who.token, country: "CD", body: cart() });
+    const due = q.body.payable ?? q.body.total;
+    const placed = await call("POST", "/v1/orders", { token: who.token, country: "CD", body: { ...cart(), payment_mode: "PREPAID", expected_total: due } });
     const orderId = placed.body.order_id, code = placed.body.recipient_code;
     await call("POST", "/v1/payments/intents", { token: who.token, country: "CD", body: { order_id: orderId, method_type: "MOBILE_MONEY_PUSH", payer: { msisdn: "+243810000001" } } });
     const lb = `REF-${++rlabel}`;
@@ -2240,49 +2242,60 @@ describe("referrals", () => {
     await transition(rider, orderId, { type: "PICK_UP", scannedLabelIds: [lb], restaurantConfirmed: true, sealsIntact: true, location: KINSHASA });
     const done = await transition(rider, orderId, { type: "DELIVER", scannedLabelId: lb, location: DROP, sealIntact: true, verification: { method: "CODE", code }, proofPhotoRef: "photo://door" });
     assert.equal(done.body.state, "DELIVERED", JSON.stringify(done.body));
-    return BigInt(q.body.total.amount_minor);
+    return BigInt(due.amount_minor);
   };
 
-  test("a referee earns the reward only after spending the threshold; both wallets are credited", async () => {
-    // The existing customer owns a code.
+  test("the referee gets 10% off their first order; the referrer earns $10 after the referee spends $50", async () => {
+    // The existing customer owns a code and earns $10 after a referee spends $50.
     const mine = await call("GET", "/v1/me/referral", { token: customer.token, country: "CD" });
     assert.match(mine.body.code, /^[A-Z0-9]{7}$/);
     assert.equal(mine.body.reward.amount_minor, "1000");
     assert.equal(mine.body.spend_threshold.amount_minor, "5000");
+    assert.equal(mine.body.friend_discount_pct, 10);
     const code = mine.body.code as string;
 
-    // A brand-new customer applies the code.
+    // A brand-new customer applies the code and gets a 10%-off-first-order claim.
     const referee = await signIn("+243810000072");
     assert.equal((await call("POST", "/v1/referrals/claim", { token: referee.token, country: "CD", body: { code: "NOPE123" } })).status, 404);
     const claimed = await call("POST", "/v1/referrals/claim", { token: referee.token, country: "CD", body: { code } });
     assert.equal(claimed.status, 201, JSON.stringify(claimed.body));
-    assert.equal(claimed.body.status, "PENDING");
+    assert.equal(claimed.body.first_order_discount_pct, 10);
     // Using your own code, or claiming twice, is refused.
     assert.equal((await call("POST", "/v1/referrals/claim", { token: referee.token, country: "CD", body: { code } })).body.code, "ALREADY_REFERRED");
     assert.equal((await call("POST", "/v1/referrals/claim", { token: customer.token, country: "CD", body: { code } })).body.code, "CANNOT_REFER_SELF");
 
-    const referrerBefore = await walletUsd(customer.token);
-    // The referee spends, but not yet the full threshold — the sweep does not unlock it.
-    await spendOnce(referee); // ~$31.50 < $50
-    await api.get<ReferralService>(TOKENS.referrals).unlockSweep("CD");
-    assert.equal((await call("GET", "/v1/me/referral/claim", { token: referee.token, country: "CD" })).body.claim.status, "PENDING");
-    assert.equal(await walletUsd(referee.token), 0n, "no reward before the threshold");
+    // The referee's first-order quote shows the 10% discount; the status says it is available.
+    const q1 = await call("POST", "/v1/carts/quote", { token: referee.token, country: "CD", body: cart() });
+    const gross = BigInt(q1.body.total.amount_minor);
+    assert.equal(q1.body.referral.discount.amount_minor, String(gross / 10n), "10% off the first order");
+    assert.equal(BigInt(q1.body.payable.amount_minor), gross - gross / 10n);
+    assert.equal((await call("GET", "/v1/me/referral/claim", { token: referee.token, country: "CD" })).body.claim.discount_available, true);
+    assert.equal(await walletUsd(referee.token), 0n, "the referee is not given wallet cash, only a discount");
 
-    // A second order takes the referee past $50; the sweep now credits both wallets $10.
+    const referrerBefore = await walletUsd(customer.token);
+    // The referee places their (discounted) first order and it delivers; the discount is now used.
+    await spendOnce(referee);
+    const q2 = await call("POST", "/v1/carts/quote", { token: referee.token, country: "CD", body: cart() });
+    assert.equal(q2.body.referral, undefined, "the discount applies only to the first order");
+    assert.equal((await call("GET", "/v1/me/referral/claim", { token: referee.token, country: "CD" })).body.claim.discount_used, true);
+
+    // The referee has not yet spent $50 — the referrer is not paid.
+    await api.get<ReferralService>(TOKENS.referrals).unlockSweep("CD");
+    assert.equal(await walletUsd(customer.token), referrerBefore, "no referrer reward before the referee spends $50");
+
+    // A second order takes the referee past $50; the sweep now pays the referrer $10.
     await spendOnce(referee);
     const res = await api.get<ReferralService>(TOKENS.referrals).unlockSweep("CD");
     assert.ok(res.unlocked >= 1);
-    assert.equal((await call("GET", "/v1/me/referral/claim", { token: referee.token, country: "CD" })).body.claim.status, "UNLOCKED");
-    assert.equal(await walletUsd(referee.token), 1000n, "referee credited $10");
     assert.equal(await walletUsd(customer.token), referrerBefore + 1000n, "referrer credited $10");
+    assert.equal(await walletUsd(referee.token), 0n, "the referee still has no wallet cash from the referral");
 
-    // The referrer's dashboard reflects one rewarded invite.
+    // The referrer's dashboard reflects one rewarded invite, and the sweep does not double-pay.
     const after = await call("GET", "/v1/me/referral", { token: customer.token, country: "CD" });
     assert.ok(after.body.invited >= 1 && after.body.rewarded >= 1);
     assert.equal(after.body.earned.amount_minor, String(1000 * after.body.rewarded));
-    // Running the sweep again does not double-credit.
     await api.get<ReferralService>(TOKENS.referrals).unlockSweep("CD");
-    assert.equal(await walletUsd(referee.token), 1000n);
+    assert.equal(await walletUsd(customer.token), referrerBefore + 1000n);
   });
 
   test("a customer who has already ordered cannot use a code", async () => {

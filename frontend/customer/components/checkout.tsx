@@ -18,7 +18,9 @@ interface Quote {
   membership?: { plan_name: string; free_delivery: boolean; discount: MoneyWire; payable_total: MoneyWire };
   /** Present when a valid promo code is applied. */
   coupon?: { code: string; discount: MoneyWire };
-  /** The final amount after every discount (membership + coupon); use this when present. */
+  /** Present for a referee's first order: the referral discount funded by the platform. */
+  referral?: { discount: MoneyWire };
+  /** The final amount after every discount (membership + coupon + referral); use this when present. */
   payable?: MoneyWire;
   /** The cart has an age-restricted item; the customer must confirm 18+. */
   age_restricted?: boolean;
@@ -321,6 +323,9 @@ export function Checkout() {
             ) : null}
             {quote.coupon ? (
               <div className="member-save"><dt>Promo {quote.coupon.code}</dt><dd className="num">−{money(quote.coupon.discount)}</dd></div>
+            ) : null}
+            {quote.referral ? (
+              <div className="member-save"><dt>Referral — first order</dt><dd className="num">−{money(quote.referral.discount)}</dd></div>
             ) : null}
             <div className="total"><dt>Total</dt><dd className="num">{money(quote.payable ?? quote.membership?.payable_total ?? quote.total)}</dd></div>
           </dl>

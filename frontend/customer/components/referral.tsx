@@ -4,9 +4,7 @@
  * The reward unlocks once the referred person has spent the threshold on the platform.
  */
 import { useEffect, useState } from "react";
-import { claimReferral, getSession, money, myReferral, myReferralClaim, type MoneyWire, type ReferralClaim, type ReferralSummary } from "../lib/api";
-
-const minor = (m: MoneyWire) => BigInt(m.amount_minor);
+import { claimReferral, getSession, money, myReferral, myReferralClaim, type ReferralClaim, type ReferralSummary } from "../lib/api";
 
 /** The signed-in customer's own code, share action, and how many invites have paid off. */
 export function ReferralInvite() {
@@ -17,7 +15,7 @@ export function ReferralInvite() {
 
   const link = typeof window !== "undefined" ? `${window.location.origin}/order/?ref=${r.code}` : "";
   const share = async () => {
-    const text = `Join me on Tunakula — use my code ${r.code} and get ${money(r.reward)} after your first ${money(r.spend_threshold)} of orders.`;
+    const text = `Join me on Tunakula — use my code ${r.code} for ${r.friend_discount_pct}% off your first order.`;
     try {
       if (navigator.share) { await navigator.share({ title: "Tunakula", text, url: link }); return; }
     } catch { /* cancelled */ }
@@ -27,7 +25,7 @@ export function ReferralInvite() {
   return (
     <section className="app-card referral-invite">
       <h2>Invite friends, earn {money(r.reward)}</h2>
-      <p className="muted">Share your code. When a friend joins and spends {money(r.spend_threshold)}, you both get {money(r.reward)} in your wallet.</p>
+      <p className="muted">Your friend gets {r.friend_discount_pct}% off their first order. You earn {money(r.reward)} once they have spent {money(r.spend_threshold)} on Tunakula.</p>
       <div className="referral-code">
         <code>{r.code}</code>
         <button type="button" className="btn accent" onClick={share}>{copied ? "Copied ✓" : "Share"}</button>
@@ -57,17 +55,17 @@ export function ReferralClaimCard() {
 
   if (!loaded) return null;
   if (claim) {
-    const pct = Math.min(100, Math.round(Number(minor(claim.spent) * 100n / (minor(claim.spend_threshold) || 1n))));
-    const unlocked = claim.status === "UNLOCKED";
     return (
       <section className="app-card referral-claim">
-        <h2>{unlocked ? `You earned ${money(claim.reward)} 🎉` : `Spend ${money(claim.spend_threshold)} to unlock ${money(claim.reward)}`}</h2>
-        {unlocked ? <p className="muted">Your reward is in your wallet, ready to spend.</p> : (
-          <>
-            <div className="referral-bar"><span style={{ width: `${pct}%` }} /></div>
-            <p className="muted small">{money(claim.spent)} of {money(claim.spend_threshold)} spent</p>
-          </>
-        )}
+        {claim.discount_available
+          ? <>
+              <h2>{claim.first_order_discount_pct}% off your first order 🎉</h2>
+              <p className="muted">Your referral discount is applied automatically at checkout on your first order.</p>
+            </>
+          : <>
+              <h2>Referral discount used</h2>
+              <p className="muted">You saved {claim.first_order_discount_pct}% on your first order. Share your own code to earn rewards.</p>
+            </>}
       </section>
     );
   }
@@ -75,7 +73,7 @@ export function ReferralClaimCard() {
   return (
     <section className="app-card referral-claim">
       <h2>Have a referral code?</h2>
-      <p className="muted">New here? Enter a friend's code to earn a reward after your first orders.</p>
+      <p className="muted">New here? Enter a friend's code to get a discount on your first order.</p>
       <div className="referral-apply">
         <input value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} placeholder="CODE" maxLength={12} />
         <button type="button" className="btn" disabled={busy || !code.trim()} onClick={apply}>{busy ? "Applying…" : "Apply"}</button>

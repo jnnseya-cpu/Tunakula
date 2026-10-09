@@ -3,7 +3,7 @@
  * Prices come only from the catalogue; the client never supplies a total.
  */
 import { createHash, randomInt } from "node:crypto";
-import { Money, type MoneyJSON } from "@tunakula/ts-money";
+import { Money, ratio, type MoneyJSON } from "@tunakula/ts-money";
 import type { CountryProfile } from "@tunakula/ts-contracts";
 import type { Db, Sql } from "../db/db.ts";
 import type { CountryConfigRegistry } from "../modules/config/config-registry.ts";
@@ -28,6 +28,12 @@ import type { RoutingProvider } from "./routing.ts";
 /** The wallet operation the order placement needs: debit the customer's balance for an order. */
 export interface WalletFunder {
   payForOrder(sql: Sql, country: string, userId: string, orderId: string, total: Money): Promise<void>;
+}
+
+/** The referral lookup the quote/placement needs: the referee's first-order discount, and marking it used. */
+export interface ReferralDiscountLookup {
+  firstOrderDiscount(sql: Sql, country: string, customerId: string): Promise<{ claimId: string; bps: number } | null>;
+  consumeDiscount(sql: Sql, claimId: string): Promise<void>;
 }
 
 export interface LineOptionSelection { readonly group: string; readonly choices: readonly string[] }
@@ -78,7 +84,12 @@ export interface Quote {
     readonly code: string;
     readonly discount: MoneyJSON;
   };
-  /** The final amount the customer pays after every discount (membership + coupon). */
+  /** Present for a referee's first order: the referral first-order discount funded by the platform. */
+  readonly referral?: {
+    readonly claimId: string;
+    readonly discount: MoneyJSON;
+  };
+  /** The final amount the customer pays after every discount (membership + coupon + referral). */
   readonly payable?: MoneyJSON;
   /** True when the cart has an age-restricted item: the customer must confirm 18+ to place. */
   readonly ageRestricted?: boolean;
@@ -113,6 +124,7 @@ export class CommerceService {
   private membership: MembershipLookup | undefined;
   private coupons: CouponLookup | undefined;
   private wallet: WalletFunder | undefined;
+  private referral: ReferralDiscountLookup | undefined;
 
   constructor(db: Db, registry: CountryConfigRegistry, routing: RoutingProvider, now: () => Date = () => new Date(), notifier?: OrderNotifier) {
     this.db = db;
@@ -135,6 +147,11 @@ export class CommerceService {
   /** Wires the wallet service after construction (lets a customer pay for an order from their balance). */
   useWallet(wallet: WalletFunder): void {
     this.wallet = wallet;
+  }
+
+  /** Wires the referral service after construction (applies a referee's first-order discount). */
+  useReferral(referral: ReferralDiscountLookup): void {
+    this.referral = referral;
   }
 
   /** Tells the customer about an order state change (best-effort, outside the state transaction). */
@@ -209,14 +226,22 @@ export class CommerceService {
       }
       const memberDisc = membership ? Money.fromJSON(membership.discount) : Money.zero(ccy);
       const couponDisc = coupon ? coupon.discount : Money.zero(ccy);
-      const payable = breakdown.total.subtract(memberDisc).subtract(couponDisc);
+      // A referee's first order is discounted (platform-funded, like a coupon).
+      let referral: { claimId: string; discount: Money } | undefined;
+      if (input.customerId && this.referral) {
+        const r = await this.referral.firstOrderDiscount(sql, country, input.customerId);
+        if (r) referral = { claimId: r.claimId, discount: breakdown.total.multiply(ratio(BigInt(r.bps), 10_000n)) };
+      }
+      const referralDisc = referral ? referral.discount : Money.zero(ccy);
+      const payable = breakdown.total.subtract(memberDisc).subtract(couponDisc).subtract(referralDisc);
       const ageRestricted = input.items.some((li) => menu.get(li.itemId)?.age_restricted === true);
       return {
         branch: { id: branch.id, name: branch.name }, lines, breakdown,
         ...(distanceMeters !== undefined ? { distanceMeters } : {}),
         ...(membership ? { membership } : {}),
         ...(coupon ? { coupon: { couponId: coupon.couponId, code: coupon.code, discount: coupon.discount.toJSON() } } : {}),
-        ...((membership || coupon) ? { payable: payable.toJSON() } : {}),
+        ...(referral ? { referral: { claimId: referral.claimId, discount: referral.discount.toJSON() } } : {}),
+        ...((membership || coupon || referral) ? { payable: payable.toJSON() } : {}),
         ...(ageRestricted ? { ageRestricted: true } : {}),
       };
     } catch (error) {
@@ -323,6 +348,7 @@ export class CommerceService {
           platformReceives: b.platformReceives.toJSON(),
           ...(quote.membership ? { membershipDiscount: quote.membership.discount } : {}),
           ...(quote.coupon ? { couponDiscount: quote.coupon.discount } : {}),
+          ...(quote.referral ? { referralDiscount: quote.referral.discount } : {}),
         },
         paymentMode: settledMode,
         ...(walletFunded ? { walletFunded: true } : {}),
@@ -345,6 +371,10 @@ export class CommerceService {
       // Log the coupon redemption now the order exists (idempotent on the order id).
       if (quote.coupon && this.coupons) {
         await this.coupons.record(sql, country, quote.coupon.couponId, principal.userId, orderId, Money.fromJSON(quote.coupon.discount));
+      }
+      // Mark the referee's first-order discount as used so it applies only once.
+      if (quote.referral && this.referral) {
+        await this.referral.consumeDiscount(sql, quote.referral.claimId);
       }
       if (walletFunded) {
         // Reserve the money from the balance, then settle the order as paid at once.
@@ -484,11 +514,13 @@ export class CommerceService {
     const ccy0 = Money.fromJSON(s.total).currency;
     const discount = m.membershipDiscount ? Money.fromJSON(m.membershipDiscount) : Money.zero(ccy0);
     const couponDisc = m.couponDiscount ? Money.fromJSON(m.couponDiscount) : Money.zero(ccy0);
+    const referralDisc = m.referralDiscount ? Money.fromJSON(m.referralDiscount) : Money.zero(ccy0);
     const cashAccount = s.walletFunded ? "customer_wallet" : s.paymentMode === "PREPAID" ? "psp_clearing" : "cod_cash_in_transit";
     return [
       { account: cashAccount, country: c, amount: Money.fromJSON(s.total) },
       { account: "subscription_revenue", country: c, amount: discount },
-      { account: "promotion_expense", country: c, amount: couponDisc },
+      // The platform funds both coupon and referral first-order discounts.
+      { account: "promotion_expense", country: c, amount: couponDisc.add(referralDisc) },
       { account: "restaurant_payable", country: c, amount: neg(m.merchantReceives) },
       { account: "service_charge_revenue", country: c, amount: neg(m.serviceCharge) },
       { account: "rider_payable", country: c, amount: neg(m.riderReceives) },
@@ -641,6 +673,7 @@ export function serialiseQuote(q: Quote) {
         }
       : {}),
     ...(q.coupon ? { coupon: { code: q.coupon.code, discount: m(Money.fromJSON(q.coupon.discount)) } } : {}),
+    ...(q.referral ? { referral: { discount: m(Money.fromJSON(q.referral.discount)) } } : {}),
     ...(q.payable ? { payable: m(Money.fromJSON(q.payable)) } : {}),
     ...(q.ageRestricted ? { age_restricted: true } : {}),
   };

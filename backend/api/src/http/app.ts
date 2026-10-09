@@ -67,6 +67,7 @@ export async function createApi(deps: ApiDeps): Promise<NestFastifyApplication> 
   const wallet = new WalletService(deps.db, deps.registry, payments, commerce, now);
   commerce.useWallet(wallet);
   const referrals = new ReferralService(deps.db, deps.registry, wallet, now);
+  commerce.useReferral(referrals);
   const onboarding = new OnboardingService(deps.db, commerce, now, comms);
 
   @Module({})
