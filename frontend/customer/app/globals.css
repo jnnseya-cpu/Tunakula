@@ -1226,6 +1226,18 @@ section.tight { padding: 44px 0; }
 .wallet-split input { margin-top: 2px; flex: none; width: 17px; height: 17px; }
 .wallet-split b { font-weight: 700; }
 
+/* Marketing banners (additive) */
+.promo-strip { display: flex; flex-direction: column; gap: 10px; margin: 18px auto; }
+.promo-banner { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 20px; border-radius: 16px; text-decoration: none; color: #fff; }
+.promo-banner .pb-text { display: flex; flex-direction: column; gap: 2px; }
+.promo-banner .pb-text b { font-size: 17px; font-weight: 800; }
+.promo-banner .pb-text span { font-size: 14px; opacity: 0.92; }
+.promo-banner .pb-cta { flex: none; font-weight: 800; font-size: 14px; white-space: nowrap; }
+.promo-banner.tone-accent { background: linear-gradient(120deg, #fad20e, #f2a900); color: #1f1a00; }
+.promo-banner.tone-dark { background: linear-gradient(120deg, #1f305d, #121a33); }
+.promo-banner.tone-green { background: linear-gradient(120deg, #0a7d33, #0f9d44); }
+.promo-banner.tone-orange { background: linear-gradient(120deg, #e8740c, #c85a00); }
+
 /* In-order chat (additive) */
 .order-chat .chat-log { display: flex; flex-direction: column; gap: 8px; max-height: 300px; overflow-y: auto; padding: 4px 0; margin: 6px 0 10px; }
 .chat-msg { display: flex; flex-direction: column; max-width: 80%; }

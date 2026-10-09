@@ -3235,3 +3235,44 @@ describe("in-order chat (customer ↔ rider)", () => {
     assert.equal((await call("POST", `/v1/orders/${p.orderId}/messages`, { token: customer.token, country: "CD", body: { body: "too late" } })).body.code, "ORDER_CLOSED");
   });
 });
+
+describe("marketing banners", () => {
+  const iso = (ms: number) => new Date(Date.now() + ms).toISOString();
+  test("an admin places banners; the customer app shows only the live ones", async () => {
+    // Only a market admin can place banners.
+    assert.equal((await call("POST", "/v1/admin/banners", { token: customer.token, country: "CD", body: { headline: "x", starts_at: iso(-1000), ends_at: iso(1000) } })).status, 403);
+    // A bad link is refused.
+    assert.equal((await call("POST", "/v1/admin/banners", { token: admin.token, country: "CD", body: { headline: "x", cta_href: "javascript:alert(1)", starts_at: iso(-1000), ends_at: iso(3_600_000) } })).body.code, "LINK_INVALID");
+
+    const live = await call("POST", "/v1/admin/banners", { token: admin.token, country: "CD", body: { headline: "Free delivery weekend", subtext: "On every order over $10", cta_label: "Order now", cta_href: "/order", tone: "GREEN", sort: 0, starts_at: iso(-60_000), ends_at: iso(3_600_000) } });
+    assert.equal(live.status, 201, JSON.stringify(live.body));
+    assert.equal(live.body.status, "LIVE");
+    // An upcoming banner and an ended one — neither should show to customers yet.
+    await call("POST", "/v1/admin/banners", { token: admin.token, country: "CD", body: { headline: "Coming soon", sort: 1, starts_at: iso(3 * 86_400_000), ends_at: iso(4 * 86_400_000) } });
+    await call("POST", "/v1/admin/banners", { token: admin.token, country: "CD", body: { headline: "Last week", sort: 2, starts_at: iso(-10 * 86_400_000), ends_at: iso(-5 * 86_400_000) } });
+
+    // The customer app sees only the live banner.
+    const shown = await call("GET", "/v1/banners", { country: "CD" });
+    assert.equal(shown.status, 200, JSON.stringify(shown.body));
+    const headlines = shown.body.banners.map((b: { headline: string }) => b.headline);
+    assert.ok(headlines.includes("Free delivery weekend"));
+    assert.ok(!headlines.includes("Coming soon") && !headlines.includes("Last week"), "only live banners show");
+    const b0 = shown.body.banners.find((b: { headline: string }) => b.headline === "Free delivery weekend");
+    assert.equal(b0.tone, "GREEN");
+    assert.equal(b0.cta_href, "/order");
+
+    // The admin list shows every banner with its state.
+    const all = await call("GET", "/v1/admin/banners", { token: admin.token, country: "CD" });
+    const states = Object.fromEntries(all.body.banners.map((b: { headline: string; status: string }) => [b.headline, b.status]));
+    assert.equal(states["Free delivery weekend"], "LIVE");
+    assert.equal(states["Coming soon"], "UPCOMING");
+    assert.equal(states["Last week"], "ENDED");
+
+    // Switching the live banner off removes it from the customer app.
+    await call("POST", `/v1/admin/banners/${live.body.id}`, { token: admin.token, country: "CD", body: { active: false } });
+    assert.ok(!(await call("GET", "/v1/banners", { country: "CD" })).body.banners.some((b: { id: string }) => b.id === live.body.id));
+    // Deleting works.
+    assert.equal((await call("DELETE", `/v1/admin/banners/${live.body.id}`, { token: admin.token, country: "CD" })).status, 200);
+    assert.equal((await call("DELETE", `/v1/admin/banners/${live.body.id}`, { token: admin.token, country: "CD" })).status, 404);
+  });
+});

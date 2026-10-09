@@ -5,6 +5,7 @@ import { LiveMerchantGrid } from "../../components/live";
 import { StoreFilter } from "../../components/filter";
 import { StoreSorter } from "../../components/location";
 import { LiveStoreGrid } from "../../components/live-store";
+import { PromoBanners } from "../../components/promo-banners";
 import { MERCHANTS } from "../../lib/catalogue";
 
 export const metadata: Metadata = { title: "Order food in Kinshasa", description: "Restaurants, grills, malewa, bakeries and groceries delivering across Kinshasa." };
@@ -21,6 +22,7 @@ export default function Order() {
           <StoreFilter />
         </div>
       </section>
+      <PromoBanners />
       <section className="tight" style={{ borderBottom: 0 }}>
         <div className="wrap">
           <StoreSorter scope="order" />

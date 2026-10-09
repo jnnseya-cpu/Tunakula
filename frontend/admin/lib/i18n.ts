@@ -29,6 +29,7 @@ const T = {
   coupons: { fr: "Codes promo", en: "Promo codes" },
   loyalty: { fr: "Points de fidélité", en: "Loyalty points" },
   cashback: { fr: "Cashback", en: "Cashback" },
+  banners: { fr: "Bannières", en: "Banners" },
   support: { fr: "Aide et soutien", en: "Support" },
   customers: { fr: "Clients", en: "Customers" },
   riders: { fr: "Livreurs et candidatures", en: "Riders and applications" },

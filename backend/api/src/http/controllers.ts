@@ -23,6 +23,7 @@ import type { ReferralService } from "../app/referrals.ts";
 import type { LoyaltyService } from "../app/loyalty.ts";
 import type { CashbackService } from "../app/cashback.ts";
 import type { ChatService } from "../app/chat.ts";
+import type { BannerService } from "../app/banners.ts";
 import type { MerchantOnboardingService } from "../app/merchant-onboarding.ts";
 import type { NotificationService } from "../app/comms.ts";
 import { serialiseQuote, type CommerceService, type PlaceOrderInput, type QuoteInput } from "../app/commerce.ts";
@@ -1307,6 +1308,47 @@ export class LoyaltyController {
   @HttpCode(200)
   async setConfig(@Req() req: FastifyRequest, @Body() body: { enabled?: boolean; earn_bps?: number; redeem_minor_per_point?: number; min_redeem_points?: number }) {
     return this.loyalty.setConfig(country(req), await this.#p(req), body ?? {});
+  }
+}
+
+/** Marketing banners: live ones for the customer app, CRUD for a market admin. */
+@Controller("v1")
+export class BannerController {
+  constructor(
+    @Inject(TOKENS.db) private readonly db: Db,
+    @Inject(TOKENS.tokens) private readonly tokens: TokenService,
+    @Inject(TOKENS.banners) private readonly banners: BannerService,
+  ) {}
+
+  #p(req: FastifyRequest) {
+    return this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+  }
+
+  @Get("banners")
+  async live(@Req() req: FastifyRequest) {
+    return this.banners.live(country(req));
+  }
+
+  @Get("admin/banners")
+  async list(@Req() req: FastifyRequest) {
+    return this.banners.list(country(req), await this.#p(req));
+  }
+
+  @Post("admin/banners")
+  async create(@Req() req: FastifyRequest, @Body() body: unknown) {
+    return this.banners.create(country(req), await this.#p(req), (body ?? {}) as never);
+  }
+
+  @Post("admin/banners/:id")
+  @HttpCode(200)
+  async update(@Req() req: FastifyRequest, @Param("id") id: string, @Body() body: unknown) {
+    return this.banners.update(country(req), await this.#p(req), id, (body ?? {}) as never);
+  }
+
+  @Delete("admin/banners/:id")
+  @HttpCode(200)
+  async remove(@Req() req: FastifyRequest, @Param("id") id: string) {
+    return this.banners.remove(country(req), await this.#p(req), id);
   }
 }
 

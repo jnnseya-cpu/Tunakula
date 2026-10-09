@@ -177,6 +177,10 @@ export const myLoyaltyHistory = () => api<{ transactions: LoyaltyTxn[] }>("/v1/m
 export const redeemLoyalty = (points: number) =>
   api<{ points_balance: number; credited?: MoneyWire; wallet_balance: MoneyWire }>("/v1/me/loyalty/redeem", { method: "POST", body: { points } });
 
+// ── Marketing banners ──
+export interface Banner { id: string; headline: string; subtext: string; cta_label: string; cta_href: string; tone: "ACCENT" | "DARK" | "GREEN" | "ORANGE"; sort: number }
+export const liveBanners = () => api<{ banners: Banner[] }>("/v1/banners", { auth: false }).then((r) => r.banners);
+
 // ── In-order chat (customer ↔ rider) ──
 export interface ChatMessage { id: string; from: "CUSTOMER" | "RIDER"; mine: boolean; body: string; at: string }
 export interface ChatThread { role: "CUSTOMER" | "RIDER"; counterparty: "CUSTOMER" | "RIDER" | null; open: boolean; messages: ChatMessage[] }
