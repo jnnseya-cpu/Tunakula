@@ -4,7 +4,7 @@ import type { CountryProfile } from "@tunakula/ts-contracts";
 import type { Db, Sql } from "../db/db.ts";
 import type { CountryConfigRegistry } from "../modules/config/config-registry.ts";
 import type { Principal } from "../modules/identity/policy.ts";
-import { addMenuItem, createBranch, ensureGroup, getBranch, linkedCopies, menuOf, setAvailability, syncMenu, updateBranchProfile, updateMenuItem, type Addon, type BranchProfilePatch, type BranchRow, type MenuItemInput, type MenuItemRow, type Variation, type VariationOption } from "../persistence/catalogue.ts";
+import { addMenuItem, createBranch, ensureGroup, getBranch, linkedCopies, menuOf, setAvailability, setBranchMarkup, syncMenu, updateBranchProfile, updateMenuItem, type Addon, type BranchProfilePatch, type BranchRow, type MenuItemInput, type MenuItemRow, type Variation, type VariationOption } from "../persistence/catalogue.ts";
 import { audit } from "../persistence/identity.ts";
 import { badRequest, notFound, unprocessable } from "./errors.ts";
 import { require } from "./principal.ts";
@@ -190,7 +190,7 @@ export class CatalogueService {
    * every dish; later calls sync edits down — new dishes are added, existing copies updated (the target's
    * own availability is kept). Target-only dishes are left alone.
    */
-  async copyMenuTo(country: string, principal: Principal, sourceId: string, targetId: string) {
+  async copyMenuTo(country: string, principal: Principal, sourceId: string, targetId: string, adjustPct?: number | null) {
     if (!targetId) throw badRequest("TARGET_REQUIRED", "Choose a branch to copy the menu into");
     if (sourceId === targetId) throw badRequest("SAME_BRANCH", "Choose a different branch to copy the menu into");
     const profile = this.#profile(country);
@@ -201,9 +201,16 @@ export class CatalogueService {
       if (!target) throw notFound("Target branch");
       require(principal, "menu:write", { type: "menu", country, branchId: source.id, restaurantGroupId: source.restaurant_group_id }, { activeCountry: country, profile });
       require(principal, "menu:write", { type: "menu", country, branchId: target.id, restaurantGroupId: target.restaurant_group_id }, { activeCountry: country, profile });
-      const { added, updated } = await syncMenu(sql, source, target);
-      await audit(sql, { actor: principal.userId, action: "menu.synced", target: `branch:${targetId}`, country, detail: { from: sourceId, added, updated } });
-      return { added, updated, copied: added + updated, target_branch_id: targetId };
+      // A price adjust (e.g. +10% for a pricier location) is stored on the target, so later syncs keep applying it.
+      let bps = target.price_markup_bps ?? 0;
+      if (adjustPct !== undefined && adjustPct !== null) {
+        if (!Number.isFinite(adjustPct) || adjustPct < -90 || adjustPct > 500) throw badRequest("ADJUST_INVALID", "The price adjust is a percentage from -90 to 500");
+        bps = Math.round(adjustPct * 100);
+        if (bps !== (target.price_markup_bps ?? 0)) await setBranchMarkup(sql, targetId, bps);
+      }
+      const { added, updated } = await syncMenu(sql, source, target, bps);
+      await audit(sql, { actor: principal.userId, action: "menu.synced", target: `branch:${targetId}`, country, detail: { from: sourceId, added, updated, markup_bps: bps } });
+      return { added, updated, copied: added + updated, markup_pct: bps / 100, target_branch_id: targetId };
     });
   }
 

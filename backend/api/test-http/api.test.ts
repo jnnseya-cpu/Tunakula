@@ -2659,9 +2659,36 @@ describe("brands and franchises", () => {
     const bMenu2 = await call("GET", `/v1/branches/${b}/menu`, { country: "CD" });
     const bItems = bMenu2.body.items as { names: Record<string, string>; prices: Record<string, { amount_minor: string }>; available: boolean }[];
     const moambe2 = bItems.find((i) => i.names.fr === "Poulet moambe")!;
-    assert.equal(moambe2.prices.USD.amount_minor, "1400", "the price edit synced down");
+    assert.equal(moambe2.prices.USD!.amount_minor, "1400", "the price edit synced down");
     assert.equal(moambe2.available, false, "the branch's own sold-out flag is kept");
     assert.ok(bItems.some((i) => i.names.fr === "Saka-saka"), "the new dish synced down");
     assert.equal(bItems.length, 3, "no duplicates — sync upserts by lineage");
+  });
+
+  test("copy with a price adjust (+10%) marks the target up, and later syncs keep the markup", async () => {
+    const owner = await signIn("+243810000265");
+    const reg = await call("POST", "/v1/merchant/register", { token: owner.token, country: "CD", body: { business_name: "Pricey Co" } });
+    const src = (await call("POST", "/v1/merchant/branches", { token: owner.token, country: "CD", body: { group_id: reg.body.group_id, name: "Src", lat: -4.31, lng: 15.28 } })).body.branch_id;
+    const dst = (await call("POST", "/v1/merchant/branches", { token: owner.token, country: "CD", body: { group_id: reg.body.group_id, name: "Pricier", lat: -4.34, lng: 15.33 } })).body.branch_id;
+    await call("POST", `/v1/branches/${src}/items`, { token: owner.token, country: "CD", body: { names: { fr: "Burger" }, prices: { USD: "10.00" }, addons: [{ name: "Fromage", price: "1.00" }] } });
+
+    // Copy with +10%: the target's goods and add-on prices are marked up.
+    const copy = await call("POST", `/v1/branches/${src}/menu/copy-to`, { token: owner.token, country: "CD", body: { target_branch_id: dst, price_adjust_pct: 10 } });
+    assert.equal(copy.body.markup_pct, 10);
+    let burger = (await call("GET", `/v1/branches/${dst}/menu`, { country: "CD" })).body.items[0];
+    assert.equal(burger.prices.USD.amount_minor, "1100", "goods +10%");
+    assert.equal(burger.addons[0].price, "110", "add-on +10% (minor units)");
+
+    // The source raises its price; a plain sync (no pct) keeps the stored +10%.
+    const srcItem = (await call("GET", `/v1/branches/${src}/menu`, { country: "CD" })).body.items[0];
+    await call("POST", `/v1/branches/${src}/items/${srcItem.id}`, { token: owner.token, country: "CD", body: { names: { fr: "Burger" }, prices: { USD: "20.00" }, addons: [{ name: "Fromage", price: "1.00" }] } });
+    const sync = await call("POST", `/v1/branches/${src}/menu/copy-to`, { token: owner.token, country: "CD", body: { target_branch_id: dst } });
+    assert.equal(sync.body.markup_pct, 10, "the markup is remembered");
+    burger = (await call("GET", `/v1/branches/${dst}/menu`, { country: "CD" })).body.items[0];
+    assert.equal(burger.prices.USD.amount_minor, "2200", "the raised price syncs down, still +10%");
+
+    // The linked-branches list reports the markup.
+    const copies = await call("GET", `/v1/branches/${src}/menu/copies`, { token: owner.token, country: "CD" });
+    assert.equal(copies.body.branches[0].markup_bps, 1000);
   });
 });

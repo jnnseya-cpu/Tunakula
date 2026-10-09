@@ -168,9 +168,10 @@ export class CatalogueController {
   /** Copy or sync this branch's whole menu into another branch of the same owner. */
   @Post("branches/:id/menu/copy-to")
   @HttpCode(200)
-  async copyMenu(@Req() req: FastifyRequest, @Param("id") id: string, @Body() body: { target_branch_id?: string }) {
+  async copyMenu(@Req() req: FastifyRequest, @Param("id") id: string, @Body() body: { target_branch_id?: string; price_adjust_pct?: number | string | null }) {
     const principal = await this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
-    return this.catalogue.copyMenuTo(country(req), principal, id, String(body?.target_branch_id ?? ""));
+    const pct = body?.price_adjust_pct === undefined || body.price_adjust_pct === null || body.price_adjust_pct === "" ? undefined : Number(body.price_adjust_pct);
+    return this.catalogue.copyMenuTo(country(req), principal, id, String(body?.target_branch_id ?? ""), pct);
   }
 
   /** The branches already seeded from this one, so the owner can sync later edits down to them. */

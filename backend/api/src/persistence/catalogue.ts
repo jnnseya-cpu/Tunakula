@@ -22,6 +22,7 @@ export interface BranchRow {
   min_order_minor?: string | null;
   logo_id?: string | null;
   cover_id?: string | null;
+  price_markup_bps?: number;
 }
 
 /** The editable business-profile fields of a branch (address, contact, about, cuisines, order minimum, logo, cover). */
@@ -125,7 +126,7 @@ export async function publishBranch(sql: Sql, branchId: string): Promise<void> {
 export async function getBranch(sql: Sql, id: string): Promise<BranchRow | undefined> {
   const rows = await sql.query<BranchRow & Record<string, unknown>>(
     `SELECT id, country_iso2, brand_id, restaurant_group_id, name, city, commune, lat::text, lng::text, status, hours, special_hours,
-            address, phone, email, description, cuisines, min_order_minor::text AS min_order_minor, logo_id::text AS logo_id, cover_id::text AS cover_id
+            address, phone, email, description, cuisines, min_order_minor::text AS min_order_minor, logo_id::text AS logo_id, cover_id::text AS cover_id, price_markup_bps
        FROM catalogue.branch WHERE id = $1`,
     [id],
   );
@@ -179,7 +180,7 @@ export async function setAvailability(sql: Sql, itemId: string, available: boole
  * is added and an existing copy is updated in place (keeping the target's own availability). This is both the
  * first copy (all added) and later syncs (edits flow down). Target-only dishes are left untouched.
  */
-export async function syncMenu(sql: Sql, source: BranchRow, target: BranchRow): Promise<{ added: number; updated: number }> {
+export async function syncMenu(sql: Sql, source: BranchRow, target: BranchRow, markupBps = 0): Promise<{ added: number; updated: number }> {
   const items = await menuOf(sql, source.id);
   // Which source dishes already have a copy in the target?
   const existing = await sql.query<{ id: string; source_item_id: string }>(
@@ -189,11 +190,11 @@ export async function syncMenu(sql: Sql, source: BranchRow, target: BranchRow): 
   const bySource = new Map(existing.map((r) => [r.source_item_id, r.id]));
   let added = 0, updated = 0;
   for (const it of items) {
-    const input: MenuItemInput = {
+    const input: MenuItemInput = markup({
       names: it.names, description: it.description, prices: it.prices, category: it.category, veg: it.veg,
       tags: it.tags, allergens: it.allergens, recommended: it.recommended, variations: it.variations, addons: it.addons,
       dietary: it.dietary, nutrition: it.nutrition, ageRestricted: it.age_restricted, imageId: it.image_id,
-    };
+    }, markupBps);
     const targetItemId = bySource.get(it.id);
     if (targetItemId) { await updateMenuItem(sql, target.id, targetItemId, input); updated++; }
     else { await addMenuItem(sql, target, { ...input, sourceItemId: it.id }); added++; }
@@ -201,15 +202,39 @@ export async function syncMenu(sql: Sql, source: BranchRow, target: BranchRow): 
   return { added, updated };
 }
 
+/** Multiplies a minor-unit price by (1 + bps/10000), rounded to the nearest minor unit. */
+function markMinor(minor: string, bps: number): string {
+  if (!bps) return minor;
+  const n = BigInt(minor), scale = BigInt(10000 + bps);
+  const marked = n < 0n ? -((-n * scale + 5000n) / 10000n) : (n * scale + 5000n) / 10000n;
+  return marked.toString();
+}
+
+/** Applies a price markup to a dish's goods price and every variation/add-on price. */
+function markup(input: MenuItemInput, bps: number): MenuItemInput {
+  if (!bps) return input;
+  return {
+    ...input,
+    prices: Object.fromEntries(Object.entries(input.prices).map(([c, m]) => [c, markMinor(m, bps)])),
+    ...(input.variations ? { variations: input.variations.map((v) => ({ ...v, options: v.options.map((o) => ({ ...o, price: markMinor(o.price, bps) })) })) } : {}),
+    ...(input.addons ? { addons: input.addons.map((a) => ({ ...a, price: markMinor(a.price, bps) })) } : {}),
+  };
+}
+
+/** Records the price markup a branch applies to prices synced from its source (basis points; can be negative). */
+export async function setBranchMarkup(sql: Sql, branchId: string, bps: number): Promise<void> {
+  await sql.query("UPDATE catalogue.branch SET price_markup_bps = $2, updated_at = now() WHERE id = $1", [branchId, bps]);
+}
+
 /** The branches (other than the source) that hold dishes copied from this source, with how many. */
-export async function linkedCopies(sql: Sql, sourceBranchId: string): Promise<{ id: string; name: string; linked: number }[]> {
-  return sql.query<{ id: string; name: string; linked: number }>(
-    `SELECT b.id, b.name, count(*)::int AS linked
+export async function linkedCopies(sql: Sql, sourceBranchId: string): Promise<{ id: string; name: string; linked: number; markup_bps: number }[]> {
+  return sql.query<{ id: string; name: string; linked: number; markup_bps: number }>(
+    `SELECT b.id, b.name, count(*)::int AS linked, b.price_markup_bps AS markup_bps
        FROM catalogue.menu_item m
        JOIN catalogue.menu_item src ON src.id = m.source_item_id
        JOIN catalogue.branch b ON b.id = m.branch_id
       WHERE src.branch_id = $1 AND m.branch_id <> $1
-      GROUP BY b.id, b.name ORDER BY b.name`,
+      GROUP BY b.id, b.name, b.price_markup_bps ORDER BY b.name`,
     [sourceBranchId],
   );
 }

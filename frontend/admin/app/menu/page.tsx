@@ -12,7 +12,7 @@ import { money } from "../../lib/format";
 import { blankDish, DishFields, dishPayload, foodPhotoUrl, OptionsEditor, type DishFormValue } from "../../components/dish-form";
 
 interface Branch { id: string; name: string; status: string; items: number }
-interface LinkedBranch { id: string; name: string; linked: number }
+interface LinkedBranch { id: string; name: string; linked: number; markup_bps: number }
 interface MoneyWire { amount_minor: string; currency: string }
 interface ApiOption { id: string; name: string; price: string }
 interface ApiVariation { id: string; name: string; type: "SINGLE" | "MULTI"; required: boolean; min: number; max: number; options: ApiOption[] }
@@ -46,6 +46,7 @@ function Menu() {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [copyTarget, setCopyTarget] = useState("");
+  const [copyPct, setCopyPct] = useState("");
   const [copies, setCopies] = useState<LinkedBranch[]>([]);
 
   useEffect(() => {
@@ -134,23 +135,25 @@ function Menu() {
     } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   };
 
-  const pushMenu = async (targetId: string, targetName: string, confirmMsg: string) => {
+  const pushMenu = async (targetId: string, targetName: string, confirmMsg: string, pct?: string) => {
     if (!window.confirm(confirmMsg)) return;
     setBusy(true); setNotice(null); setError(null);
     try {
-      const r = await api<{ added: number; updated: number }>(`/v1/branches/${branchId}/menu/copy-to`, { method: "POST", country, body: { target_branch_id: targetId } });
+      const r = await api<{ added: number; updated: number; markup_pct: number }>(`/v1/branches/${branchId}/menu/copy-to`, { method: "POST", country, body: { target_branch_id: targetId, ...(pct && pct.trim() !== "" ? { price_adjust_pct: Number(pct) } : {}) } });
       const parts = [r.added ? L(`${r.added} ajoutés`, `${r.added} added`) : "", r.updated ? L(`${r.updated} mis à jour`, `${r.updated} updated`) : ""].filter(Boolean).join(", ") || L("rien à changer", "nothing to change");
-      setNotice(L(`« ${targetName} » : ${parts}.`, `"${targetName}": ${parts}.`));
-      setCopyTarget("");
+      const price = r.markup_pct ? ` · ${r.markup_pct > 0 ? "+" : ""}${r.markup_pct}%` : "";
+      setNotice(L(`« ${targetName} » : ${parts}${price}.`, `"${targetName}": ${parts}${price}.`));
+      setCopyTarget(""); setCopyPct("");
       load();
     } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   };
   const copyMenu = () => {
     if (!copyTarget) return;
     const targetName = branches?.find((b) => b.id === copyTarget)?.name ?? "";
-    void pushMenu(copyTarget, targetName, L(`Copier ${items?.length ?? 0} plats vers « ${targetName} » ?`, `Copy ${items?.length ?? 0} dishes to "${targetName}"?`));
+    const pctMsg = copyPct.trim() ? L(` (prix ${Number(copyPct) >= 0 ? "+" : ""}${copyPct}%)`, ` (prices ${Number(copyPct) >= 0 ? "+" : ""}${copyPct}%)`) : "";
+    void pushMenu(copyTarget, targetName, L(`Copier ${items?.length ?? 0} plats vers « ${targetName} »${pctMsg} ?`, `Copy ${items?.length ?? 0} dishes to "${targetName}"${pctMsg}?`), copyPct);
   };
-  const syncMenu = (c: LinkedBranch) => void pushMenu(c.id, c.name, L(`Synchroniser la carte vers « ${c.name} » ? Les plats liés seront mis à jour (la disponibilité locale est conservée).`, `Sync the menu to "${c.name}"? Linked dishes are updated (local availability is kept).`));
+  const syncMenu = (c: LinkedBranch) => void pushMenu(c.id, c.name, L(`Synchroniser la carte vers « ${c.name} » ? Les plats liés seront mis à jour${c.markup_bps ? ` (prix ${c.markup_bps > 0 ? "+" : ""}${c.markup_bps / 100}%)` : ""} ; la disponibilité locale est conservée.`, `Sync the menu to "${c.name}"? Linked dishes are updated${c.markup_bps ? ` (prices ${c.markup_bps > 0 ? "+" : ""}${c.markup_bps / 100}%)` : ""}; local availability is kept.`));
 
   const save = async () => {
     if (!form) return;
@@ -188,6 +191,7 @@ function Menu() {
               <option value="">{L("Copier la carte vers…", "Copy menu to…")}</option>
               {branches.filter((b) => b.id !== branchId).map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
             </select>
+            {copyTarget ? <input className="input" inputMode="decimal" value={copyPct} onChange={(e) => setCopyPct(e.target.value)} placeholder={L("prix %", "price %")} title={L("Ajuster les prix, ex. 10 pour +10 %", "Adjust prices, e.g. 10 for +10%")} style={{ width: 74 }} /> : null}
             <button type="button" className="btn" disabled={!copyTarget || busy || !items?.length} onClick={copyMenu}>{L("Copier", "Copy")}</button>
           </span>
         ) : null}
@@ -199,7 +203,7 @@ function Menu() {
           <span className="ms-label">{L("Cartes liées à cet établissement :", "Branches synced from here:")}</span>
           {copies.map((c) => (
             <span key={c.id} className="ms-chip">
-              {c.name} <span className="muted">· {c.linked}</span>
+              {c.name} <span className="muted">· {c.linked}{c.markup_bps ? ` · ${c.markup_bps > 0 ? "+" : ""}${c.markup_bps / 100}%` : ""}</span>
               <button type="button" className="btn ghost sm" disabled={busy} onClick={() => syncMenu(c)}>{L("Synchroniser", "Sync")}</button>
             </span>
           ))}
