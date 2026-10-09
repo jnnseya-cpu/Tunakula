@@ -5,14 +5,14 @@
  */
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { api, ApiError, getSession, listFavourites, loadCart, lineSig, money, mulMinor, addMinor, saveCart, toggleFavourite, type Cart, type CartLine, type CartLineOption, type MoneyWire } from "../lib/api";
+import { api, ApiError, foodPhotoUrl, getSession, listFavourites, loadCart, lineSig, money, mulMinor, addMinor, saveCart, toggleFavourite, type Cart, type CartLine, type CartLineOption, type MoneyWire } from "../lib/api";
 import { ClockIcon, PinIcon, useLocationCtx } from "./location";
 import { PlateArt, recipeFor } from "./plate-art";
 import { BookTable } from "./book-table";
 
 interface VOption { id: string; name: string; price: string }
 interface Variation { id: string; name: string; type: "SINGLE" | "MULTI"; required: boolean; min: number; max: number; options: VOption[] }
-interface MenuItem { id: string; names: Record<string, string>; prices: Record<string, MoneyWire>; tags: string[]; allergens: string[]; available: boolean; variations?: Variation[]; addons?: VOption[]; veg?: boolean | null; dietary?: string[]; nutrition?: Record<string, number>; age_restricted?: boolean }
+interface MenuItem { id: string; names: Record<string, string>; prices: Record<string, MoneyWire>; tags: string[]; allergens: string[]; available: boolean; variations?: Variation[]; addons?: VOption[]; veg?: boolean | null; dietary?: string[]; nutrition?: Record<string, number>; age_restricted?: boolean; image_id?: string | null }
 
 const DIETARY_LABEL: Record<string, string> = { VEGETARIAN: "Vegetarian", VEGAN: "Vegan", HALAL: "Halal", KOSHER: "Kosher", GLUTEN_FREE: "Gluten-free", DAIRY_FREE: "Dairy-free", NUT_FREE: "Nut-free", ORGANIC: "Organic", SPICY: "Spicy" };
 /** The dietary tags the storefront offers as quick filters. */
@@ -174,7 +174,7 @@ export function LiveStore() {
                     <p className="li-price num">{price ? money(price) : "—"}{optioned ? "+" : ""}</p>
                   </div>
                   <div className="li-pic" style={{ background: bg }}>
-                    <PlateArt className="pic" recipe={recipeFor(name)} seed={i.id} />
+                    {i.image_id ? <img className="pic li-photo" src={foodPhotoUrl(i.image_id)} alt="" loading="lazy" /> : <PlateArt className="pic" recipe={recipeFor(name)} seed={i.id} />}
                     {i.available ? (
                       !optioned && plainLine ? (
                         <span className="qty-pill"><button type="button" onClick={() => change(plainLine.key, -1)} aria-label={`One less ${name}`}>−</button><b>{inCart}</b><button type="button" onClick={() => add(i)} aria-label={`One more ${name}`}>+</button></span>

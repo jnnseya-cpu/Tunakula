@@ -56,6 +56,9 @@ export async function api<T>(path: string, opts: { method?: string; body?: unkno
   return body as T;
 }
 
+/** The public URL of a food photo, for an <img src>. Country is in the query so no header is needed. */
+export const foodPhotoUrl = (imageId: string) => `${API_URL}/v1/menu-images/${imageId}?c=${COUNTRY}`;
+
 /** "18,00 $US" / "16 000 FC": minor units shifted by the currency's own decimals, never via floats. */
 export function money(m: MoneyWire, locale = "fr-FR"): string {
   const digits = new Intl.NumberFormat(locale, { style: "currency", currency: m.currency }).resolvedOptions().maximumFractionDigits ?? 2;

@@ -9,7 +9,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Gate, Shell, useConsole } from "../../components/shell";
 import { api } from "../../lib/api";
 import { money } from "../../lib/format";
-import { blankDish, DishFields, dishPayload, OptionsEditor, type DishFormValue } from "../../components/dish-form";
+import { blankDish, DishFields, dishPayload, foodPhotoUrl, OptionsEditor, type DishFormValue } from "../../components/dish-form";
 
 interface Branch { id: string; name: string; status: string; items: number }
 interface MoneyWire { amount_minor: string; currency: string }
@@ -20,7 +20,7 @@ interface Item {
   prices: Record<string, MoneyWire>; category: string | null; veg: boolean | null;
   tags: string[]; allergens: string[]; available: boolean; recommended: boolean;
   variations: ApiVariation[]; addons: ApiOption[];
-  dietary?: string[]; nutrition?: Record<string, number>; age_restricted?: boolean;
+  dietary?: string[]; nutrition?: Record<string, number>; age_restricted?: boolean; image_id?: string | null;
 }
 interface Config { money: { currencies: { settlement: string; accepted: { code: string }[] } } }
 
@@ -78,6 +78,7 @@ function Menu() {
     carbs_g: it.nutrition?.carbs_g !== undefined ? String(it.nutrition.carbs_g) : "", fat_g: it.nutrition?.fat_g !== undefined ? String(it.nutrition.fat_g) : "",
     variations: (it.variations ?? []).map((v) => ({ name: v.name, type: v.type, required: v.required, options: v.options.map((o) => ({ name: o.name, price: decimal(o.price, settlement) })) })),
     addons: (it.addons ?? []).map((a) => ({ name: a.name, price: decimal(a.price, settlement) })),
+    image_id: it.image_id ?? "",
   });
 
   const branchName = branches?.find((b) => b.id === branchId)?.name ?? "menu";
@@ -164,11 +165,11 @@ function Menu() {
 
       {!items ? <div className="muted">…</div> : (
         <table className="tbl menu-tbl">
-          <thead><tr><th>#</th><th>{L("Nom", "Name")}</th><th>{L("Catégorie", "Category")}</th><th>{L("Prix", "Price")}</th><th>{L("Recommandé", "Recommended")}</th><th>{L("Disponible", "Available")}</th><th></th></tr></thead>
+          <thead><tr><th></th><th>{L("Nom", "Name")}</th><th>{L("Catégorie", "Category")}</th><th>{L("Prix", "Price")}</th><th>{L("Recommandé", "Recommended")}</th><th>{L("Disponible", "Available")}</th><th></th></tr></thead>
           <tbody>
-            {shown.map((it, i) => (
+            {shown.map((it) => (
               <tr key={it.id}>
-                <td className="num muted">{i + 1}</td>
+                <td>{it.image_id ? <img className="menu-thumb" src={foodPhotoUrl(it.image_id, country)} alt="" /> : <span className="menu-thumb-empty" aria-hidden>🍽️</span>}</td>
                 <td>{nameOf(it.names, lang)}{it.veg === true ? <span className="dot veg" title="veg" /> : null}</td>
                 <td className="muted">{it.category ?? "—"}</td>
                 <td className="num">{it.prices[settlement] ? money(lang, it.prices[settlement]!.amount_minor, settlement) : "—"}</td>
@@ -186,7 +187,7 @@ function Menu() {
         <div className="menu-form-wrap" role="dialog" aria-modal="true">
           <div className="menu-form card">
             <div className="card-head"><div><h2>{form.id ? L("Modifier le plat", "Edit dish") : L("Nouveau plat", "New dish")}</h2></div><button type="button" className="btn ghost sm" onClick={() => setForm(null)}>✕</button></div>
-            <DishFields form={form} setForm={setForm} settlement={settlement} lang={lang} L={L} />
+            <DishFields form={form} setForm={setForm} settlement={settlement} lang={lang} country={country} L={L} />
 
             <OptionsEditor form={form} setForm={setForm} settlement={settlement} L={L} />
 

@@ -503,3 +503,9 @@ tr.sel td { background: rgba(250, 210, 14, 0.12); }
 .field { display: flex; flex-direction: column; gap: 5px; font-size: 12.5px; color: var(--muted); margin: 0 4px 10px; }
 .field .input { font-size: 14px; }
 .row-actions { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; }
+.dish-photo-row { display: flex; gap: 12px; align-items: center; }
+.dish-photo-img { width: 92px; height: 92px; object-fit: cover; border-radius: 12px; border: 1px solid var(--rule); background: #f2f5fc; }
+.dish-photo-empty { width: 92px; height: 92px; display: grid; place-items: center; font-size: 30px; border-radius: 12px; border: 1px dashed rgba(31,48,93,0.25); background: #f7f9ff; }
+.dish-photo-actions { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.menu-thumb { width: 40px; height: 40px; object-fit: cover; border-radius: 8px; border: 1px solid var(--rule); vertical-align: middle; }
+.menu-thumb-empty { width: 40px; height: 40px; display: inline-grid; place-items: center; border-radius: 8px; background: #f2f5fc; font-size: 16px; }

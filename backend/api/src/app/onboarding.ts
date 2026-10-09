@@ -18,7 +18,7 @@ import { badRequest, conflict, forbidden, notFound, unprocessable } from "./erro
 
 const MEDIA_MAX_BYTES = 600_000;
 const MEDIA_TYPES = ["image/jpeg", "image/png", "image/webp"];
-const PURPOSES = ["RIDER_ID", "RIDER_SELFIE", "RIDER_LICENCE", "PACK_PHOTO", "PROOF_PHOTO"] as const;
+const PURPOSES = ["RIDER_ID", "RIDER_SELFIE", "RIDER_LICENCE", "PACK_PHOTO", "PROOF_PHOTO", "MENU_ITEM"] as const;
 type Purpose = (typeof PURPOSES)[number];
 const ID_TYPES = ["NATIONAL_ID", "VOTER_CARD", "PASSPORT", "DRIVING_LICENCE"] as const;
 const ID_FORMAT: Record<(typeof ID_TYPES)[number], RegExp> = {

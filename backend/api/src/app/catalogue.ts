@@ -1,7 +1,7 @@
 /** Catalogue management (§22.2 CAT-002/003) under scoped permissions. */
 import { Money } from "@tunakula/ts-money";
 import type { CountryProfile } from "@tunakula/ts-contracts";
-import type { Db } from "../db/db.ts";
+import type { Db, Sql } from "../db/db.ts";
 import type { CountryConfigRegistry } from "../modules/config/config-registry.ts";
 import type { Principal } from "../modules/identity/policy.ts";
 import { addMenuItem, createBranch, getBranch, menuOf, setAvailability, updateMenuItem, type Addon, type MenuItemInput, type MenuItemRow, type Variation, type VariationOption } from "../persistence/catalogue.ts";
@@ -76,7 +76,15 @@ export class CatalogueService {
       ...(input.recommended !== undefined ? { recommended: Boolean(input.recommended) } : {}),
       ...(input.variations !== undefined ? { variations: this.#variations(input.variations, delta) } : {}),
       ...(input.addons !== undefined ? { addons: this.#addons(input.addons, delta) } : {}),
+      ...(input.image_id !== undefined ? { imageId: input.image_id ? String(input.image_id) : null } : {}),
     };
+  }
+
+  /** Confirms a referenced food photo exists and is a menu image (never, say, a rider ID). Country-scoped by RLS. */
+  async #assertImage(sql: Sql, imageId: string | null | undefined): Promise<void> {
+    if (!imageId) return;
+    const [m] = await sql.query<{ id: string }>("SELECT id FROM media.object WHERE id = $1 AND purpose = 'MENU_ITEM'", [imageId]);
+    if (!m) throw badRequest("IMAGE_INVALID", "Upload the food photo first, then attach it");
   }
 
   #variations(raw: unknown, delta: (m: unknown, where: string) => string): Variation[] {
@@ -116,7 +124,9 @@ export class CatalogueService {
       const branch = await getBranch(sql, branchId);
       if (!branch) throw notFound("Branch");
       require(principal, "menu:write", { type: "menu", country, branchId, restaurantGroupId: branch.restaurant_group_id }, { activeCountry: country, profile });
-      return publicItem(await addMenuItem(sql, branch, this.#priced(profile, country, input)));
+      const priced = this.#priced(profile, country, input);
+      await this.#assertImage(sql, priced.imageId);
+      return publicItem(await addMenuItem(sql, branch, priced));
     });
   }
 
@@ -126,7 +136,9 @@ export class CatalogueService {
       const branch = await getBranch(sql, branchId);
       if (!branch) throw notFound("Branch");
       require(principal, "menu:write", { type: "menu", country, branchId, restaurantGroupId: branch.restaurant_group_id }, { activeCountry: country, profile });
-      const item = await updateMenuItem(sql, branchId, itemId, this.#priced(profile, country, input));
+      const priced = this.#priced(profile, country, input);
+      await this.#assertImage(sql, priced.imageId);
+      const item = await updateMenuItem(sql, branchId, itemId, priced);
       if (!item) throw notFound("Item");
       return publicItem(item);
     });
@@ -189,6 +201,16 @@ export class CatalogueService {
       return { branch: { id: branch.id, name: branch.name, commune: branch.commune, status: branch.status }, items: (await menuOf(sql, branchId)).map(publicItem) };
     });
   }
+
+  /** Public: the bytes of a food photo (MENU_ITEM media only). The storefront and Tunakula Nzela show these. */
+  async menuImage(country: string, id: string): Promise<{ content_type: string; bytes: Buffer }> {
+    if (!/^[0-9a-f-]{36}$/.test(id)) throw notFound("Image");
+    return this.db.tx({ country }, async (sql) => {
+      const [row] = await sql.query<{ content_type: string; bytes: Buffer }>("SELECT content_type, bytes FROM media.object WHERE id = $1 AND purpose = 'MENU_ITEM'", [id]);
+      if (!row) throw notFound("Image");
+      return { content_type: row.content_type, bytes: Buffer.from(row.bytes) };
+    });
+  }
 }
 
 interface ItemInput {
@@ -205,6 +227,7 @@ interface ItemInput {
   recommended?: boolean;
   variations?: unknown;
   addons?: unknown;
+  image_id?: string | null;
 }
 
 /** Structured dietary tags a customer can filter by (the EU/UK compliance + discovery set). */
@@ -255,5 +278,7 @@ function publicItem(i: MenuItemRow) {
     // Variation/add-on prices are minor units in the market's settlement currency (the client knows it).
     variations: i.variations,
     addons: i.addons,
+    // The food photo's media id; the client builds the public URL /v1/menu-images/<id>?c=<country>.
+    image_id: i.image_id,
   };
 }

@@ -2459,3 +2459,49 @@ describe("self-serve merchant onboarding", () => {
     assert.equal(row!.published, false, "it is a draft until published");
   });
 });
+
+describe("food photos", () => {
+  const jpeg = (seed: number) => Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(64, seed), Buffer.from([0xff, 0xd9])]).toString("base64");
+
+  test("a merchant uploads a food photo, attaches it, and it is served publicly on the menu", async () => {
+    const owner = await signIn("+243810000220");
+    const reg = await call("POST", "/v1/merchant/register", { token: owner.token, country: "CD", body: { business_name: "Chez Photo" } });
+    const br = await call("POST", "/v1/merchant/branches", { token: owner.token, country: "CD", body: { group_id: reg.body.group_id, name: "Chez Photo — Gombe", lat: -4.32, lng: 15.31, commune: "gombe" } });
+    const branchId = br.body.branch_id;
+
+    // Upload the photo to the shared media store under the public MENU_ITEM purpose.
+    const up = await call("POST", "/v1/media", { token: owner.token, country: "CD", body: { purpose: "MENU_ITEM", content_type: "image/jpeg", data_base64: jpeg(7) } });
+    assert.equal(up.status, 201, JSON.stringify(up.body));
+    const imageId = up.body.id;
+
+    // Attach it to a new dish.
+    const item = await call("POST", `/v1/branches/${branchId}/items`, { token: owner.token, country: "CD", body: { names: { fr: "Poulet à la moambe" }, prices: { USD: "12.50" }, image_id: imageId } });
+    assert.equal(item.status, 201, JSON.stringify(item.body));
+    assert.equal(item.body.image_id, imageId, "the item carries its photo id");
+
+    // The public menu read returns the photo id (guests can read it, no token).
+    const menu = await call("GET", `/v1/branches/${branchId}/menu`, { country: "CD" });
+    assert.equal(menu.body.items[0].image_id, imageId);
+
+    // The photo is served publicly as an image, country in the query so a plain <img> URL works.
+    const img = await api.inject({ method: "GET", url: `/v1/menu-images/${imageId}?c=CD` });
+    assert.equal(img.statusCode, 200);
+    assert.match(img.headers["content-type"] as string, /^image\/jpeg/);
+    assert.ok((img.headers["cache-control"] as string)?.includes("max-age"), "food photos are cacheable");
+  });
+
+  test("a private rider photo is never served through the public food-photo URL", async () => {
+    const applicant = await signIn("+243810000221");
+    const up = await call("POST", "/v1/media", { token: applicant.token, country: "CD", body: { purpose: "RIDER_ID", content_type: "image/jpeg", data_base64: jpeg(9) } });
+    const idPhoto = up.body.id;
+    // The public endpoint only serves MENU_ITEM media, so a rider ID is not found there.
+    const leak = await api.inject({ method: "GET", url: `/v1/menu-images/${idPhoto}?c=CD` });
+    assert.equal(leak.statusCode, 404, "a rider ID does not leak through the food-photo URL");
+    // And a dish cannot borrow a non-food image.
+    const owner = await signIn("+243810000222");
+    const reg = await call("POST", "/v1/merchant/register", { token: owner.token, country: "CD", body: { business_name: "Chez Try" } });
+    const br = await call("POST", "/v1/merchant/branches", { token: owner.token, country: "CD", body: { group_id: reg.body.group_id, name: "Chez Try — Limete", lat: -4.33, lng: 15.33 } });
+    const bad = await call("POST", `/v1/branches/${br.body.branch_id}/items`, { token: owner.token, country: "CD", body: { names: { fr: "Test" }, prices: { USD: "5.00" }, image_id: idPhoto } });
+    assert.equal(bad.body.code, "IMAGE_INVALID", JSON.stringify(bad.body));
+  });
+});

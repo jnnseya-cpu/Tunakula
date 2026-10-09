@@ -5,10 +5,15 @@
  * recommended, age-restriction, tags, allergens, dietary flags, nutrition, variations and add-ons.
  * One source of truth — the wizard's "add a dish" is the menu panel's "add a dish".
  */
+import { useState } from "react";
+import { API_BASE, api } from "../lib/api";
 import type { Lang } from "../lib/i18n";
 
 export interface FormVariation { name: string; type: "SINGLE" | "MULTI"; required: boolean; options: { name: string; price: string }[] }
 export interface FormAddon { name: string; price: string }
+
+/** The public URL of a food photo, for an <img src>. Country goes in the query so no header is needed. */
+export const foodPhotoUrl = (imageId: string, country: string) => `${API_BASE}/v1/menu-images/${imageId}?c=${country}`;
 
 export const DIETARY = ["VEGETARIAN", "VEGAN", "HALAL", "KOSHER", "GLUTEN_FREE", "DAIRY_FREE", "NUT_FREE", "ORGANIC", "SPICY"] as const;
 export const DIETARY_LABEL: Record<string, [string, string]> = {
@@ -17,7 +22,7 @@ export const DIETARY_LABEL: Record<string, [string, string]> = {
 };
 export const CATEGORIES = ["Restaurant", "Cuisine Locale", "Fast Food", "Boisson", "Dessert", "Végétarienne", "Accompagnements", "Fruits et Légumes", "Viande et Poisson", "Boulangeries", "Pizzérias", "Taco", "Menu Enfant", "Supermarché", "Épiceries", "Essentiel", "Promo"];
 
-export const blankDish = () => ({ id: "", name_fr: "", name_en: "", desc_fr: "", category: "", price: "", veg: "" as "" | "veg" | "non", recommended: false, age_restricted: false, tags: "", allergens: "", dietary: [] as string[], kcal: "", protein_g: "", carbs_g: "", fat_g: "", variations: [] as FormVariation[], addons: [] as FormAddon[] });
+export const blankDish = () => ({ id: "", name_fr: "", name_en: "", desc_fr: "", category: "", price: "", veg: "" as "" | "veg" | "non", recommended: false, age_restricted: false, tags: "", allergens: "", dietary: [] as string[], kcal: "", protein_g: "", carbs_g: "", fat_g: "", image_id: "", variations: [] as FormVariation[], addons: [] as FormAddon[] });
 export type DishFormValue = ReturnType<typeof blankDish>;
 
 /** Builds the item-create/update API body from the form, in the given settlement currency. */
@@ -37,6 +42,7 @@ export function dishPayload(form: DishFormValue, settlement: string) {
     allergens: form.allergens.split(",").map((t) => t.trim()).filter(Boolean),
     dietary: form.dietary,
     nutrition: Object.fromEntries((["kcal", "protein_g", "carbs_g", "fat_g"] as const).flatMap((k) => (form[k].trim() ? [[k, Number(form[k])]] : []))),
+    image_id: form.image_id || null,
     variations: form.variations.filter((v) => v.name.trim() && v.options.some((o) => o.name.trim())).map((v) => ({
       name: v.name.trim(), type: v.type, required: v.required,
       options: v.options.filter((o) => o.name.trim()).map((o) => ({ name: o.name.trim(), price: o.price.trim() || "0" })),
@@ -46,12 +52,53 @@ export function dishPayload(form: DishFormValue, settlement: string) {
 }
 
 type Setter = (f: DishFormValue) => void;
-interface Props { form: DishFormValue; setForm: Setter; settlement: string; lang: Lang; L: (fr: string, en: string) => string }
+interface Props { form: DishFormValue; setForm: Setter; settlement: string; lang: Lang; country: string; L: (fr: string, en: string) => string }
+
+const fileToBase64 = (file: File) => new Promise<string>((resolve, reject) => {
+  const r = new FileReader();
+  r.onload = () => resolve(String(r.result).split(",")[1] ?? "");
+  r.onerror = () => reject(new Error("read failed"));
+  r.readAsDataURL(file);
+});
+
+/** Upload and preview a food photo. The file goes to the shared media store under the public MENU_ITEM purpose. */
+function DishPhoto({ form, setForm, country, L }: { form: DishFormValue; setForm: Setter; country: string; L: (fr: string, en: string) => string }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const pick = async (file: File) => {
+    setErr(null);
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) { setErr(L("JPEG, PNG ou WebP uniquement.", "JPEG, PNG or WebP only.")); return; }
+    if (file.size > 600_000) { setErr(L("Image trop lourde (max 600 Ko).", "Image too large (max 600 kB).")); return; }
+    setBusy(true);
+    try {
+      const data_base64 = await fileToBase64(file);
+      const r = await api<{ id: string }>("/v1/media", { method: "POST", country, body: { purpose: "MENU_ITEM", content_type: file.type, data_base64 } });
+      setForm({ ...form, image_id: r.id });
+    } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
+  };
+  return (
+    <div className="wide dish-photo">
+      <span className="ff-label">{L("Photo du plat", "Food photo")}</span>
+      <div className="dish-photo-row">
+        {form.image_id ? <img className="dish-photo-img" src={foodPhotoUrl(form.image_id, country)} alt="" /> : <div className="dish-photo-empty" aria-hidden>🍽️</div>}
+        <div className="dish-photo-actions">
+          <label className="btn ghost sm">{busy ? "…" : form.image_id ? L("Changer la photo", "Change photo") : L("Téléverser une photo", "Upload a photo")}
+            <input type="file" accept="image/jpeg,image/png,image/webp" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) void pick(f); e.target.value = ""; }} />
+          </label>
+          {form.image_id ? <button type="button" className="btn ghost sm" onClick={() => setForm({ ...form, image_id: "" })}>{L("Retirer", "Remove")}</button> : null}
+          <small className="muted">{L("JPEG/PNG/WebP, max 600 Ko", "JPEG/PNG/WebP, max 600 kB")}</small>
+        </div>
+      </div>
+      {err ? <p className="form-error small">{err}</p> : null}
+    </div>
+  );
+}
 
 /** The scalar fields of a dish (name, description, category, price, flags, dietary, nutrition). */
-export function DishFields({ form, setForm, settlement, lang, L }: Props) {
+export function DishFields({ form, setForm, settlement, lang, country, L }: Props) {
   return (
     <div className="ff">
+      <DishPhoto form={form} setForm={setForm} country={country} L={L} />
       <label>{L("Nom (FR)", "Name (FR)")}<input className="input" value={form.name_fr} onChange={(e) => setForm({ ...form, name_fr: e.target.value })} /></label>
       <label>{L("Nom (EN)", "Name (EN)")}<input className="input" value={form.name_en} onChange={(e) => setForm({ ...form, name_en: e.target.value })} /></label>
       <label className="wide">{L("Description (FR)", "Description (FR)")}<textarea className="input" rows={2} value={form.desc_fr} onChange={(e) => setForm({ ...form, desc_fr: e.target.value })} /></label>

@@ -1,6 +1,6 @@
 /** /v1 endpoints (§25.2). Controllers are thin: parse, authenticate, delegate, shape the response. */
-import { Body, Controller, Delete, Get, HttpCode, Inject, Param, Post, Query, Req } from "@nestjs/common";
-import type { FastifyRequest } from "fastify";
+import { Body, Controller, Delete, Get, HttpCode, Inject, Param, Post, Query, Req, Res } from "@nestjs/common";
+import type { FastifyReply, FastifyRequest } from "fastify";
 import { randomUUID } from "node:crypto";
 import { currencies, currencyFlag, Money } from "@tunakula/ts-money";
 import type { PaymentMethodType } from "@tunakula/ts-contracts";
@@ -111,6 +111,14 @@ export class CatalogueController {
     return this.catalogue.menu(country(req), id);
   }
 
+  /** Public: serve a food photo for <img>. Country comes from ?c= so a plain image URL works (no header). */
+  @Get("menu-images/:id")
+  async menuImage(@Param("id") id: string, @Query("c") c: string, @Res() reply: FastifyReply) {
+    if (typeof c !== "string" || !/^[A-Z]{2}$/.test(c)) throw badRequest("COUNTRY_REQUIRED", "Send the market as ?c=CD");
+    const img = await this.catalogue.menuImage(c, id);
+    await reply.header("content-type", img.content_type).header("cache-control", "public, max-age=86400").send(img.bytes);
+  }
+
   @Post("branches")
   async createBranch(@Req() req: FastifyRequest, @Body() body: { name: string; restaurant_group_id: string; city?: string; commune?: string; lat: number; lng: number }) {
     const principal = await this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
@@ -148,7 +156,7 @@ export class CatalogueController {
   }
 }
 
-type ItemBody = { names: Record<string, string>; description?: Record<string, string>; prices: Record<string, string>; category?: string | null; veg?: boolean | null; tags?: string[]; allergens?: string[]; recommended?: boolean; variations?: unknown; addons?: unknown };
+type ItemBody = { names: Record<string, string>; description?: Record<string, string>; prices: Record<string, string>; category?: string | null; veg?: boolean | null; tags?: string[]; allergens?: string[]; recommended?: boolean; variations?: unknown; addons?: unknown; image_id?: string | null };
 type QuoteItemBody = { item_id: string; quantity: number; options?: { group: string; choices: string[] }[]; addons?: string[]; note?: string };
 type QuoteBody = { branch_id: string; items: QuoteItemBody[]; order_type: QuoteInput["orderType"]; delivery?: { lat: number; lng: number; rural?: boolean }; tip?: string; coupon_code?: string };
 
