@@ -2216,6 +2216,89 @@ describe("wallet", () => {
     assert.equal(await balance(customer.token), before, "wallet made whole after cancellation");
     assert.equal((await call("GET", `/v1/orders/${placed.body.order_id}`, { token: customer.token, country: "CD" })).body.state, "REFUNDED");
   });
+
+  const settlementEntry = async (orderId: string, account: string) => {
+    const [row] = await inspect("CD", "SELECT e.amount_minor::text AS amount FROM money.ledger_entry e JOIN money.journal j ON j.id = e.journal_id WHERE j.idempotency_key = $1 AND e.account = $2", [`order:${orderId}:settlement`, account]);
+    return row ? BigInt(row.amount) : 0n;
+  };
+
+  test("split payment: wallet covers part, cash the rest; settlement draws from both and balances", async () => {
+    await call("POST", "/v1/me/wallet/topup", { token: customer.token, country: "CD", key: "topup-split-cod", body: { amount_minor: "10000", currency: "USD", method_type: "MOBILE_MONEY_PUSH", payer: { msisdn: "+243810000001" } } });
+    const before = await balance(customer.token);
+    const q = await call("POST", "/v1/carts/quote", { country: "CD", body: cart() });
+    const total = BigInt(q.body.total.amount_minor);
+    const apply = total / 2n; // some from the wallet, the rest in cash
+    const placed = await call("POST", "/v1/orders", { token: customer.token, country: "CD", body: { ...cart(), payment_mode: "CASH_ON_DELIVERY", wallet_apply_minor: apply.toString(), expected_total: q.body.total } });
+    assert.equal(placed.status, 201, JSON.stringify(placed.body));
+    // A cash order is live at once, so the wallet portion is committed immediately.
+    assert.equal(placed.body.state, "PLACED");
+    assert.equal(await balance(customer.token), before - apply, "wallet debited only by the applied portion");
+    const orderId = placed.body.order_id;
+    const code = placed.body.recipient_code;
+    await transition(ops, orderId, { type: "ASSIGN_RIDER", riderId: rider.userId });
+    await transition(kitchen, orderId, { type: "ACCEPT" });
+    await transition(kitchen, orderId, { type: "START_PREPARING" });
+    await transition(kitchen, orderId, { type: "PACK", confirmedLineIds: ["l1"], packageCount: 1, allergenAcknowledged: true });
+    await transition(kitchen, orderId, { type: "MARK_READY", packages: [{ labelId: "S-1", sealId: "S-1-S" }], packPhotoRef: "photo://pack" });
+    await transition(rider, orderId, { type: "PICK_UP", scannedLabelIds: ["S-1"], restaurantConfirmed: true, sealsIntact: true, location: KINSHASA });
+    const done = await transition(rider, orderId, { type: "DELIVER", scannedLabelId: "S-1", location: DROP, sealIntact: true, verification: { method: "CODE", code }, proofPhotoRef: "photo://door" });
+    assert.equal(done.body.state, "DELIVERED", JSON.stringify(done.body));
+    // The settlement split the money in across the two accounts.
+    assert.equal(await settlementEntry(orderId, "customer_wallet"), apply, "wallet portion drawn from customer_wallet");
+    assert.equal(await settlementEntry(orderId, "cod_cash_in_transit"), total - apply, "the rest collected as cash");
+    const [bal] = await inspect("CD", "SELECT currency, sum(amount_minor)::text AS s FROM money.ledger_entry WHERE currency = 'USD' GROUP BY currency");
+    assert.equal(bal.s, "0", "the ledger still balances");
+  });
+
+  test("split payment: wallet covers part, card the rest; the card is charged only the remainder", async () => {
+    await call("POST", "/v1/me/wallet/topup", { token: customer.token, country: "CD", key: "topup-split-card", body: { amount_minor: "10000", currency: "USD", method_type: "MOBILE_MONEY_PUSH", payer: { msisdn: "+243810000001" } } });
+    const before = await balance(customer.token);
+    const q = await call("POST", "/v1/carts/quote", { country: "CD", body: cart() });
+    const total = BigInt(q.body.total.amount_minor);
+    const apply = total / 3n;
+    const placed = await call("POST", "/v1/orders", { token: customer.token, country: "CD", body: { ...cart(), payment_mode: "PREPAID", wallet_apply_minor: apply.toString(), expected_total: q.body.total } });
+    assert.equal(placed.status, 201, JSON.stringify(placed.body));
+    // A prepaid order waits for the card charge, so the wallet is not touched yet.
+    assert.equal(placed.body.state, "PENDING_PAYMENT");
+    assert.equal(await balance(customer.token), before, "wallet untouched until the remainder is paid");
+    const orderId = placed.body.order_id;
+    const code = placed.body.recipient_code;
+    const pay = await call("POST", "/v1/payments/intents", { token: customer.token, country: "CD", body: { order_id: orderId, method_type: "MOBILE_MONEY_PUSH", payer: { msisdn: "+243810000001" } } });
+    assert.equal(pay.body.status, "SUCCEEDED", JSON.stringify(pay.body));
+    assert.equal(pay.body.amount.amount_minor, (total - apply).toString(), "the provider is charged only the remainder");
+    // The wallet portion is debited exactly once, on confirmation.
+    assert.equal(await balance(customer.token), before - apply, "wallet debited by the applied portion on confirmation");
+    await transition(ops, orderId, { type: "ASSIGN_RIDER", riderId: rider.userId });
+    await transition(kitchen, orderId, { type: "ACCEPT" });
+    await transition(kitchen, orderId, { type: "START_PREPARING" });
+    await transition(kitchen, orderId, { type: "PACK", confirmedLineIds: ["l1"], packageCount: 1, allergenAcknowledged: true });
+    await transition(kitchen, orderId, { type: "MARK_READY", packages: [{ labelId: "SC-1", sealId: "SC-1-S" }], packPhotoRef: "photo://pack" });
+    await transition(rider, orderId, { type: "PICK_UP", scannedLabelIds: ["SC-1"], restaurantConfirmed: true, sealsIntact: true, location: KINSHASA });
+    const done = await transition(rider, orderId, { type: "DELIVER", scannedLabelId: "SC-1", location: DROP, sealIntact: true, verification: { method: "CODE", code }, proofPhotoRef: "photo://door" });
+    assert.equal(done.body.state, "DELIVERED", JSON.stringify(done.body));
+    assert.equal(await settlementEntry(orderId, "customer_wallet"), apply, "wallet portion drawn from customer_wallet");
+    assert.equal(await settlementEntry(orderId, "psp_clearing"), total - apply, "the remainder cleared through the provider");
+    const [bal] = await inspect("CD", "SELECT currency, sum(amount_minor)::text AS s FROM money.ledger_entry WHERE currency = 'USD' GROUP BY currency");
+    assert.equal(bal.s, "0", "the ledger still balances");
+  });
+
+  test("a wallet amount at or above the total is refused (use wallet as the method instead)", async () => {
+    await call("POST", "/v1/me/wallet/topup", { token: customer.token, country: "CD", key: "topup-split-guard", body: { amount_minor: "20000", currency: "USD", method_type: "MOBILE_MONEY_PUSH", payer: { msisdn: "+243810000001" } } });
+    const q = await call("POST", "/v1/carts/quote", { country: "CD", body: cart() });
+    const total = BigInt(q.body.total.amount_minor);
+    const r = await call("POST", "/v1/orders", { token: customer.token, country: "CD", body: { ...cart(), payment_mode: "PREPAID", wallet_apply_minor: total.toString(), expected_total: q.body.total } });
+    assert.equal(r.body.code, "WALLET_APPLY_TOO_LARGE", JSON.stringify(r.body));
+  });
+
+  test("a split order needing more wallet than the balance holds is refused", async () => {
+    const lean = await signIn("+243810000085");
+    await call("POST", "/v1/me/wallet/topup", { token: lean.token, country: "CD", key: "topup-split-lean", body: { amount_minor: "100", currency: "USD", method_type: "MOBILE_MONEY_PUSH", payer: { msisdn: "+243810000085" } } });
+    const q = await call("POST", "/v1/carts/quote", { country: "CD", body: cart() });
+    const total = BigInt(q.body.total.amount_minor);
+    const r = await call("POST", "/v1/orders", { token: lean.token, country: "CD", body: { ...cart(), payment_mode: "CASH_ON_DELIVERY", wallet_apply_minor: (total / 2n).toString(), expected_total: q.body.total } });
+    assert.equal(r.body.code, "INSUFFICIENT_WALLET_BALANCE", JSON.stringify(r.body));
+    assert.equal((await call("GET", "/v1/me/orders", { token: lean.token, country: "CD" })).body.data.length, 0, "nothing placed");
+  });
 });
 
 describe("referrals", () => {

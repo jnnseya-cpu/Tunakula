@@ -187,7 +187,7 @@ export class OrdersController {
   }
 
   @Post("orders")
-  async place(@Req() req: FastifyRequest, @Body() body: QuoteBody & { payment_mode: PlaceOrderInput["paymentMode"]; expected_total: PlaceOrderInput["expectedTotal"]; recipient?: PlaceOrderInput["recipient"]; gifted?: boolean; contactless?: boolean; age_confirmed?: boolean; kitchen_note?: string; scheduled_for?: string; address?: { landmark?: string; voice_note_url?: string } }) {
+  async place(@Req() req: FastifyRequest, @Body() body: QuoteBody & { payment_mode: PlaceOrderInput["paymentMode"]; expected_total: PlaceOrderInput["expectedTotal"]; wallet_apply_minor?: string; recipient?: PlaceOrderInput["recipient"]; gifted?: boolean; contactless?: boolean; age_confirmed?: boolean; kitchen_note?: string; scheduled_for?: string; address?: { landmark?: string; voice_note_url?: string } }) {
     const uid = userId(req, this.tokens);
     const principal = await this.db.tx({}, (sql) => loadPrincipal(sql, uid));
     const key = req.headers["idempotency-key"] as string;
@@ -195,6 +195,7 @@ export class OrdersController {
       ...toQuoteInput(body),
       paymentMode: body.payment_mode ?? "PREPAID",
       expectedTotal: body.expected_total,
+      ...(body.wallet_apply_minor !== undefined && body.wallet_apply_minor !== null && String(body.wallet_apply_minor) !== "" ? { walletApplyMinor: String(body.wallet_apply_minor) } : {}),
       ...(body.recipient ? { recipient: body.recipient } : {}),
       ...(body.gifted ? { gifted: true } : {}),
       ...(body.contactless ? { contactless: true } : {}),

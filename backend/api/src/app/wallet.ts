@@ -127,24 +127,33 @@ export class WalletService {
   }
 
   /**
-   * Credits wallet-funded orders that ended before delivery (cancelled, rejected, delivery failed) back to the
-   * wallet, then moves each to REFUNDED. Runs on the same loop as the provider refund sweep. Idempotent.
+   * Credits the wallet money back on orders that ended before delivery (cancelled, rejected, delivery failed).
+   * Covers full-wallet orders (the whole total) and split orders (only the wallet portion; the method portion
+   * is handled by the provider refund sweep). When there is no provider charge to reverse — a full-wallet or a
+   * wallet+cash order — this sweep also moves the order to REFUNDED; when there is one, the provider sweep owns
+   * that transition, so we only return the wallet money (and may run after the order is already REFUNDED).
+   * Runs on the same loop as the provider refund sweep. Idempotent (one wallet REFUND per order).
    */
   async refundSweep(country: string): Promise<{ refunded: number }> {
-    const due = await this.db.tx({ country }, (sql) => sql.query<{ order_id: string; customer_id: string; total_minor: string; currency: string }>(
-      `SELECT o.order_id, o.customer_id, o.total_minor::text AS total_minor, o.currency
+    const due = await this.db.tx({ country }, (sql) => sql.query<{ order_id: string; state: string; customer_id: string; total_minor: string; currency: string; wallet_funded: boolean; wallet_applied: string | null; has_charge: boolean }>(
+      `SELECT o.order_id, o.state, o.customer_id, o.total_minor::text AS total_minor, o.currency,
+              (d.payload->'snapshot'->>'walletFunded') = 'true' AS wallet_funded,
+              d.payload->'snapshot'->'walletApplied'->>'minor' AS wallet_applied,
+              EXISTS (SELECT 1 FROM payments.payment_intent i WHERE i.order_id = o.order_id AND i.status IN ('SUCCEEDED','REFUNDED')) AS has_charge
          FROM ordering.order_view o
          JOIN ordering.order_event d ON d.order_id = o.order_id AND d.type = 'ORDER_DRAFTED'
-        WHERE o.state IN ('CANCELLED', 'REJECTED', 'DELIVERY_FAILED')
-          AND (d.payload->'snapshot'->>'walletFunded') = 'true'
+        WHERE o.state IN ('CANCELLED', 'REJECTED', 'DELIVERY_FAILED', 'REFUNDED')
+          AND ((d.payload->'snapshot'->>'walletFunded') = 'true' OR (d.payload->'snapshot'->'walletApplied') IS NOT NULL)
           AND NOT EXISTS (SELECT 1 FROM wallet.transaction w WHERE w.order_id = o.order_id AND w.kind = 'REFUND')
         LIMIT 50`,
     ));
     let refunded = 0;
     for (const d of due) {
+      const amount = d.wallet_applied ? Money.ofMinor(BigInt(d.wallet_applied), d.currency) : Money.ofMinor(BigInt(d.total_minor), d.currency);
       await this.db.tx({ country }, async (sql) => {
-        const credited = await this.refundOrder(sql, country, d.customer_id, d.order_id, Money.ofMinor(BigInt(d.total_minor), d.currency));
-        if (credited) {
+        const credited = await this.refundOrder(sql, country, d.customer_id, d.order_id, amount);
+        // Only drive the state transition when no provider charge will (full-wallet or wallet+cash) and it hasn't happened yet.
+        if (credited && !d.has_charge && d.state !== "REFUNDED") {
           await this.commerce.systemCommand(sql, country, d.order_id, `wallet-refund:${d.order_id}`, { type: "REFUND", reasonCode: "WALLET_REFUND" }, "wallet");
         }
       });

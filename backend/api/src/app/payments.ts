@@ -1,7 +1,7 @@
 /** Payment intents through Payment Orchestration (§20) and provider webhooks. */
-import { Money } from "@tunakula/ts-money";
+import { Money, type MoneyJSON } from "@tunakula/ts-money";
 import type { PaymentConnector, PaymentMethodType } from "@tunakula/ts-contracts";
-import type { Db } from "../db/db.ts";
+import type { Db, Sql } from "../db/db.ts";
 import type { Principal } from "../modules/identity/policy.ts";
 import type { PaymentRouter } from "../modules/payments/payment-router.ts";
 import { replay } from "../modules/ordering/order-aggregate.ts";
@@ -10,17 +10,35 @@ import { createIntent, intentById, intentByKey, intentByProviderRef, recordAttem
 import type { CommerceService } from "./commerce.ts";
 import { badRequest, conflict, forbidden, notFound, unprocessable } from "./errors.ts";
 
+/** The wallet debit a split prepaid order needs when its remainder charge confirms. */
+export interface WalletDebitor {
+  payForOrder(sql: Sql, country: string, userId: string, orderId: string, total: Money): Promise<void>;
+}
+
 export class PaymentService {
   private readonly db: Db;
   private readonly router: PaymentRouter;
   private readonly connectors: ReadonlyMap<string, PaymentConnector>;
   private readonly commerce: CommerceService;
+  private wallet: WalletDebitor | undefined;
 
   constructor(db: Db, router: PaymentRouter, connectors: ReadonlyMap<string, PaymentConnector>, commerce: CommerceService) {
     this.db = db;
     this.router = router;
     this.connectors = connectors;
     this.commerce = commerce;
+  }
+
+  /** Wires the wallet after construction, so a split prepaid order can debit its wallet portion on confirmation. */
+  useWallet(wallet: WalletDebitor): void {
+    this.wallet = wallet;
+  }
+
+  /** Debits the wallet portion of a split order once (idempotent per order); no-op when there is none. */
+  async #settleWalletPortion(sql: Sql, country: string, orderId: string, snapshot: { customerId: string; walletApplied?: MoneyJSON | undefined }): Promise<void> {
+    const w = snapshot.walletApplied;
+    if (!w || !this.wallet) return;
+    await this.wallet.payForOrder(sql, country, snapshot.customerId, orderId, Money.fromJSON(w));
   }
 
   /**
@@ -137,7 +155,11 @@ export class PaymentService {
       if (order.snapshot.customerId !== principal.userId) throw forbidden("Only the person who placed the order can pay for it");
       if (order.state !== "PENDING_PAYMENT") throw conflict("ORDER_NOT_AWAITING_PAYMENT", `Order is ${order.state}`);
       if (!/^[A-Z]{2}$/.test(input.payerCountry ?? "")) throw badRequest("PAYER_COUNTRY_INVALID", "payer_country is an ISO 3166 code");
+      // On a split order the provider only charges the remainder; the wallet portion is debited on confirmation.
       const total = Money.fromJSON(order.snapshot.total);
+      const walletApplied = order.snapshot.walletApplied ? Money.fromJSON(order.snapshot.walletApplied) : Money.zero(total.currency);
+      const due = total.subtract(walletApplied);
+      const dueJson = due.toJSON();
       const intent = await createIntent(sql, {
         order_id: input.orderId,
         country_iso2: country,
@@ -145,14 +167,14 @@ export class PaymentService {
         payer_user_id: principal.userId,
         payer_country: input.payerCountry,
         method_type: input.methodType,
-        amount_minor: total.minor.toString(),
-        currency: total.currency,
+        amount_minor: due.minor.toString(),
+        currency: due.currency,
         idempotency_key: idempotencyKey,
       });
       const outcome = await this.router.pay(profile, {
         id: intent.id,
         idempotencyKey: intent.id,
-        amount: order.snapshot.total,
+        amount: dueJson,
         methodType: input.methodType,
         payerCountry: input.payerCountry,
         marketCountry: country,
@@ -164,6 +186,7 @@ export class PaymentService {
       switch (outcome.status) {
         case "SUCCEEDED":
           await updateIntent(sql, intent.id, { status: "SUCCEEDED", connectorId: outcome.connectorId, providerRef: outcome.result.providerRef });
+          await this.#settleWalletPortion(sql, country, input.orderId, order.snapshot);
           await this.commerce.systemCommand(sql, country, input.orderId, `payment:${intent.id}:confirm`, { type: "CONFIRM_PAYMENT", paymentIntentId: intent.id });
           break;
         case "PENDING":
@@ -237,6 +260,8 @@ export class PaymentService {
       if (intent.status === "SUCCEEDED" || intent.status === "FAILED") return { accepted: true };
       await updateIntent(sql, intent.id, { status: event.state, reasonCode: event.reasonCode ?? null });
       if (event.state === "SUCCEEDED") {
+        const order = replay(await loadOrderEvents(sql, intent.order_id));
+        if (order) await this.#settleWalletPortion(sql, country, intent.order_id, order.snapshot);
         await this.commerce.systemCommand(sql, country, intent.order_id, `payment:${intent.id}:confirm`, { type: "CONFIRM_PAYMENT", paymentIntentId: intent.id });
       } else if (["FAILED", "EXPIRED", "CANCELLED"].includes(event.state)) {
         await this.commerce.systemCommand(sql, country, intent.order_id, `payment:${intent.id}:fail`, { type: "FAIL_PAYMENT", reasonCode: event.reasonCode ?? event.state });

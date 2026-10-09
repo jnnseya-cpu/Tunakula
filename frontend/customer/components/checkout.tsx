@@ -69,6 +69,7 @@ export function Checkout() {
   const [methods, setMethods] = useState<string[]>([]);
   const [wallet, setWallet] = useState<MoneyWire | null>(null);
   const [pay, setPay] = useState<Pay>("MOBILE_MONEY_PUSH");
+  const [useWalletPart, setUseWalletPart] = useState(false);
   const [msisdn, setMsisdn] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -167,16 +168,19 @@ export function Checkout() {
     if (!quote || !body) return;
     setError(null); setNotice(null);
     try {
-      // A member pays the discounted total; everyone else the plain total.
+      // A member pays the discounted total; everyone else the plain total. A split order still accepts the
+      // full total (the wallet covers part of it); only wallet_apply_minor says how much comes from the balance.
       const due = quote.payable ?? quote.membership?.payable_total ?? quote.total;
+      const apply = splitting ? walletApply : null;
       let orderId = placed.current;
       if (!orderId) {
-        // One Idempotency-Key per total: a retry of the same attempt replays, a new price is a new attempt.
-        if (!attempt.current || attempt.current.total !== due.amount_minor) attempt.current = { key: crypto.randomUUID(), total: due.amount_minor };
+        // One Idempotency-Key per (total, wallet split): a retry replays, a changed price or split is a new attempt.
+        const sig = `${due.amount_minor}:${apply ?? "0"}`;
+        if (!attempt.current || attempt.current.total !== sig) attempt.current = { key: crypto.randomUUID(), total: sig };
         setBusy("Placing your order…");
         const r = await api<{ order_id: string; recipient_code: string; state: string }>("/v1/orders", {
           method: "POST", key: attempt.current.key,
-          body: { ...body, payment_mode: pay === "CASH_ON_DELIVERY" ? "CASH_ON_DELIVERY" : pay === "WALLET" ? "WALLET" : "PREPAID", expected_total: due, ...(quote.age_restricted ? { age_confirmed: true } : {}), ...(kitchenNote.trim() ? { kitchen_note: kitchenNote.trim() } : {}), ...(when === "LATER" ? { scheduled_for: schedTime || scheduleSlots(schedDay)[0]?.[0] } : {}), ...(landmark.trim() ? { address: { landmark: landmark.trim() } } : {}) },
+          body: { ...body, payment_mode: pay === "CASH_ON_DELIVERY" ? "CASH_ON_DELIVERY" : pay === "WALLET" ? "WALLET" : "PREPAID", expected_total: due, ...(apply ? { wallet_apply_minor: apply } : {}), ...(quote.age_restricted ? { age_confirmed: true } : {}), ...(kitchenNote.trim() ? { kitchen_note: kitchenNote.trim() } : {}), ...(when === "LATER" ? { scheduled_for: schedTime || scheduleSlots(schedDay)[0]?.[0] } : {}), ...(landmark.trim() ? { address: { landmark: landmark.trim() } } : {}) },
         });
         orderId = r.order_id;
         placed.current = orderId;
@@ -210,9 +214,16 @@ export function Checkout() {
 
   const km = quote?.distance_meters !== undefined ? (Math.round(quote.distance_meters / 100) / 10).toFixed(1) : null;
   const dueNow = quote ? (quote.payable ?? quote.membership?.payable_total ?? quote.total) : null;
-  const walletCovers = !!(wallet && dueNow && wallet.currency === dueNow.currency && BigInt(wallet.amount_minor) >= BigInt(dueNow.amount_minor));
+  const walletMinor = wallet ? BigInt(wallet.amount_minor) : 0n;
+  const walletCovers = !!(wallet && dueNow && wallet.currency === dueNow.currency && walletMinor >= BigInt(dueNow.amount_minor));
   // Always offer the wallet to a signed-in customer; it is only selectable once the balance covers the total.
   const payOptions = [...(wallet ? ["WALLET"] : []), ...methods];
+  // Split payment: when the balance is positive but short of the total, the customer can spend it and pay
+  // the rest on the chosen method. We apply the whole balance (always less than the total here).
+  const canSplit = !!(wallet && dueNow && wallet.currency === dueNow.currency && walletMinor > 0n && !walletCovers && pay !== "WALLET");
+  const splitting = canSplit && useWalletPart;
+  const walletApply = splitting ? wallet!.amount_minor : null;
+  const remainder: MoneyWire | null = splitting && dueNow ? { amount_minor: (BigInt(dueNow.amount_minor) - walletMinor).toString(), currency: dueNow.currency } : dueNow;
   return (
     <div className="checkout">
       <div className="co-main">
@@ -288,7 +299,13 @@ export function Checkout() {
                 <span className="radio" aria-hidden /><span><b>{PAY_LABEL[m]?.[0] ?? m}</b><small>{m === "WALLET" && wallet ? (walletCovers ? `Balance ${money(wallet)}` : `Balance ${money(wallet)} · top up to use`) : PAY_LABEL[m]?.[1]}</small></span>
               </button>
             ))}
-            {wallet && !walletCovers ? <Link className="wallet-topup-hint" href="/wallet/">Top up your wallet ({money(wallet)}) to pay from your balance →</Link> : null}
+            {canSplit ? (
+              <label className="wallet-split">
+                <input type="checkbox" checked={useWalletPart} onChange={(e) => setUseWalletPart(e.target.checked)} />
+                <span>Use my <b>{money(wallet!)}</b> balance and pay the rest {pay === "CASH_ON_DELIVERY" ? "in cash" : `by ${(PAY_LABEL[pay]?.[0] ?? "card").toLowerCase()}`}</span>
+              </label>
+            ) : null}
+            {wallet && !walletCovers && walletMinor === 0n ? <Link className="wallet-topup-hint" href="/wallet/">Top up your wallet to pay from your balance →</Link> : null}
           </div>
           {pay === "MOBILE_MONEY_PUSH" ? <label className="field"><span>Mobile money number</span><input inputMode="tel" value={msisdn} onChange={(e) => setMsisdn(e.target.value)} /></label> : null}
         </section>
@@ -329,6 +346,12 @@ export function Checkout() {
               <div className="member-save"><dt>Referral — no service fee</dt><dd className="num">−{money(quote.referral.discount)}</dd></div>
             ) : null}
             <div className="total"><dt>Total</dt><dd className="num">{money(quote.payable ?? quote.membership?.payable_total ?? quote.total)}</dd></div>
+            {splitting && remainder ? (
+              <>
+                <div className="member-save"><dt>From your wallet</dt><dd className="num">−{money(wallet!)}</dd></div>
+                <div className="total"><dt>Pay now</dt><dd className="num">{money(remainder)}</dd></div>
+              </>
+            ) : null}
           </dl>
         ) : quoteError ? <p className="form-error">{quoteError}</p> : <div className="skeleton-line" />}
         <p className="muted small">Restaurants pay 0% commission: dishes are at the counter price. Our 10% service charge is shown on its own line.</p>
@@ -338,7 +361,7 @@ export function Checkout() {
         {notice ? <p className="form-notice" role="status">{notice}</p> : null}
         {error ? <p className="form-error" role="alert">{error}</p> : null}
         <button type="button" className="btn accent wide big" disabled={!quote || !!busy || (quote?.age_restricted && !ageOk) || (pay === "MOBILE_MONEY_PUSH" && msisdn.replace(/\D/g, "").length < 9)} onClick={placeOrder}>
-          {busy ?? (quote ? `Place order · ${money(quote.payable ?? quote.membership?.payable_total ?? quote.total)}` : "Place order")}
+          {busy ?? (quote ? `Place order · ${money(splitting && remainder ? remainder : (quote.payable ?? quote.membership?.payable_total ?? quote.total))}` : "Place order")}
         </button>
         <Link className="link-btn" href={`/store/?id=${cart.branch_id}`}>Change my order</Link>
       </aside>

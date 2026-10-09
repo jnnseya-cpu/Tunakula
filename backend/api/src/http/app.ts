@@ -67,6 +67,7 @@ export async function createApi(deps: ApiDeps): Promise<NestFastifyApplication> 
   const refunds = new RefundService(deps.db, deps.registry, commerce, payments, now);
   const wallet = new WalletService(deps.db, deps.registry, payments, commerce, now);
   commerce.useWallet(wallet);
+  payments.useWallet(wallet);
   const referrals = new ReferralService(deps.db, deps.registry, wallet, now);
   commerce.useReferral(referrals);
   const merchantOnboarding = new MerchantOnboardingService(deps.db, deps.registry);

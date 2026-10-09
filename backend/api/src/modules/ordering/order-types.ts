@@ -134,6 +134,12 @@ export interface OrderSnapshot {
   readonly scheduledFor?: string;
   /** The order was paid from the customer's wallet; settlement draws from the customer_wallet ledger account. */
   readonly walletFunded?: boolean;
+  /**
+   * Split payment: this much of the total is drawn from the customer's wallet, the rest on `paymentMode`
+   * (card/mobile-money or cash). Settlement credits customer_wallet for this amount and the other cash
+   * account for the remainder. Absent on a single-method order (including a full-wallet one, which uses walletFunded).
+   */
+  readonly walletApplied?: MoneyJSON;
   readonly geofenceRadiusM: number;
 }
 

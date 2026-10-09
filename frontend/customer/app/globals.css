@@ -1212,6 +1212,9 @@ section.tight { padding: 44px 0; }
 .wallet-txns .num.credit { color: var(--ok, #0a7d33); }
 .wallet-txns .num.debit { color: var(--ink); }
 .wallet-topup-hint { display: block; margin-top: 8px; font-size: 13px; font-weight: 600; color: var(--accent-ink, #8a4b00); }
+.wallet-split { display: flex; gap: 10px; align-items: flex-start; margin-top: 10px; padding: 11px 13px; border: 1.5px dashed rgba(31, 48, 93, 0.22); border-radius: 12px; background: #f7f9ff; font-size: 13.5px; line-height: 1.4; cursor: pointer; }
+.wallet-split input { margin-top: 2px; flex: none; width: 17px; height: 17px; }
+.wallet-split b { font-weight: 700; }
 
 /* Referrals (additive) */
 .referral-code { display: flex; align-items: center; gap: 10px; margin: 10px 0; }

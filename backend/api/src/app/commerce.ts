@@ -25,9 +25,10 @@ import { ApiError, badRequest, conflict, notFound, unprocessable } from "./error
 import { require } from "./principal.ts";
 import type { RoutingProvider } from "./routing.ts";
 
-/** The wallet operation the order placement needs: debit the customer's balance for an order. */
+/** The wallet operations the order placement needs: read the balance and debit it for an order. */
 export interface WalletFunder {
   payForOrder(sql: Sql, country: string, userId: string, orderId: string, total: Money): Promise<void>;
+  balance(sql: Sql, country: string, userId: string, currency: string): Promise<Money>;
 }
 
 /** The referral lookup the quote/placement needs: the referee's first-order discount, and marking it used. */
@@ -51,6 +52,12 @@ export interface QuoteInput {
 
 export interface PlaceOrderInput extends QuoteInput {
   readonly paymentMode: "PREPAID" | "CASH_ON_DELIVERY" | "WALLET";
+  /**
+   * Split payment: draw this much (minor units) from the wallet and charge the rest on `paymentMode`
+   * (PREPAID or CASH_ON_DELIVERY). Must be greater than zero and less than the total; for the whole
+   * total from the wallet, use paymentMode "WALLET" instead. Ignored when paymentMode is "WALLET".
+   */
+  readonly walletApplyMinor?: string;
   /** The total the customer saw and accepted (§11.2 confirm-before-pay). */
   readonly expectedTotal: { readonly amount_minor: string; readonly currency: string };
   readonly address?: { readonly landmark?: string; readonly voiceNoteUrl?: string };
@@ -252,6 +259,16 @@ export class CommerceService {
     }
   }
 
+  /** Parses and validates a requested split-payment wallet amount against the total (must be 0 < apply < total). */
+  #resolveWalletApply(raw: string | undefined, total: Money): Money | undefined {
+    if (raw === undefined || raw === null || raw === "") return undefined;
+    let apply: Money;
+    try { apply = Money.ofMinor(BigInt(raw), total.currency); } catch { throw badRequest("AMOUNT_INVALID", "Send the wallet amount as whole minor units"); }
+    if (apply.minor <= 0n) throw badRequest("WALLET_APPLY_INVALID", "The wallet amount must be greater than zero");
+    if (apply.compare(total) >= 0) throw unprocessable("WALLET_APPLY_TOO_LARGE", "To pay the whole order from your wallet, choose wallet as the payment method");
+    return apply;
+  }
+
   /** Validates a requested scheduled time: a real future time, at least the minimum lead ahead and within the window. */
   #validateSchedule(raw: string | undefined): Date | undefined {
     if (raw === undefined) return undefined;
@@ -300,7 +317,15 @@ export class CommerceService {
       // A wallet order settles like a prepaid one; the money comes from the balance instead of a provider charge.
       const settledMode: "PREPAID" | "CASH_ON_DELIVERY" = walletFunded ? "PREPAID" : input.paymentMode;
       if (walletFunded && !this.wallet) throw unprocessable("WALLET_UNAVAILABLE", "Wallet payment is not available");
-      if (input.paymentMode === "CASH_ON_DELIVERY") await this.#assertCodAllowed(sql, profile, principal.userId, total);
+      // Split payment: part from the wallet, the rest on the chosen method (never with full-wallet mode).
+      const walletApplied = walletFunded ? undefined : this.#resolveWalletApply(input.walletApplyMinor, total);
+      if (walletApplied) {
+        if (!this.wallet) throw unprocessable("WALLET_UNAVAILABLE", "Wallet payment is not available");
+        const bal = await this.wallet.balance(sql, country, principal.userId, walletApplied.currency);
+        if (bal.compare(walletApplied) < 0) throw unprocessable("INSUFFICIENT_WALLET_BALANCE", "Your wallet balance is too low for the amount you chose to pay from it");
+      }
+      // Cash on delivery collects what the rider will actually hand over: the total less any wallet portion.
+      if (input.paymentMode === "CASH_ON_DELIVERY") await this.#assertCodAllowed(sql, profile, principal.userId, walletApplied ? total.subtract(walletApplied) : total);
       if (input.orderType === "XBO" && !input.recipient) throw badRequest("RECIPIENT_REQUIRED", "Cross-border orders name a recipient");
 
       const branch = (await getBranch(sql, input.branchId)) as BranchRow;
@@ -353,6 +378,7 @@ export class CommerceService {
         },
         paymentMode: settledMode,
         ...(walletFunded ? { walletFunded: true } : {}),
+        ...(walletApplied ? { walletApplied: walletApplied.toJSON() } : {}),
         configuredConfirmationModel: configured,
         // AGENT_OPTIMISED is decided per order by the Dispatch Optimiser (A2); until it runs, restaurant-first.
         confirmationModel: configured === "AGENT_OPTIMISED" ? "RESTAURANT_FIRST" : configured,
@@ -383,6 +409,12 @@ export class CommerceService {
         await this.#run(sql, tenant, orderId, actor, `${idempotencyKey}:checkout`, { type: "START_CHECKOUT" });
         const { order } = await this.#run(sql, tenant, orderId, actor, `${idempotencyKey}:wallet-confirm`, { type: "CONFIRM_PAYMENT", paymentIntentId: `wallet:${orderId}` });
         return { orderId, state: order.state, recipientCode, quote };
+      }
+      // A split cash order is live at once, so the wallet portion is committed here (the rider collects the
+      // rest). A split prepaid order waits for the remainder charge; its wallet portion is debited only when
+      // that charge confirms (so an abandoned order never has wallet money moved).
+      if (walletApplied && settledMode === "CASH_ON_DELIVERY") {
+        await this.wallet!.payForOrder(sql, country, principal.userId, orderId, walletApplied);
       }
       const next: OrderCommand = settledMode === "PREPAID" ? { type: "START_CHECKOUT" } : { type: "PLACE_CASH_ORDER" };
       const { order } = await this.#run(sql, tenant, orderId, actor, `${idempotencyKey}:${next.type}`, next);
@@ -516,9 +548,21 @@ export class CommerceService {
     const discount = m.membershipDiscount ? Money.fromJSON(m.membershipDiscount) : Money.zero(ccy0);
     const couponDisc = m.couponDiscount ? Money.fromJSON(m.couponDiscount) : Money.zero(ccy0);
     const referralDisc = m.referralDiscount ? Money.fromJSON(m.referralDiscount) : Money.zero(ccy0);
-    const cashAccount = s.walletFunded ? "customer_wallet" : s.paymentMode === "PREPAID" ? "psp_clearing" : "cod_cash_in_transit";
+    const total = Money.fromJSON(s.total);
+    // Where the customer's money came in. A full-wallet order is entirely from the wallet; a split order
+    // draws a wallet portion and the rest from the method's clearing account; otherwise a single account.
+    const methodAccount = s.paymentMode === "PREPAID" ? "psp_clearing" : "cod_cash_in_transit";
+    const walletApplied = s.walletApplied ? Money.fromJSON(s.walletApplied) : Money.zero(ccy0);
+    const cashIn: LedgerEntry[] = s.walletFunded
+      ? [{ account: "customer_wallet", country: c, amount: total }]
+      : walletApplied.isZero()
+        ? [{ account: methodAccount, country: c, amount: total }]
+        : [
+            { account: "customer_wallet", country: c, amount: walletApplied },
+            { account: methodAccount, country: c, amount: total.subtract(walletApplied) },
+          ];
     return [
-      { account: cashAccount, country: c, amount: Money.fromJSON(s.total) },
+      ...cashIn,
       { account: "subscription_revenue", country: c, amount: discount },
       // The platform funds both coupon and referral first-order discounts.
       { account: "promotion_expense", country: c, amount: couponDisc.add(referralDisc) },
