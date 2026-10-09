@@ -239,6 +239,72 @@ export async function linkedCopies(sql: Sql, sourceBranchId: string): Promise<{ 
   );
 }
 
+// ── Delivery zones (per-branch circular service areas) ──
+export interface DeliveryZoneRow {
+  id: string;
+  branch_id: string;
+  name: string;
+  centre_lat: string;
+  centre_lng: string;
+  radius_m: number;
+  flat_fee_minor: string | null;
+  min_order_minor: string | null;
+  active: boolean;
+}
+export interface DeliveryZoneInput {
+  name: string;
+  centreLat: number;
+  centreLng: number;
+  radiusM: number;
+  flatFeeMinor?: string | null;
+  minOrderMinor?: string | null;
+  active?: boolean;
+}
+
+const ZONE_COLUMNS = "id, branch_id, name, centre_lat::text AS centre_lat, centre_lng::text AS centre_lng, radius_m, flat_fee_minor::text AS flat_fee_minor, min_order_minor::text AS min_order_minor, active";
+
+/** A branch's delivery zones, newest first. With activeOnly, only the ones currently switched on. */
+export async function zonesForBranch(sql: Sql, branchId: string, opts: { activeOnly?: boolean } = {}): Promise<DeliveryZoneRow[]> {
+  return sql.query<DeliveryZoneRow & Record<string, unknown>>(
+    `SELECT ${ZONE_COLUMNS} FROM catalogue.delivery_zone WHERE branch_id = $1 ${opts.activeOnly ? "AND active = true" : ""} ORDER BY created_at DESC`,
+    [branchId],
+  );
+}
+
+export async function createZone(sql: Sql, branch: BranchRow, z: DeliveryZoneInput): Promise<DeliveryZoneRow> {
+  const [row] = await sql.query<DeliveryZoneRow & Record<string, unknown>>(
+    `INSERT INTO catalogue.delivery_zone (country_iso2, branch_id, name, centre_lat, centre_lng, radius_m, flat_fee_minor, min_order_minor, active)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING ${ZONE_COLUMNS}`,
+    [branch.country_iso2, branch.id, z.name, z.centreLat, z.centreLng, z.radiusM, z.flatFeeMinor ?? null, z.minOrderMinor ?? null, z.active ?? true],
+  );
+  return row as DeliveryZoneRow;
+}
+
+/** Updates the given fields of one zone; returns the new row, or undefined if it is not in this branch. */
+export async function updateZone(sql: Sql, branchId: string, zoneId: string, p: Partial<DeliveryZoneInput>): Promise<DeliveryZoneRow | undefined> {
+  const sets: string[] = [];
+  const vals: unknown[] = [zoneId, branchId];
+  const add = (col: string, val: unknown) => { vals.push(val); sets.push(`${col} = $${vals.length}`); };
+  if (p.name !== undefined) add("name", p.name);
+  if (p.centreLat !== undefined) add("centre_lat", p.centreLat);
+  if (p.centreLng !== undefined) add("centre_lng", p.centreLng);
+  if (p.radiusM !== undefined) add("radius_m", p.radiusM);
+  if (p.flatFeeMinor !== undefined) add("flat_fee_minor", p.flatFeeMinor);
+  if (p.minOrderMinor !== undefined) add("min_order_minor", p.minOrderMinor);
+  if (p.active !== undefined) add("active", p.active);
+  if (sets.length === 0) { const [row] = await sql.query<DeliveryZoneRow & Record<string, unknown>>(`SELECT ${ZONE_COLUMNS} FROM catalogue.delivery_zone WHERE id = $1 AND branch_id = $2`, [zoneId, branchId]); return row as DeliveryZoneRow | undefined; }
+  const [row] = await sql.query<DeliveryZoneRow & Record<string, unknown>>(
+    `UPDATE catalogue.delivery_zone SET ${sets.join(", ")}, updated_at = now() WHERE id = $1 AND branch_id = $2 RETURNING ${ZONE_COLUMNS}`,
+    vals,
+  );
+  return row as DeliveryZoneRow | undefined;
+}
+
+export async function deleteZone(sql: Sql, branchId: string, zoneId: string): Promise<boolean> {
+  const rows = await sql.query("DELETE FROM catalogue.delivery_zone WHERE id = $1 AND branch_id = $2 RETURNING id", [zoneId, branchId]);
+  return rows.length === 1;
+}
+
 export async function menuOf(sql: Sql, branchId: string): Promise<MenuItemRow[]> {
   return sql.query<MenuItemRow & Record<string, unknown>>(
     `SELECT ${ITEM_COLUMNS} FROM catalogue.menu_item WHERE branch_id = $1 ORDER BY category NULLS LAST, created_at`,

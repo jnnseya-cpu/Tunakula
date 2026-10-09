@@ -2790,3 +2790,66 @@ describe("loyalty points", () => {
     await call("POST", "/v1/admin/loyalty", { token: admin.token, country: "CD", body: { min_redeem_points: 100, redeem_minor_per_point: 1 } });
   });
 });
+
+describe("delivery zones", () => {
+  // A dedicated branch so zones here never affect the shared branch other tests deliver to.
+  let zbranch: string;
+  const NEAR = { lat: -4.3215, lng: 15.2947 }; // ~1.4 km from KINSHASA, same as DROP
+  const FAR = { lat: -4.0000, lng: 15.0000 };   // tens of km away
+  const zcart = (drop: { lat: number; lng: number }) => ({ branch_id: zbranch, items: [{ item_id: zitem, quantity: 1 }], order_type: "DELIVERY", delivery: drop });
+  let zitem: string;
+
+  test("a branch delivers everywhere until it defines zones; then only inside them, at the zone's fee and minimum", async () => {
+    const br = await call("POST", "/v1/branches", { token: admin.token, country: "CD", body: { name: "Zoned Kitchen", restaurant_group_id: "rg-chez-maman", city: "kinshasa", commune: "gombe", ...KINSHASA } });
+    zbranch = br.body.id;
+    const it = await call("POST", `/v1/branches/${zbranch}/items`, { token: restaurantOwner.token, country: "CD", body: { names: { fr: "Liboke", en: "Fish parcel" }, prices: { USD: "8.00" } } });
+    zitem = it.body.id;
+
+    // With no zones, a delivery quote to the drop works and uses the distance ladder.
+    const open = await call("POST", "/v1/carts/quote", { country: "CD", body: zcart(NEAR) });
+    assert.equal(open.status, 200, JSON.stringify(open.body));
+    assert.notEqual(open.body.delivery.step, "ZONE_FLAT");
+
+    // A customer cannot define zones; only a branch manager can.
+    assert.equal((await call("POST", `/v1/branches/${zbranch}/delivery-zones`, { token: customer.token, country: "CD", body: { name: "x", centre_lat: NEAR.lat, centre_lng: NEAR.lng, radius_m: 2000 } })).status, 403);
+
+    // Define a zone that does NOT cover the drop. Now the drop is out of the service area.
+    const far = await call("POST", `/v1/branches/${zbranch}/delivery-zones`, { token: restaurantOwner.token, country: "CD", body: { name: "Far side", centre_lat: FAR.lat, centre_lng: FAR.lng, radius_m: 1000 } });
+    assert.equal(far.status, 201, JSON.stringify(far.body));
+    const outside = await call("POST", "/v1/carts/quote", { country: "CD", body: zcart(NEAR) });
+    assert.equal(outside.body.code, "OUTSIDE_SERVICE_AREA", JSON.stringify(outside.body));
+
+    // Add a zone that covers the drop with a flat $2.00 delivery fee. The quote now charges exactly that.
+    const near = await call("POST", `/v1/branches/${zbranch}/delivery-zones`, { token: restaurantOwner.token, country: "CD", body: { name: "Gombe core", centre_lat: NEAR.lat, centre_lng: NEAR.lng, radius_m: 2500, flat_fee: "2.00" } });
+    assert.equal(near.status, 201, JSON.stringify(near.body));
+    const zoned = await call("POST", "/v1/carts/quote", { country: "CD", body: zcart(NEAR) });
+    assert.equal(zoned.status, 200, JSON.stringify(zoned.body));
+    assert.equal(zoned.body.delivery.step, "ZONE_FLAT");
+    const deliveryLine = zoned.body.price_lines.find((l: { code: string }) => l.code === "DELIVERY_FEE");
+    assert.equal(deliveryLine.amount.amount_minor, "200", "the area's flat fee is charged");
+    // The rider still gets their share of the flat fee (70% by default).
+    assert.equal(zoned.body.delivery.rider_share.amount_minor, "140");
+
+    // Give that zone a $20 minimum; an $8 order to it is refused until the basket clears the minimum.
+    const upd = await call("POST", `/v1/branches/${zbranch}/delivery-zones/${near.body.id}`, { token: restaurantOwner.token, country: "CD", body: { min_order: "20.00" } });
+    assert.equal(upd.status, 200, JSON.stringify(upd.body));
+    const low = await call("POST", "/v1/carts/quote", { country: "CD", body: zcart(NEAR) });
+    assert.equal(low.body.code, "BELOW_ZONE_MINIMUM", JSON.stringify(low.body));
+    const enough = await call("POST", "/v1/carts/quote", { country: "CD", body: { ...zcart(NEAR), items: [{ item_id: zitem, quantity: 3 }] } });
+    assert.equal(enough.status, 200, "three fish parcels clear the $20 minimum");
+
+    // The manage view lists both zones; switching the covering one off reopens the branch to the distance ladder.
+    const manage = await call("GET", `/v1/branches/${zbranch}/delivery-zones/manage`, { token: restaurantOwner.token, country: "CD" });
+    assert.equal(manage.body.zones.length, 2);
+    await call("POST", `/v1/branches/${zbranch}/delivery-zones/${near.body.id}`, { token: restaurantOwner.token, country: "CD", body: { active: false } });
+    // Only the far zone remains active, which does not cover the drop → out of area again.
+    assert.equal((await call("POST", "/v1/carts/quote", { country: "CD", body: zcart(NEAR) })).body.code, "OUTSIDE_SERVICE_AREA");
+
+    // Deleting every zone restores deliver-anywhere behaviour.
+    await call("DELETE", `/v1/branches/${zbranch}/delivery-zones/${far.body.id}`, { token: restaurantOwner.token, country: "CD" });
+    await call("DELETE", `/v1/branches/${zbranch}/delivery-zones/${near.body.id}`, { token: restaurantOwner.token, country: "CD" });
+    assert.equal((await call("POST", "/v1/carts/quote", { country: "CD", body: zcart(NEAR) })).status, 200);
+    // The public storefront endpoint shows no zones once they are gone.
+    assert.equal((await call("GET", `/v1/branches/${zbranch}/delivery-zones`, { country: "CD" })).body.zones.length, 0);
+  });
+});

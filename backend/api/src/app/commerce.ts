@@ -11,13 +11,13 @@ import type { Principal, ResourceContext } from "../modules/identity/policy.ts";
 import type { Action } from "../modules/identity/roles.ts";
 import { createJournal, type LedgerEntry } from "../modules/money/journal.ts";
 import { evidenceBundle } from "../modules/ordering/evidence.ts";
-import { OrderRuleError, replay, type OrderCommand } from "../modules/ordering/order-aggregate.ts";
+import { OrderRuleError, distanceMetres, replay, type OrderCommand } from "../modules/ordering/order-aggregate.ts";
 import { RIDER_ORDER_TYPES, type Actor, type OrderLine, type OrderSnapshot, type OrderType } from "../modules/ordering/order-types.ts";
 import { priceOrder, PricingError, type PriceBreakdown } from "../modules/pricing/pricing.ts";
 import { isOpenNow } from "../modules/catalogue/hours.ts";
 import { membershipDiscount, type MembershipLookup } from "./membership.ts";
 import type { CouponLookup, CouponPrice } from "./coupons.ts";
-import { getBranch, menuOf, type BranchRow, type MenuItemRow } from "../persistence/catalogue.ts";
+import { getBranch, menuOf, zonesForBranch, type BranchRow, type MenuItemRow } from "../persistence/catalogue.ts";
 import { userById } from "../persistence/identity.ts";
 import { postJournal } from "../persistence/ledger.ts";
 import { handleOrderCommand, loadOrderEvents, OrderConflictError } from "../persistence/orders.ts";
@@ -212,17 +212,34 @@ export class CommerceService {
     }
 
     let distanceMeters: number | undefined;
+    let zoneFlatFeeMinor: bigint | undefined;
     const needsRider = ["DELIVERY", "SCHEDULED", "XBO"].includes(input.orderType);
     if (needsRider) {
       if (!input.delivery) throw badRequest("DELIVERY_PIN_REQUIRED", "Drop a pin for delivery");
       distanceMeters = await this.routing.distanceMeters({ lat: Number(branch.lat), lng: Number(branch.lng) }, input.delivery, "MOTO");
+      // Delivery zones: if the branch has defined service areas, the drop must fall in one. The most specific
+      // (smallest-radius) matching zone sets an optional flat fee and/or minimum order for that area. A branch
+      // with no zones keeps the distance-ladder fee and no serviceability gate (fully backward-compatible).
+      const zones = await zonesForBranch(sql, branch.id, { activeOnly: true });
+      if (zones.length > 0) {
+        const drop = { lat: input.delivery.lat, lng: input.delivery.lng };
+        const matched = zones
+          .filter((z) => distanceMetres({ lat: Number(z.centre_lat), lng: Number(z.centre_lng) }, drop) <= z.radius_m)
+          .sort((a, b) => a.radius_m - b.radius_m);
+        const zone = matched[0];
+        if (!zone) throw unprocessable("OUTSIDE_SERVICE_AREA", `${branch.name} does not deliver to that location yet`);
+        if (zone.min_order_minor !== null && goods.minor < BigInt(zone.min_order_minor)) {
+          throw unprocessable("BELOW_ZONE_MINIMUM", `Orders to ${zone.name} start at ${Money.ofMinor(BigInt(zone.min_order_minor), ccy).toString()}`, { min_order: { amount_minor: zone.min_order_minor, currency: ccy }, zone: zone.name });
+        }
+        if (zone.flat_fee_minor !== null) zoneFlatFeeMinor = BigInt(zone.flat_fee_minor);
+      }
     }
     try {
       const breakdown = priceOrder(profile.pricing, {
         goods,
         channel: "ONLINE",
         orderType: input.orderType,
-        ...(needsRider ? { delivery: { distanceMeters: distanceMeters as number, rural: input.delivery?.rural === true } } : {}),
+        ...(needsRider ? { delivery: { distanceMeters: distanceMeters as number, rural: input.delivery?.rural === true, ...(zoneFlatFeeMinor !== undefined ? { flatFeeMinor: zoneFlatFeeMinor } : {}) } } : {}),
         ...(input.tip ? { tip: Money.of(input.tip, ccy) } : {}),
       });
       const membership = await this.#memberBenefit(sql, country, input.customerId, breakdown);

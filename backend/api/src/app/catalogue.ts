@@ -4,7 +4,7 @@ import type { CountryProfile } from "@tunakula/ts-contracts";
 import type { Db, Sql } from "../db/db.ts";
 import type { CountryConfigRegistry } from "../modules/config/config-registry.ts";
 import type { Principal } from "../modules/identity/policy.ts";
-import { addMenuItem, createBranch, ensureGroup, getBranch, linkedCopies, menuOf, setAvailability, setBranchMarkup, syncMenu, updateBranchProfile, updateMenuItem, type Addon, type BranchProfilePatch, type BranchRow, type MenuItemInput, type MenuItemRow, type Variation, type VariationOption } from "../persistence/catalogue.ts";
+import { addMenuItem, createBranch, createZone, deleteZone, ensureGroup, getBranch, linkedCopies, menuOf, setAvailability, setBranchMarkup, syncMenu, updateBranchProfile, updateMenuItem, updateZone, zonesForBranch, type Addon, type BranchProfilePatch, type BranchRow, type DeliveryZoneInput, type DeliveryZoneRow, type MenuItemInput, type MenuItemRow, type Variation, type VariationOption } from "../persistence/catalogue.ts";
 import { audit } from "../persistence/identity.ts";
 import { badRequest, notFound, unprocessable } from "./errors.ts";
 import { require } from "./principal.ts";
@@ -290,6 +290,99 @@ export class CatalogueService {
     });
   }
 
+  /** Public: a branch's active delivery zones, for the storefront to show where it delivers and any area fee/minimum. */
+  async zones(country: string, branchId: string) {
+    return this.db.tx({ country }, async (sql) => {
+      const branch = await getBranch(sql, branchId);
+      if (!branch) throw notFound("Branch");
+      return { branch_id: branchId, zones: (await zonesForBranch(sql, branchId, { activeOnly: true })).map(publicZone) };
+    });
+  }
+
+  /** Merchant: all of a branch's delivery zones (active and off), for the console editor. */
+  async adminZones(country: string, principal: Principal, branchId: string) {
+    const profile = this.#profile(country);
+    return this.db.tx({ country }, async (sql) => {
+      const branch = await getBranch(sql, branchId);
+      if (!branch) throw notFound("Branch");
+      require(principal, "branch:manage", { type: "branch", country, branchId, restaurantGroupId: branch.restaurant_group_id }, { activeCountry: country, profile });
+      return { branch_id: branchId, zones: (await zonesForBranch(sql, branchId)).map(publicZone) };
+    });
+  }
+
+  /** Merchant: add a delivery zone to a branch (a centre, a radius, and an optional flat fee / minimum order). */
+  async createZone(country: string, principal: Principal, branchId: string, input: ZoneInput) {
+    const profile = this.#profile(country);
+    return this.db.tx({ country }, async (sql) => {
+      const branch = await getBranch(sql, branchId);
+      if (!branch) throw notFound("Branch");
+      require(principal, "branch:manage", { type: "branch", country, branchId, restaurantGroupId: branch.restaurant_group_id }, { activeCountry: country, profile });
+      const z = this.#parseZone(input, profile.money.settlement_currency, true);
+      const row = await createZone(sql, branch, z as DeliveryZoneInput);
+      await audit(sql, { actor: principal.userId, action: "delivery_zone.created", target: `branch:${branchId}`, country, detail: { zone: row.id, name: row.name } });
+      return publicZone(row);
+    });
+  }
+
+  /** Merchant: update or switch a branch's delivery zone. */
+  async updateZone(country: string, principal: Principal, branchId: string, zoneId: string, input: Partial<ZoneInput>) {
+    const profile = this.#profile(country);
+    return this.db.tx({ country }, async (sql) => {
+      const branch = await getBranch(sql, branchId);
+      if (!branch) throw notFound("Branch");
+      require(principal, "branch:manage", { type: "branch", country, branchId, restaurantGroupId: branch.restaurant_group_id }, { activeCountry: country, profile });
+      const patch = this.#parseZone(input, profile.money.settlement_currency, false);
+      const row = await updateZone(sql, branchId, zoneId, patch);
+      if (!row) throw notFound("Delivery zone");
+      await audit(sql, { actor: principal.userId, action: "delivery_zone.updated", target: `branch:${branchId}`, country, detail: { zone: zoneId } });
+      return publicZone(row);
+    });
+  }
+
+  /** Merchant: remove a branch's delivery zone. */
+  async deleteZone(country: string, principal: Principal, branchId: string, zoneId: string) {
+    const profile = this.#profile(country);
+    return this.db.tx({ country }, async (sql) => {
+      const branch = await getBranch(sql, branchId);
+      if (!branch) throw notFound("Branch");
+      require(principal, "branch:manage", { type: "branch", country, branchId, restaurantGroupId: branch.restaurant_group_id }, { activeCountry: country, profile });
+      if (!(await deleteZone(sql, branchId, zoneId))) throw notFound("Delivery zone");
+      await audit(sql, { actor: principal.userId, action: "delivery_zone.deleted", target: `branch:${branchId}`, country, detail: { zone: zoneId } });
+      return { deleted: true };
+    });
+  }
+
+  /** Validates and normalises a zone payload. On create, the geometry fields are required; on update they are optional. */
+  #parseZone(input: Partial<ZoneInput>, currency: string, creating: boolean): Partial<DeliveryZoneInput> {
+    const out: Partial<DeliveryZoneInput> = {};
+    const money = (v: string | number): string => Money.of(String(v), currency).minor.toString();
+    if (creating || input.name !== undefined) {
+      const name = String(input.name ?? "").trim();
+      if (!name) throw badRequest("NAME_REQUIRED", "A zone needs a name");
+      out.name = name.slice(0, 80);
+    }
+    if (creating || input.centre_lat !== undefined || input.centre_lng !== undefined) {
+      const lat = Number(input.centre_lat), lng = Number(input.centre_lng);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) throw badRequest("CENTRE_INVALID", "A zone needs a valid centre");
+      out.centreLat = lat; out.centreLng = lng;
+    }
+    if (creating || input.radius_m !== undefined) {
+      const r = Math.round(Number(input.radius_m));
+      if (!Number.isFinite(r) || r < 100 || r > 100_000) throw badRequest("RADIUS_INVALID", "A zone radius is between 100 m and 100 km");
+      out.radiusM = r;
+    }
+    if (input.flat_fee !== undefined) {
+      if (input.flat_fee === null || input.flat_fee === "") out.flatFeeMinor = null;
+      else { try { out.flatFeeMinor = money(input.flat_fee); } catch (e) { throw badRequest("FLAT_FEE_INVALID", (e as Error).message); } }
+    }
+    if (input.min_order !== undefined) {
+      if (input.min_order === null || input.min_order === "") out.minOrderMinor = null;
+      else { try { out.minOrderMinor = money(input.min_order); } catch (e) { throw badRequest("MIN_ORDER_INVALID", (e as Error).message); } }
+    }
+    if (input.active !== undefined) out.active = Boolean(input.active);
+    return out;
+  }
+
   /** Confirms a referenced logo/cover exists and is of the expected branch-image purpose (never a private photo). */
   async #assertBranchImage(sql: Sql, id: string | null | undefined, purpose: "BRANCH_LOGO" | "BRANCH_COVER"): Promise<void> {
     if (!id) return;
@@ -307,6 +400,25 @@ interface ProfileInput {
   min_order?: string | null;
   logo_id?: string | null;
   cover_id?: string | null;
+}
+
+interface ZoneInput {
+  name?: string;
+  centre_lat?: number | string;
+  centre_lng?: number | string;
+  radius_m?: number | string;
+  flat_fee?: string | number | null;
+  min_order?: string | number | null;
+  active?: boolean;
+}
+
+/** The public shape of a delivery zone, for the storefront and the console editor. */
+function publicZone(z: DeliveryZoneRow) {
+  return {
+    id: z.id, name: z.name,
+    centre_lat: Number(z.centre_lat), centre_lng: Number(z.centre_lng), radius_m: z.radius_m,
+    flat_fee_minor: z.flat_fee_minor, min_order_minor: z.min_order_minor, active: z.active,
+  };
 }
 
 /** The public shape of a branch, including its business profile, for the storefront and the console editor. */

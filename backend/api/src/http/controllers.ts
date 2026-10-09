@@ -189,10 +189,44 @@ export class CatalogueController {
     if (typeof body?.available !== "boolean") throw badRequest("AVAILABLE_REQUIRED", "Send { \"available\": true | false }");
     return this.catalogue.setAvailability(country(req), principal, id, item, body.available);
   }
+
+  /** Public: the areas a branch delivers to (centre, radius, any area fee/minimum) — for the storefront. */
+  @Get("branches/:id/delivery-zones")
+  async zones(@Req() req: FastifyRequest, @Param("id") id: string) {
+    return this.catalogue.zones(country(req), id);
+  }
+
+  /** Merchant: all of a branch's delivery zones (active and off) for the console editor. */
+  @Get("branches/:id/delivery-zones/manage")
+  async adminZones(@Req() req: FastifyRequest, @Param("id") id: string) {
+    const principal = await this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+    return this.catalogue.adminZones(country(req), principal, id);
+  }
+
+  @Post("branches/:id/delivery-zones")
+  async createZone(@Req() req: FastifyRequest, @Param("id") id: string, @Body() body: ZoneBody) {
+    const principal = await this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+    return this.catalogue.createZone(country(req), principal, id, body ?? {});
+  }
+
+  @Post("branches/:id/delivery-zones/:zone")
+  @HttpCode(200)
+  async updateZone(@Req() req: FastifyRequest, @Param("id") id: string, @Param("zone") zone: string, @Body() body: ZoneBody) {
+    const principal = await this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+    return this.catalogue.updateZone(country(req), principal, id, zone, body ?? {});
+  }
+
+  @Delete("branches/:id/delivery-zones/:zone")
+  @HttpCode(200)
+  async deleteZone(@Req() req: FastifyRequest, @Param("id") id: string, @Param("zone") zone: string) {
+    const principal = await this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+    return this.catalogue.deleteZone(country(req), principal, id, zone);
+  }
 }
 
 type ItemBody = { names: Record<string, string>; description?: Record<string, string>; prices: Record<string, string>; category?: string | null; veg?: boolean | null; tags?: string[]; allergens?: string[]; recommended?: boolean; variations?: unknown; addons?: unknown; image_id?: string | null };
 type ProfileBody = { address?: string | null; phone?: string | null; email?: string | null; description?: Record<string, string>; cuisines?: string[]; min_order?: string | null; logo_id?: string | null; cover_id?: string | null };
+type ZoneBody = { name?: string; centre_lat?: number | string; centre_lng?: number | string; radius_m?: number | string; flat_fee?: string | number | null; min_order?: string | number | null; active?: boolean };
 type QuoteItemBody = { item_id: string; quantity: number; options?: { group: string; choices: string[] }[]; addons?: string[]; note?: string };
 type QuoteBody = { branch_id: string; items: QuoteItemBody[]; order_type: QuoteInput["orderType"]; delivery?: { lat: number; lng: number; rural?: boolean }; tip?: string; coupon_code?: string };
 

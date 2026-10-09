@@ -49,6 +49,8 @@ export interface DeliveryFeeInput {
   readonly surge?: SurgeInput;
   /** Declared emergency or market rule restricting increases (§18.5, PRC-011). */
   readonly surgeSuppressed?: boolean;
+  /** A matched delivery zone's flat fee (minor units): when set, it replaces the distance ladder, surge and rural. */
+  readonly flatFeeMinor?: bigint;
 }
 
 export interface DeliveryFee {
@@ -56,7 +58,7 @@ export interface DeliveryFee {
   readonly chargedKm: number;
   /** Number of +step bands applied beyond the cap-hold distance. */
   readonly bands: number;
-  readonly step: "PER_KM" | "CAPPED" | "BANDED";
+  readonly step: "PER_KM" | "CAPPED" | "BANDED" | "ZONE_FLAT";
   readonly rural: boolean;
   readonly surgeMultiplier: string;
   readonly surgeTrigger?: string;
@@ -75,6 +77,14 @@ export function deliveryFee(pricing: PricingConfig, currency: string, input: Del
   const perKm = Money.of(cfg.per_km, currency).minor;
   const cap = Money.of(cfg.cap, currency).minor;
   const chargedKm = Math.max(1, Math.ceil(input.distanceMeters / 1000));
+
+  // A matched delivery zone's flat fee replaces the whole ladder (and any surge/rural); the rider split still applies.
+  if (input.flatFeeMinor !== undefined) {
+    if (input.flatFeeMinor < 0n) fail("DELIVERY_FEE_INVALID", "A zone fee cannot be negative");
+    const fee = Money.ofMinor(input.flatFeeMinor, currency);
+    const riderShare = share(fee, pricing.rider_share_bps);
+    return { chargedKm, bands: 0, step: "ZONE_FLAT", rural: input.rural, surgeMultiplier: "1", surgeSuppressed: false, fee, riderShare, platformShare: fee.subtract(riderShare) };
+  }
 
   // Exact fee in minor units as a fraction n/d, rounded once at the end.
   let n: bigint;

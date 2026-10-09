@@ -101,6 +101,10 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .card-head h2 { font-size: 15px; font-weight: 650; letter-spacing: -0.005em; }
 .card-head p { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
 .link-btn { border: 0; background: none; color: var(--ink-2); font-size: 12.5px; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; white-space: nowrap; }
+.link-btn.danger { color: var(--critical); border: 0; background: none; }
+.muted-row { opacity: 0.55; }
+.field.inline { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-2); }
+.field.inline .select { width: auto; }
 .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12.5px; color: var(--ink-2); margin: 2px 0 8px; }
 .legend span { display: inline-flex; align-items: center; gap: 6px; }
 .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; }
