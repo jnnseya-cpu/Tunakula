@@ -2635,5 +2635,33 @@ describe("brands and franchises", () => {
     // Someone who does not manage the target cannot copy into it.
     const stranger = await signIn("+243810000264");
     assert.equal((await call("POST", `/v1/branches/${a}/menu/copy-to`, { token: stranger.token, country: "CD", body: { target_branch_id: b } })).status, 403);
+
+    // The source now lists the branch it seeded, so later edits can be synced down.
+    const copies = await call("GET", `/v1/branches/${a}/menu/copies`, { token: owner.token, country: "CD" });
+    assert.equal(copies.body.branches.length, 1);
+    assert.equal(copies.body.branches[0].id, b);
+    assert.equal(copies.body.branches[0].linked, 2);
+
+    // Edit the source (price change) and add a new source dish, then sync down.
+    const srcMenu = await call("GET", `/v1/branches/${a}/menu`, { country: "CD" });
+    const moambeId = (srcMenu.body.items as { id: string; names: Record<string, string> }[]).find((i) => i.names.fr === "Poulet moambe")!.id;
+    await call("POST", `/v1/branches/${a}/items/${moambeId}`, { token: owner.token, country: "CD", body: { names: { fr: "Poulet moambe" }, prices: { USD: "14.00" } } });
+    await call("POST", `/v1/branches/${a}/items`, { token: owner.token, country: "CD", body: { names: { fr: "Saka-saka" }, prices: { USD: "2.50" } } });
+
+    // On branch B, mark the moambe sold-out — sync must keep that local availability.
+    const bMenu1 = await call("GET", `/v1/branches/${b}/menu`, { country: "CD" });
+    const bMoambe = (bMenu1.body.items as { id: string; names: Record<string, string> }[]).find((i) => i.names.fr === "Poulet moambe")!.id;
+    await call("POST", `/v1/branches/${b}/items/${bMoambe}/availability`, { token: owner.token, country: "CD", body: { available: false } });
+
+    const sync = await call("POST", `/v1/branches/${a}/menu/copy-to`, { token: owner.token, country: "CD", body: { target_branch_id: b } });
+    assert.equal(sync.body.updated, 2, "the two existing copies are updated");
+    assert.equal(sync.body.added, 1, "the new dish is added");
+    const bMenu2 = await call("GET", `/v1/branches/${b}/menu`, { country: "CD" });
+    const bItems = bMenu2.body.items as { names: Record<string, string>; prices: Record<string, { amount_minor: string }>; available: boolean }[];
+    const moambe2 = bItems.find((i) => i.names.fr === "Poulet moambe")!;
+    assert.equal(moambe2.prices.USD.amount_minor, "1400", "the price edit synced down");
+    assert.equal(moambe2.available, false, "the branch's own sold-out flag is kept");
+    assert.ok(bItems.some((i) => i.names.fr === "Saka-saka"), "the new dish synced down");
+    assert.equal(bItems.length, 3, "no duplicates — sync upserts by lineage");
   });
 });

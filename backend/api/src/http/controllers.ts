@@ -165,12 +165,19 @@ export class CatalogueController {
     return this.catalogue.importMenu(country(req), principal, id, body?.rows ?? []);
   }
 
-  /** Copy this branch's whole menu into another branch of the same owner. */
+  /** Copy or sync this branch's whole menu into another branch of the same owner. */
   @Post("branches/:id/menu/copy-to")
   @HttpCode(200)
   async copyMenu(@Req() req: FastifyRequest, @Param("id") id: string, @Body() body: { target_branch_id?: string }) {
     const principal = await this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
     return this.catalogue.copyMenuTo(country(req), principal, id, String(body?.target_branch_id ?? ""));
+  }
+
+  /** The branches already seeded from this one, so the owner can sync later edits down to them. */
+  @Get("branches/:id/menu/copies")
+  async menuCopies(@Req() req: FastifyRequest, @Param("id") id: string) {
+    const principal = await this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+    return this.catalogue.menuCopies(country(req), principal, id);
   }
 
   @Post("branches/:id/items/:item/availability")

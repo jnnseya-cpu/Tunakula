@@ -12,6 +12,7 @@ import { money } from "../../lib/format";
 import { blankDish, DishFields, dishPayload, foodPhotoUrl, OptionsEditor, type DishFormValue } from "../../components/dish-form";
 
 interface Branch { id: string; name: string; status: string; items: number }
+interface LinkedBranch { id: string; name: string; linked: number }
 interface MoneyWire { amount_minor: string; currency: string }
 interface ApiOption { id: string; name: string; price: string }
 interface ApiVariation { id: string; name: string; type: "SINGLE" | "MULTI"; required: boolean; min: number; max: number; options: ApiOption[] }
@@ -45,6 +46,7 @@ function Menu() {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [copyTarget, setCopyTarget] = useState("");
+  const [copies, setCopies] = useState<LinkedBranch[]>([]);
 
   useEffect(() => {
     const wanted = new URLSearchParams(window.location.search).get("branch");
@@ -57,6 +59,7 @@ function Menu() {
   const load = useCallback(() => {
     if (!branchId) return;
     api<{ items: Item[] }>(`/v1/branches/${branchId}/menu`, { country }).then((r) => setItems(r.items)).catch((e: Error) => setError(e.message));
+    api<{ branches: LinkedBranch[] }>(`/v1/branches/${branchId}/menu/copies`, { country }).then((r) => setCopies(r.branches)).catch(() => setCopies([]));
   }, [branchId, country]);
   useEffect(() => { void load(); }, [load]);
 
@@ -131,18 +134,23 @@ function Menu() {
     } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   };
 
-  const copyMenu = async () => {
-    if (!copyTarget) return;
-    const targetName = branches?.find((b) => b.id === copyTarget)?.name ?? "";
-    const n = items?.length ?? 0;
-    if (!window.confirm(L(`Copier ${n} plats vers « ${targetName} » ?`, `Copy ${n} dishes to "${targetName}"?`))) return;
+  const pushMenu = async (targetId: string, targetName: string, confirmMsg: string) => {
+    if (!window.confirm(confirmMsg)) return;
     setBusy(true); setNotice(null); setError(null);
     try {
-      const r = await api<{ copied: number }>(`/v1/branches/${branchId}/menu/copy-to`, { method: "POST", country, body: { target_branch_id: copyTarget } });
-      setNotice(L(`${r.copied} plats copiés vers « ${targetName} ».`, `${r.copied} dishes copied to "${targetName}".`));
+      const r = await api<{ added: number; updated: number }>(`/v1/branches/${branchId}/menu/copy-to`, { method: "POST", country, body: { target_branch_id: targetId } });
+      const parts = [r.added ? L(`${r.added} ajoutés`, `${r.added} added`) : "", r.updated ? L(`${r.updated} mis à jour`, `${r.updated} updated`) : ""].filter(Boolean).join(", ") || L("rien à changer", "nothing to change");
+      setNotice(L(`« ${targetName} » : ${parts}.`, `"${targetName}": ${parts}.`));
       setCopyTarget("");
+      load();
     } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   };
+  const copyMenu = () => {
+    if (!copyTarget) return;
+    const targetName = branches?.find((b) => b.id === copyTarget)?.name ?? "";
+    void pushMenu(copyTarget, targetName, L(`Copier ${items?.length ?? 0} plats vers « ${targetName} » ?`, `Copy ${items?.length ?? 0} dishes to "${targetName}"?`));
+  };
+  const syncMenu = (c: LinkedBranch) => void pushMenu(c.id, c.name, L(`Synchroniser la carte vers « ${c.name} » ? Les plats liés seront mis à jour (la disponibilité locale est conservée).`, `Sync the menu to "${c.name}"? Linked dishes are updated (local availability is kept).`));
 
   const save = async () => {
     if (!form) return;
@@ -185,6 +193,18 @@ function Menu() {
         ) : null}
       </div>
       {notice ? <div className="banner ok">{notice}</div> : null}
+
+      {copies.length ? (
+        <div className="menu-synced">
+          <span className="ms-label">{L("Cartes liées à cet établissement :", "Branches synced from here:")}</span>
+          {copies.map((c) => (
+            <span key={c.id} className="ms-chip">
+              {c.name} <span className="muted">· {c.linked}</span>
+              <button type="button" className="btn ghost sm" disabled={busy} onClick={() => syncMenu(c)}>{L("Synchroniser", "Sync")}</button>
+            </span>
+          ))}
+        </div>
+      ) : null}
 
       {!items ? <div className="muted">…</div> : (
         <table className="tbl menu-tbl">

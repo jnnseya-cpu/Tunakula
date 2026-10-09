@@ -58,6 +58,7 @@ export interface MenuItemRow {
   nutrition: Record<string, number>;
   age_restricted: boolean;
   image_id: string | null;
+  source_item_id: string | null;
 }
 
 export interface MenuItemInput {
@@ -75,9 +76,10 @@ export interface MenuItemInput {
   nutrition?: Record<string, number>;
   ageRestricted?: boolean;
   imageId?: string | null;
+  sourceItemId?: string | null;
 }
 
-const ITEM_COLUMNS = "id, branch_id, names, description, prices, category, veg, tags, allergens, available, recommended, variations, addons, dietary, nutrition, age_restricted, image_id";
+const ITEM_COLUMNS = "id, branch_id, names, description, prices, category, veg, tags, allergens, available, recommended, variations, addons, dietary, nutrition, age_restricted, image_id, source_item_id";
 
 export interface GroupRow { id: string; country_iso2: string; name: string; invite_code: string | null; created_by: string | null }
 
@@ -149,9 +151,9 @@ export async function updateBranchProfile(sql: Sql, branchId: string, p: BranchP
 
 export async function addMenuItem(sql: Sql, branch: BranchRow, i: MenuItemInput): Promise<MenuItemRow> {
   const [row] = await sql.query<MenuItemRow & Record<string, unknown>>(
-    `INSERT INTO catalogue.menu_item (branch_id, country_iso2, brand_id, names, description, prices, category, veg, tags, allergens, recommended, variations, addons, dietary, nutrition, age_restricted, image_id)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING ${ITEM_COLUMNS}`,
-    [branch.id, branch.country_iso2, branch.brand_id, JSON.stringify(i.names), JSON.stringify(i.description ?? {}), JSON.stringify(i.prices), i.category ?? null, i.veg ?? null, i.tags ?? [], i.allergens ?? [], i.recommended ?? false, JSON.stringify(i.variations ?? []), JSON.stringify(i.addons ?? []), i.dietary ?? [], JSON.stringify(i.nutrition ?? {}), i.ageRestricted ?? false, i.imageId ?? null],
+    `INSERT INTO catalogue.menu_item (branch_id, country_iso2, brand_id, names, description, prices, category, veg, tags, allergens, recommended, variations, addons, dietary, nutrition, age_restricted, image_id, source_item_id)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING ${ITEM_COLUMNS}`,
+    [branch.id, branch.country_iso2, branch.brand_id, JSON.stringify(i.names), JSON.stringify(i.description ?? {}), JSON.stringify(i.prices), i.category ?? null, i.veg ?? null, i.tags ?? [], i.allergens ?? [], i.recommended ?? false, JSON.stringify(i.variations ?? []), JSON.stringify(i.addons ?? []), i.dietary ?? [], JSON.stringify(i.nutrition ?? {}), i.ageRestricted ?? false, i.imageId ?? null, i.sourceItemId ?? null],
   );
   return row as MenuItemRow;
 }
@@ -172,17 +174,44 @@ export async function setAvailability(sql: Sql, itemId: string, available: boole
   return rows.length === 1;
 }
 
-/** Copies every dish of one branch into another (new items), keeping prices, photos, variations and add-ons. */
-export async function copyMenu(sql: Sql, source: BranchRow, target: BranchRow): Promise<number> {
+/**
+ * Pushes one branch's menu into another by lineage: each source dish is linked to its copy, so a new dish
+ * is added and an existing copy is updated in place (keeping the target's own availability). This is both the
+ * first copy (all added) and later syncs (edits flow down). Target-only dishes are left untouched.
+ */
+export async function syncMenu(sql: Sql, source: BranchRow, target: BranchRow): Promise<{ added: number; updated: number }> {
   const items = await menuOf(sql, source.id);
+  // Which source dishes already have a copy in the target?
+  const existing = await sql.query<{ id: string; source_item_id: string }>(
+    "SELECT id, source_item_id::text AS source_item_id FROM catalogue.menu_item WHERE branch_id = $1 AND source_item_id IS NOT NULL",
+    [target.id],
+  );
+  const bySource = new Map(existing.map((r) => [r.source_item_id, r.id]));
+  let added = 0, updated = 0;
   for (const it of items) {
-    await addMenuItem(sql, target, {
+    const input: MenuItemInput = {
       names: it.names, description: it.description, prices: it.prices, category: it.category, veg: it.veg,
       tags: it.tags, allergens: it.allergens, recommended: it.recommended, variations: it.variations, addons: it.addons,
       dietary: it.dietary, nutrition: it.nutrition, ageRestricted: it.age_restricted, imageId: it.image_id,
-    });
+    };
+    const targetItemId = bySource.get(it.id);
+    if (targetItemId) { await updateMenuItem(sql, target.id, targetItemId, input); updated++; }
+    else { await addMenuItem(sql, target, { ...input, sourceItemId: it.id }); added++; }
   }
-  return items.length;
+  return { added, updated };
+}
+
+/** The branches (other than the source) that hold dishes copied from this source, with how many. */
+export async function linkedCopies(sql: Sql, sourceBranchId: string): Promise<{ id: string; name: string; linked: number }[]> {
+  return sql.query<{ id: string; name: string; linked: number }>(
+    `SELECT b.id, b.name, count(*)::int AS linked
+       FROM catalogue.menu_item m
+       JOIN catalogue.menu_item src ON src.id = m.source_item_id
+       JOIN catalogue.branch b ON b.id = m.branch_id
+      WHERE src.branch_id = $1 AND m.branch_id <> $1
+      GROUP BY b.id, b.name ORDER BY b.name`,
+    [sourceBranchId],
+  );
 }
 
 export async function menuOf(sql: Sql, branchId: string): Promise<MenuItemRow[]> {
