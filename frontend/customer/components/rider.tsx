@@ -411,16 +411,17 @@ function ActiveJob({ job, pos, onDone }: { job: Job; pos: Pos | null; onDone: ()
           {job.collect ? <p className="r-cash">Collect {money(job.collect)} in cash before you hand over</p> : null}
           {!failing ? (
             <>
-              <h3>Customer's 4-digit code</h3>
+              <h3>1 · Customer's 4-digit code</h3>
               <input className="r-input code" inputMode="numeric" maxLength={4} value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))} placeholder="0000" />
-              <label className="r-photo">
+              <h3>2 · Photo at the door <span className="r-req">required</span></h3>
+              <label className={`r-photo ${photo ? "" : "needed"}`}>
                 <input type="file" accept="image/*" capture="environment" onChange={async (e) => { const f = e.target.files?.[0]; if (f) setPhoto({ ref: await sha256(f), url: URL.createObjectURL(f) }); }} />
-                {photo ? <img src={photo.url} alt="Proof of delivery" /> : <span>📷 Photo at the door (optional)</span>}
+                {photo ? <img src={photo.url} alt="Proof of delivery" /> : <span>📷 Take a photo of the handover — required before you can finish</span>}
               </label>
               {error?.includes("from the drop point") ? <input className="r-input" placeholder="Why are you not at the pin? (e.g. gate closed, met at the corner)" value={farReason} onChange={(e) => setFarReason(e.target.value)} /> : null}
-              <button type="button" className="r-btn go" disabled={busy || code.length !== 4 || !pos}
+              <button type="button" className="r-btn go" disabled={busy || code.length !== 4 || !pos || !photo}
                 onClick={() => act({ type: "DELIVER", scannedLabelId: job.labels[0], location: pos, verification: { method: "CODE", code }, sealIntact: true, ...(photo ? { proofPhotoRef: photo.ref } : {}), ...(farReason.trim() ? { outsideGeofenceReason: farReason.trim() } : {}) })}>
-                {pos ? "Delivered" : "Waiting for GPS…"}
+                {!pos ? "Waiting for GPS…" : !photo ? "Take the door photo first" : code.length !== 4 ? "Enter the 4-digit code" : "Delivered"}
               </button>
               <button type="button" className="r-link" onClick={() => setFailing(true)}>Can't deliver?</button>
             </>

@@ -539,7 +539,7 @@ describe("§10–§11 custody chain end to end (RIDER_FIRST)", () => {
     assert.equal((await transition(customer, orderId, { type: "PICK_UP", scannedLabelIds: ["L-1"], restaurantConfirmed: true, sealsIntact: true, location: KINSHASA })).status, 403);
     assert.equal((await transition(rider, orderId, { type: "PICK_UP", scannedLabelIds: ["L-1"], restaurantConfirmed: true, sealsIntact: true, location: KINSHASA })).body.state, "PICKED_UP");
 
-    const deliver = { type: "DELIVER", scannedLabelId: "L-1", location: DROP, sealIntact: true };
+    const deliver = { type: "DELIVER", scannedLabelId: "L-1", location: DROP, sealIntact: true, proofPhotoRef: "photo://door" };
     const wrong = await transition(rider, orderId, { ...deliver, verification: { method: "CODE", code: code === "0000" ? "1111" : "0000" } });
     assert.equal(wrong.body.code, "RECIPIENT_CODE_WRONG");
     const done = await transition(rider, orderId, { ...deliver, verification: { method: "CODE", code } });
@@ -1122,7 +1122,7 @@ describe("operations: dispatch board, reassigning, cash hand-ins, automatic refu
     await transition(kitchen, orderId, { type: "PACK", confirmedLineIds: lines, packageCount: 1, allergenAcknowledged: true });
     await transition(kitchen, orderId, { type: "MARK_READY", packages: [{ labelId: "L-CASH-1", sealId: "S-CASH-1" }], packPhotoRef: "sha256:test" });
     await transition(rider, orderId, { type: "PICK_UP", scannedLabelIds: ["L-CASH-1"], restaurantConfirmed: true, sealsIntact: true, location: KINSHASA });
-    const done = await transition(rider, orderId, { type: "DELIVER", scannedLabelId: "L-CASH-1", location: DROP, verification: { method: "CODE", code: placed.body.recipient_code }, sealIntact: true });
+    const done = await transition(rider, orderId, { type: "DELIVER", scannedLabelId: "L-CASH-1", location: DROP, verification: { method: "CODE", code: placed.body.recipient_code }, sealIntact: true, proofPhotoRef: "photo://door" });
     assert.equal(done.status, 200, JSON.stringify(done.body));
 
     const held = (await call("GET", "/v1/rider/jobs", { token: rider.token, country: "CD" })).body.cash_in_hand.amount_minor;
@@ -1363,7 +1363,7 @@ describe("order lifecycle fires customer notifications", () => {
     await transition(kitchen, orderId, { type: "PACK", confirmedLineIds: ["l1"], packageCount: 1, allergenAcknowledged: true });
     await transition(kitchen, orderId, { type: "MARK_READY", packages: [{ labelId: "L-1", sealId: "S-1" }], packPhotoRef: "photo://pack" });
     await transition(rider, orderId, { type: "PICK_UP", scannedLabelIds: ["L-1"], restaurantConfirmed: true, sealsIntact: true, location: KINSHASA });
-    assert.equal((await transition(rider, orderId, { type: "DELIVER", scannedLabelId: "L-1", location: DROP, sealIntact: true, verification: { method: "CODE", code } })).body.state, "DELIVERED");
+    assert.equal((await transition(rider, orderId, { type: "DELIVER", scannedLabelId: "L-1", location: DROP, sealIntact: true, verification: { method: "CODE", code }, proofPhotoRef: "photo://door" })).body.state, "DELIVERED");
 
     const inbox = await call("GET", "/v1/notifications?limit=100", { token: diner.token, country: "CD" });
     const seen = new Set<string>(inbox.body.data.map((n: { event_key: string }) => n.event_key));
@@ -1456,7 +1456,7 @@ describe("paid membership (the Plus subscription)", () => {
     await transition(kitchen, orderId, { type: "PACK", confirmedLineIds: ["l1"], packageCount: 1, allergenAcknowledged: true });
     await transition(kitchen, orderId, { type: "MARK_READY", packages: [{ labelId: "M-1", sealId: "MS-1" }], packPhotoRef: "photo://pack" });
     await transition(rider, orderId, { type: "PICK_UP", scannedLabelIds: ["M-1"], restaurantConfirmed: true, sealsIntact: true, location: KINSHASA });
-    const done = await transition(rider, orderId, { type: "DELIVER", scannedLabelId: "M-1", location: DROP, sealIntact: true, verification: { method: "CODE", code } });
+    const done = await transition(rider, orderId, { type: "DELIVER", scannedLabelId: "M-1", location: DROP, sealIntact: true, verification: { method: "CODE", code }, proofPhotoRef: "photo://door" });
     assert.equal(done.body.state, "DELIVERED", JSON.stringify(done.body));
     // The settlement journal funds the waived delivery from subscription revenue, and still balances.
     const entries = await inspect("CD", "SELECT e.account, e.amount_minor::text AS amount, e.currency FROM money.ledger_entry e JOIN money.journal j ON j.id = e.journal_id WHERE j.idempotency_key = $1 ORDER BY e.line", [`order:${orderId}:settlement`]);
@@ -1726,7 +1726,7 @@ describe("rider tiers and incentive quests", () => {
     await transition(kitchen, p.orderId, { type: "PACK", confirmedLineIds: ["l1"], packageCount: 1, allergenAcknowledged: true });
     await transition(kitchen, p.orderId, { type: "MARK_READY", packages: [{ labelId: "Q-1", sealId: "QS-1" }], packPhotoRef: "photo://pack" });
     await transition(rider, p.orderId, { type: "PICK_UP", scannedLabelIds: ["Q-1"], restaurantConfirmed: true, sealsIntact: true, location: KINSHASA });
-    assert.equal((await transition(rider, p.orderId, { type: "DELIVER", scannedLabelId: "Q-1", location: DROP, sealIntact: true, verification: { method: "CODE", code: p.code } })).body.state, "DELIVERED");
+    assert.equal((await transition(rider, p.orderId, { type: "DELIVER", scannedLabelId: "Q-1", location: DROP, sealIntact: true, verification: { method: "CODE", code: p.code }, proofPhotoRef: "photo://door" })).body.state, "DELIVERED");
 
     // Now the quest is complete and claimable.
     const after = (await call("GET", "/v1/rider/quests", { token: rider.token, country: "CD" })).body.quests.find((x: { id: string }) => x.id === questId);
@@ -1770,7 +1770,7 @@ describe("coupons / promo codes", () => {
     await transition(kitchen, orderId, { type: "PACK", confirmedLineIds: ["l1"], packageCount: 1, allergenAcknowledged: true });
     await transition(kitchen, orderId, { type: "MARK_READY", packages: [{ labelId: "C-1", sealId: "CS-1" }], packPhotoRef: "photo://pack" });
     await transition(rider, orderId, { type: "PICK_UP", scannedLabelIds: ["C-1"], restaurantConfirmed: true, sealsIntact: true, location: KINSHASA });
-    assert.equal((await transition(rider, orderId, { type: "DELIVER", scannedLabelId: "C-1", location: DROP, sealIntact: true, verification: { method: "CODE", code } })).body.state, "DELIVERED");
+    assert.equal((await transition(rider, orderId, { type: "DELIVER", scannedLabelId: "C-1", location: DROP, sealIntact: true, verification: { method: "CODE", code }, proofPhotoRef: "photo://door" })).body.state, "DELIVERED");
     // The settlement funds the coupon from promotion_expense, and the books balance.
     const entries = await inspect("CD", "SELECT e.account, e.amount_minor::text AS amount, e.currency FROM money.ledger_entry e JOIN money.journal j ON j.id = e.journal_id WHERE j.idempotency_key = $1 ORDER BY e.line", [`order:${orderId}:settlement`]);
     const promo = entries.find((e) => e.account === "promotion_expense");
@@ -1812,7 +1812,7 @@ describe("reviews and ratings", () => {
     await transition(kitchen, p.orderId, { type: "PACK", confirmedLineIds: ["l1"], packageCount: 1, allergenAcknowledged: true });
     await transition(kitchen, p.orderId, { type: "MARK_READY", packages: [{ labelId: "R-1", sealId: "RS-1" }], packPhotoRef: "photo://pack" });
     await transition(rider, p.orderId, { type: "PICK_UP", scannedLabelIds: ["R-1"], restaurantConfirmed: true, sealsIntact: true, location: KINSHASA });
-    assert.equal((await transition(rider, p.orderId, { type: "DELIVER", scannedLabelId: "R-1", location: DROP, sealIntact: true, verification: { method: "CODE", code: p.code } })).body.state, "DELIVERED");
+    assert.equal((await transition(rider, p.orderId, { type: "DELIVER", scannedLabelId: "R-1", location: DROP, sealIntact: true, verification: { method: "CODE", code: p.code }, proofPhotoRef: "photo://door" })).body.state, "DELIVERED");
     orderId = p.orderId;
 
     // Before reviewing, the order is reviewable.
@@ -2071,7 +2071,7 @@ describe("refund requests", () => {
     await transition(kitchen, orderId, { type: "PACK", confirmedLineIds: ["l1"], packageCount: 1, allergenAcknowledged: true });
     await transition(kitchen, orderId, { type: "MARK_READY", packages: [{ labelId: lb, sealId: `${lb}-S` }], packPhotoRef: "photo://pack" });
     await transition(rider, orderId, { type: "PICK_UP", scannedLabelIds: [lb], restaurantConfirmed: true, sealsIntact: true, location: KINSHASA });
-    const done = await transition(rider, orderId, { type: "DELIVER", scannedLabelId: lb, location: DROP, sealIntact: true, verification: { method: "CODE", code } });
+    const done = await transition(rider, orderId, { type: "DELIVER", scannedLabelId: lb, location: DROP, sealIntact: true, verification: { method: "CODE", code }, proofPhotoRef: "photo://door" });
     assert.equal(done.body.state, "DELIVERED", JSON.stringify(done.body));
     return { orderId, total: q.body.total };
   };

@@ -1025,6 +1025,8 @@ section.tight { padding: 44px 0; }
 .r-photo { display: flex; align-items: center; justify-content: center; min-height: 90px; border: 2px dashed #d6dbe8; border-radius: 14px; font-weight: 650; color: var(--muted); overflow: hidden; cursor: pointer; }
 .r-photo input { display: none; }
 .r-photo img { width: 100%; max-height: 200px; object-fit: cover; }
+.r-photo.needed { border-color: var(--bad, #c0391b); color: var(--bad, #c0391b); background: color-mix(in srgb, var(--bad, #c0391b) 6%, transparent); }
+.r-req { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .03em; color: var(--bad, #c0391b); background: color-mix(in srgb, var(--bad, #c0391b) 12%, transparent); border-radius: 6px; padding: 2px 7px; margin-left: 6px; }
 .r-reasons { display: flex; flex-wrap: wrap; gap: 8px; }
 .r-reasons button { height: 42px; padding: 0 14px; border-radius: 999px; border: 1.5px solid #d6dbe8; background: #fff; font: inherit; font-weight: 650; cursor: pointer; }
 .r-reasons button.on { background: var(--navy); color: #fff; border-color: var(--navy); }

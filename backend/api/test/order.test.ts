@@ -77,7 +77,7 @@ const READY: OrderCommand = {
   packPhotoRef: "photo://pack",
 };
 const PICKUP: OrderCommand = { type: "PICK_UP", scannedLabelIds: ["L-1", "L-2"], restaurantConfirmed: true, sealsIntact: true, location: DROP };
-const DELIVER: OrderCommand = { type: "DELIVER", scannedLabelId: "L-1", location: NEAR, verification: { method: "CODE", code: CODE }, sealIntact: true };
+const DELIVER: OrderCommand = { type: "DELIVER", scannedLabelId: "L-1", location: NEAR, verification: { method: "CODE", code: CODE }, sealIntact: true, proofPhotoRef: "photo://door" };
 
 /** Advances a fresh order to `READY` with a rider assigned. */
 function toReady(snap?: OrderSnapshot) {
@@ -214,6 +214,8 @@ test("Gate 4: per-drop scan, recipient code and geofence (§11.5)", () => {
   rejects(() => h.run(DELIVER, otherRider), "NOT_ASSIGNED_RIDER");
   rejects(() => h.run({ ...DELIVER, verification: { method: "CODE", code: "0000" } } as OrderCommand, rider), "RECIPIENT_CODE_WRONG");
   rejects(() => h.run({ ...DELIVER, verification: { method: "CONTACTLESS_PHOTO", photoRef: "p" } } as OrderCommand, rider), "CONTACTLESS_NOT_SELECTED");
+  // A rider drop must be photographed at the door.
+  rejects(() => h.run({ type: "DELIVER", scannedLabelId: "L-1", location: NEAR, verification: { method: "CODE", code: CODE }, sealIntact: true } as OrderCommand, rider), "PROOF_PHOTO_REQUIRED");
   rejects(() => h.run({ ...DELIVER, location: FAR } as OrderCommand, rider), "OUTSIDE_GEOFENCE");
   const { order } = h.run({ ...DELIVER, location: FAR, outsideGeofenceReason: "gate closed, met at corner" } as OrderCommand, rider);
   assert.equal(order.state, "DELIVERED");
@@ -233,7 +235,8 @@ test("INT-010: the code cannot be waived for gifted, cross-border or high-value 
   }
   const hv = toReady(snapshot({ highValue: true }));
   hv.run(PICKUP, rider);
-  rejects(() => hv.run(DELIVER, rider), "PROOF_PHOTO_REQUIRED");
+  const { proofPhotoRef: _noPhoto, ...deliverNoPhoto } = DELIVER as Extract<OrderCommand, { type: "DELIVER" }>;
+  rejects(() => hv.run(deliverNoPhoto as OrderCommand, rider), "PROOF_PHOTO_REQUIRED");
   assert.equal(hv.run({ ...DELIVER, proofPhotoRef: "photo://door" } as OrderCommand, rider).order.state, "DELIVERED");
 });
 

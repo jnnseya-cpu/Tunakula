@@ -279,8 +279,11 @@ export function decide(current: OrderAggregate | undefined, env: CommandEnvelope
       if (v.method === "CODE" && !codeMatches(v.code, s.recipientCodeHash)) fail("RECIPIENT_CODE_WRONG", "The recipient code does not match");
       if (v.method === "CONTACTLESS_PHOTO" && !s.contactlessRequested) fail("CONTACTLESS_NOT_SELECTED", "The customer did not choose contactless delivery");
       if (v.method === "CONTACTLESS_PHOTO") evidence.proofPhotoRef = v.photoRef;
+      // Every rider drop is photographed at the door as proof of delivery (a contactless drop already carries its photo).
+      if (rider && v.method !== "CONTACTLESS_PHOTO" && !nonEmpty(command.proofPhotoRef)) fail("PROOF_PHOTO_REQUIRED", "A photo at the door is required to complete the delivery");
       if (s.highValue && !nonEmpty(command.proofPhotoRef)) fail("PROOF_PHOTO_REQUIRED", "High-value orders need a proof photo");
-      if (nonEmpty(command.proofPhotoRef)) evidence.proofPhotoRef = command.proofPhotoRef;
+      // A contactless drop's own photo is the proof; otherwise the door photo the command carries is.
+      if (v.method !== "CONTACTLESS_PHOTO" && nonEmpty(command.proofPhotoRef)) evidence.proofPhotoRef = command.proofPhotoRef;
       if (!command.sealIntact) exceptions.push({ gate: "DROP", code: "SEAL_BROKEN", reason: "Reported at the door" });
       if (exceptions.length) evidence.exceptions = exceptions;
       return change("DELIVERED", evidence);
