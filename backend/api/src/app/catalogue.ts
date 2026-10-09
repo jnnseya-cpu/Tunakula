@@ -4,7 +4,7 @@ import type { CountryProfile } from "@tunakula/ts-contracts";
 import type { Db, Sql } from "../db/db.ts";
 import type { CountryConfigRegistry } from "../modules/config/config-registry.ts";
 import type { Principal } from "../modules/identity/policy.ts";
-import { addMenuItem, createBranch, createZone, deleteZone, ensureGroup, getBranch, linkedCopies, menuOf, setAvailability, setBranchMarkup, syncMenu, updateBranchProfile, updateMenuItem, updateZone, zonesForBranch, type Addon, type BranchProfilePatch, type BranchRow, type DeliveryZoneInput, type DeliveryZoneRow, type MenuItemInput, type MenuItemRow, type Variation, type VariationOption } from "../persistence/catalogue.ts";
+import { addMenuItem, bestPromotion, createBranch, createPromotion, createZone, deletePromotion, deleteZone, ensureGroup, getBranch, linkedCopies, menuOf, promoPrice, promotionsForBranch, setAvailability, setBranchMarkup, syncMenu, updateBranchProfile, updateMenuItem, updatePromotion, updateZone, zonesForBranch, type Addon, type BranchProfilePatch, type BranchRow, type DeliveryZoneInput, type DeliveryZoneRow, type MenuItemInput, type MenuItemRow, type PromotionInput, type PromotionRow, type Variation, type VariationOption } from "../persistence/catalogue.ts";
 import { audit } from "../persistence/identity.ts";
 import { badRequest, notFound, unprocessable } from "./errors.ts";
 import { require } from "./principal.ts";
@@ -240,12 +240,14 @@ export class CatalogueService {
 
   async menu(country: string, branchId: string) {
     const profile = this.#profile(country);
+    const ccy = profile.money.settlement_currency;
     const tz = profile.country.timezones[0] ?? "UTC";
     const now = new Date();
     return this.db.tx({ country }, async (sql) => {
       const branch = await getBranch(sql, branchId);
       if (!branch) throw notFound("Branch");
-      return { branch: branchProfile(branch), items: (await menuOf(sql, branchId)).map((i) => publicItem(i, now, tz)) };
+      const promos = await promotionsForBranch(sql, branchId, { activeOnly: true });
+      return { branch: branchProfile(branch), items: (await menuOf(sql, branchId)).map((i) => publicItem(i, now, tz, promos, ccy)) };
     });
   }
 
@@ -388,6 +390,75 @@ export class CatalogueService {
     return out;
   }
 
+  /** Merchant: a branch's promotions (active and off), for the console editor. */
+  async promotions(country: string, principal: Principal, branchId: string) {
+    const profile = this.#profile(country);
+    return this.db.tx({ country }, async (sql) => {
+      const branch = await getBranch(sql, branchId);
+      if (!branch) throw notFound("Branch");
+      require(principal, "branch:manage", { type: "branch", country, branchId, restaurantGroupId: branch.restaurant_group_id }, { activeCountry: country, profile });
+      return { branch_id: branchId, promotions: (await promotionsForBranch(sql, branchId)).map(publicPromotion) };
+    });
+  }
+
+  /** Merchant: add a happy-hour promotion (percentage off a dish, a category, or the whole branch). */
+  async createPromotion(country: string, principal: Principal, branchId: string, input: PromotionBody) {
+    const profile = this.#profile(country);
+    return this.db.tx({ country }, async (sql) => {
+      const branch = await getBranch(sql, branchId);
+      if (!branch) throw notFound("Branch");
+      require(principal, "branch:manage", { type: "branch", country, branchId, restaurantGroupId: branch.restaurant_group_id }, { activeCountry: country, profile });
+      const p = this.#parsePromotion(input, true);
+      if (p.scope === "ITEM") { const [m] = await sql.query<{ id: string }>("SELECT id FROM catalogue.menu_item WHERE id = $1 AND branch_id = $2", [p.targetItemId, branchId]); if (!m) throw badRequest("ITEM_INVALID", "That dish is not on this branch's menu"); }
+      const row = await createPromotion(sql, branch, p as PromotionInput);
+      await audit(sql, { actor: principal.userId, action: "promotion.created", target: `branch:${branchId}`, country, detail: { promotion: row.id, name: row.name } });
+      return publicPromotion(row);
+    });
+  }
+
+  /** Merchant: update or switch a promotion (name, percentage, windows, active). */
+  async updatePromotion(country: string, principal: Principal, branchId: string, promoId: string, input: Partial<PromotionBody>) {
+    const profile = this.#profile(country);
+    return this.db.tx({ country }, async (sql) => {
+      const branch = await getBranch(sql, branchId);
+      if (!branch) throw notFound("Branch");
+      require(principal, "branch:manage", { type: "branch", country, branchId, restaurantGroupId: branch.restaurant_group_id }, { activeCountry: country, profile });
+      const row = await updatePromotion(sql, branchId, promoId, this.#parsePromotion(input, false));
+      if (!row) throw notFound("Promotion");
+      await audit(sql, { actor: principal.userId, action: "promotion.updated", target: `branch:${branchId}`, country, detail: { promotion: promoId } });
+      return publicPromotion(row);
+    });
+  }
+
+  /** Merchant: remove a promotion. */
+  async deletePromotion(country: string, principal: Principal, branchId: string, promoId: string) {
+    const profile = this.#profile(country);
+    return this.db.tx({ country }, async (sql) => {
+      const branch = await getBranch(sql, branchId);
+      if (!branch) throw notFound("Branch");
+      require(principal, "branch:manage", { type: "branch", country, branchId, restaurantGroupId: branch.restaurant_group_id }, { activeCountry: country, profile });
+      if (!(await deletePromotion(sql, branchId, promoId))) throw notFound("Promotion");
+      await audit(sql, { actor: principal.userId, action: "promotion.deleted", target: `branch:${branchId}`, country, detail: { promotion: promoId } });
+      return { deleted: true };
+    });
+  }
+
+  #parsePromotion(input: Partial<PromotionBody>, creating: boolean): Partial<PromotionInput> {
+    const out: Partial<PromotionInput> = {};
+    if (creating || input.name !== undefined) { const n = String(input.name ?? "").trim(); if (!n) throw badRequest("NAME_REQUIRED", "A promotion needs a name"); out.name = n.slice(0, 80); }
+    if (creating) {
+      const scope = input.scope ?? "BRANCH";
+      if (!["ITEM", "CATEGORY", "BRANCH"].includes(scope)) throw badRequest("SCOPE_INVALID", "scope is ITEM, CATEGORY or BRANCH");
+      out.scope = scope;
+      if (scope === "ITEM") { if (!input.target_item_id) throw badRequest("ITEM_REQUIRED", "An item promotion needs a dish"); out.targetItemId = String(input.target_item_id); }
+      if (scope === "CATEGORY") { const c = String(input.target_category ?? "").trim(); if (!c) throw badRequest("CATEGORY_REQUIRED", "A category promotion needs a category"); out.targetCategory = c.slice(0, 80); }
+    }
+    if (creating || input.percent !== undefined) { const bps = Math.round((Number(input.percent) || 0) * 100); if (!Number.isFinite(bps) || bps < 1 || bps > 9000) throw badRequest("PERCENT_INVALID", "A promotion is between 1% and 90% off"); out.percentBps = bps; }
+    if (input.hours !== undefined) out.hours = parseItemHours(input.hours);
+    if (input.active !== undefined) out.active = Boolean(input.active);
+    return out;
+  }
+
   /** Confirms a referenced logo/cover exists and is of the expected branch-image purpose (never a private photo). */
   async #assertBranchImage(sql: Sql, id: string | null | undefined, purpose: "BRANCH_LOGO" | "BRANCH_COVER"): Promise<void> {
     if (!id) return;
@@ -415,6 +486,22 @@ interface ZoneInput {
   flat_fee?: string | number | null;
   min_order?: string | number | null;
   active?: boolean;
+}
+
+interface PromotionBody {
+  name?: string; scope?: "ITEM" | "CATEGORY" | "BRANCH";
+  target_item_id?: string | null; target_category?: string | null;
+  percent?: number | string; hours?: unknown; active?: boolean;
+}
+
+/** The public shape of a promotion, for the console editor. */
+function publicPromotion(p: PromotionRow) {
+  return {
+    id: p.id, name: p.name, scope: p.scope,
+    target_item_id: p.target_item_id, target_category: p.target_category,
+    percent: p.percent_bps / 100, percent_bps: p.percent_bps,
+    hours: p.hours ?? {}, active: p.active,
+  };
 }
 
 /** The public shape of a delivery zone, for the storefront and the console editor. */
@@ -492,10 +579,16 @@ function parseItemHours(value: unknown): WeeklyHours {
   try { return parseWeekly(value); } catch (e) { throw badRequest("HOURS_INVALID", (e as Error).message); }
 }
 
-/** A dish shaped for the storefront/console. `at`/`tz`, when given, add a computed `available_now` for dayparting. */
-function publicItem(i: MenuItemRow, at?: Date, tz?: string) {
+/** A dish shaped for the storefront/console. `at`/`tz`, when given, add a computed `available_now` for dayparting
+ * and, with `promos`, the live promotion on the settlement price. */
+function publicItem(i: MenuItemRow, at?: Date, tz?: string, promos?: PromotionRow[], ccy?: string) {
   const hours = i.availability_hours ?? {};
   const scheduled = Object.keys(hours).length > 0;
+  const promo = at && tz && promos && promos.length ? bestPromotion(promos, { id: i.id, category: i.category }, at, tz) : null;
+  const settlementPrice = ccy ? i.prices[ccy] : undefined;
+  const promoView = promo && settlementPrice !== undefined
+    ? (() => { const was = BigInt(settlementPrice); const now = promoPrice(was, promo.percent_bps); return now < was ? { name: promo.name, percent: promo.percent_bps / 100, was: { amount_minor: was.toString(), currency: ccy! }, now: { amount_minor: now.toString(), currency: ccy! } } : null; })()
+    : null;
   return {
     id: i.id,
     names: i.names,
@@ -519,5 +612,7 @@ function publicItem(i: MenuItemRow, at?: Date, tz?: string) {
     // time and zone — whether it is orderable right now.
     availability_hours: hours,
     ...(at && tz ? { available_now: !scheduled || isOpenNow(hours, {}, at, tz) } : {}),
+    // Merchant promotion live on this dish right now (percentage off the settlement price), if any.
+    ...(promoView ? { promo: promoView } : {}),
   };
 }

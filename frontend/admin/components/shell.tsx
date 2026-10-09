@@ -80,7 +80,7 @@ const NAV: { group: Key; items: NavItem[] }[] = [
     { href: "/coupons/", key: "coupons", cap: "markets" },
     { href: "/loyalty/", key: "loyalty", cap: "markets" },
     { href: "/cashback/", key: "cashback", cap: "markets" },
-    { href: "/promotions/", key: "promotions", soon: true },
+    { href: "/promotions/", key: "promotions", cap: "catalogue" },
     { href: "/customers/", key: "customers", soon: true },
     { href: "/riders/", key: "riders", cap: "riders" },
   ] },

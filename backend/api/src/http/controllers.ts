@@ -223,11 +223,39 @@ export class CatalogueController {
     const principal = await this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
     return this.catalogue.deleteZone(country(req), principal, id, zone);
   }
+
+  /** Merchant: a branch's happy-hour promotions. */
+  @Get("branches/:id/promotions")
+  async promotions(@Req() req: FastifyRequest, @Param("id") id: string) {
+    const principal = await this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+    return this.catalogue.promotions(country(req), principal, id);
+  }
+
+  @Post("branches/:id/promotions")
+  async createPromotion(@Req() req: FastifyRequest, @Param("id") id: string, @Body() body: PromotionBody) {
+    const principal = await this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+    return this.catalogue.createPromotion(country(req), principal, id, body ?? {});
+  }
+
+  @Post("branches/:id/promotions/:promo")
+  @HttpCode(200)
+  async updatePromotion(@Req() req: FastifyRequest, @Param("id") id: string, @Param("promo") promo: string, @Body() body: PromotionBody) {
+    const principal = await this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+    return this.catalogue.updatePromotion(country(req), principal, id, promo, body ?? {});
+  }
+
+  @Delete("branches/:id/promotions/:promo")
+  @HttpCode(200)
+  async deletePromotion(@Req() req: FastifyRequest, @Param("id") id: string, @Param("promo") promo: string) {
+    const principal = await this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+    return this.catalogue.deletePromotion(country(req), principal, id, promo);
+  }
 }
 
 type ItemBody = { names: Record<string, string>; description?: Record<string, string>; prices: Record<string, string>; category?: string | null; veg?: boolean | null; tags?: string[]; allergens?: string[]; recommended?: boolean; variations?: unknown; addons?: unknown; image_id?: string | null };
 type ProfileBody = { address?: string | null; phone?: string | null; email?: string | null; description?: Record<string, string>; cuisines?: string[]; min_order?: string | null; logo_id?: string | null; cover_id?: string | null };
 type ZoneBody = { name?: string; centre_lat?: number | string; centre_lng?: number | string; radius_m?: number | string; flat_fee?: string | number | null; min_order?: string | number | null; active?: boolean };
+type PromotionBody = { name?: string; scope?: "ITEM" | "CATEGORY" | "BRANCH"; target_item_id?: string | null; target_category?: string | null; percent?: number | string; hours?: unknown; active?: boolean };
 type QuoteItemBody = { item_id: string; quantity: number; options?: { group: string; choices: string[] }[]; addons?: string[]; note?: string };
 type QuoteBody = { branch_id: string; items: QuoteItemBody[]; order_type: QuoteInput["orderType"]; delivery?: { lat: number; lng: number; rural?: boolean }; tip?: string; coupon_code?: string; scheduled_for?: string };
 

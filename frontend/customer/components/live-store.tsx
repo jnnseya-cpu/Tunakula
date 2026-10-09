@@ -12,7 +12,8 @@ import { BookTable } from "./book-table";
 
 interface VOption { id: string; name: string; price: string }
 interface Variation { id: string; name: string; type: "SINGLE" | "MULTI"; required: boolean; min: number; max: number; options: VOption[] }
-interface MenuItem { id: string; names: Record<string, string>; prices: Record<string, MoneyWire>; tags: string[]; allergens: string[]; available: boolean; variations?: Variation[]; addons?: VOption[]; veg?: boolean | null; dietary?: string[]; nutrition?: Record<string, number>; age_restricted?: boolean; image_id?: string | null; availability_hours?: Record<string, [string, string][]>; available_now?: boolean }
+interface Promo { name: string; percent: number; was: MoneyWire; now: MoneyWire }
+interface MenuItem { id: string; names: Record<string, string>; prices: Record<string, MoneyWire>; tags: string[]; allergens: string[]; available: boolean; variations?: Variation[]; addons?: VOption[]; veg?: boolean | null; dietary?: string[]; nutrition?: Record<string, number>; age_restricted?: boolean; image_id?: string | null; availability_hours?: Record<string, [string, string][]>; available_now?: boolean; promo?: Promo }
 
 /** Dayparting: whether the dish has a schedule, and a short label of today's window (for the storefront badge). */
 const isScheduled = (i: MenuItem) => Object.keys(i.availability_hours ?? {}).length > 0;
@@ -176,8 +177,9 @@ export function LiveStore() {
               return (
                 <article key={i.id} className={`live-item ${canOrder ? "" : "off"}`} data-reveal>
                   <div className="li-text">
-                    <h3>{name}</h3>
+                    <h3>{name}{i.promo ? <span className="promo-tag">−{i.promo.percent}%</span> : null}</h3>
                     {nameOf(i.names, "en") !== name ? <p className="muted">{nameOf(i.names, "en")}</p> : null}
+                    {i.promo ? <p className="promo-name">🏷️ {i.promo.name}</p> : null}
                     {optioned ? <p className="muted small">{(i.variations?.length ?? 0) > 0 ? "Choices" : "Add-ons"} available</p> : null}
                     {isScheduled(i) ? <p className="li-hours">🕒 {i.available_now === false ? (window ? `Available ${window}` : "Not available today") : (window ? `Available ${window}` : "Available at set times")}</p> : null}
                     {dietaryOf(i).length || i.nutrition?.kcal !== undefined || i.age_restricted ? (
@@ -188,7 +190,9 @@ export function LiveStore() {
                       </p>
                     ) : null}
                     {i.allergens.length ? <p className="allergen">Contains {i.allergens.join(", ")}</p> : null}
-                    <p className="li-price num">{price ? money(price) : "—"}{optioned ? "+" : ""}</p>
+                    {i.promo
+                      ? <p className="li-price num"><span className="price-was">{money(i.promo.was)}</span> <b className="price-now">{money(i.promo.now)}</b>{optioned ? "+" : ""}</p>
+                      : <p className="li-price num">{price ? money(price) : "—"}{optioned ? "+" : ""}</p>}
                   </div>
                   <div className="li-pic" style={{ background: bg }}>
                     {i.image_id ? <img className="pic li-photo" src={foodPhotoUrl(i.image_id)} alt="" loading="lazy" /> : <PlateArt className="pic" recipe={recipeFor(name)} seed={i.id} />}

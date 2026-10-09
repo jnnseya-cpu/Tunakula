@@ -17,7 +17,7 @@ import { priceOrder, PricingError, type PriceBreakdown } from "../modules/pricin
 import { isOpenNow } from "../modules/catalogue/hours.ts";
 import { membershipDiscount, type MembershipLookup } from "./membership.ts";
 import type { CouponLookup, CouponPrice } from "./coupons.ts";
-import { getBranch, menuOf, zonesForBranch, type BranchRow, type MenuItemRow } from "../persistence/catalogue.ts";
+import { bestPromotion, getBranch, menuOf, promoPrice, promotionsForBranch, zonesForBranch, type BranchRow, type MenuItemRow } from "../persistence/catalogue.ts";
 import { userById } from "../persistence/identity.ts";
 import { postJournal } from "../persistence/ledger.ts";
 import { handleOrderCommand, loadOrderEvents, OrderConflictError } from "../persistence/orders.ts";
@@ -76,7 +76,7 @@ export interface PlaceOrderInput extends QuoteInput {
 
 export interface Quote {
   readonly branch: { id: string; name: string };
-  readonly lines: readonly { itemId: string; name: string; quantity: number; unit: MoneyJSON; total: MoneyJSON; allergens: string[]; options: string[] }[];
+  readonly lines: readonly { itemId: string; name: string; quantity: number; unit: MoneyJSON; total: MoneyJSON; allergens: string[]; options: string[]; promo?: { name: string; percent: number; wasUnit: MoneyJSON } }[];
   readonly breakdown: PriceBreakdown;
   readonly distanceMeters?: number;
   /** Present when a member's benefit applies: the discount funded by the platform and the resulting payable total. */
@@ -199,6 +199,11 @@ export class CommerceService {
     const scheduledAt = input.scheduledFor ? new Date(input.scheduledFor) : undefined;
     const effectiveAt = scheduledAt && !Number.isNaN(scheduledAt.getTime()) ? scheduledAt : this.now();
 
+    // Merchant promotions (happy hour): a percentage off a dish, category or the whole branch, optionally only in
+    // its weekly window. The discount lowers the dish price here, so the merchant funds it by receiving less — no
+    // ledger change. With no active promotion, prices are unchanged.
+    const promos = await promotionsForBranch(sql, branch.id, { activeOnly: true });
+
     let goods = Money.zero(ccy);
     const lines: Quote["lines"][number][] = [];
     for (const lineInput of input.items) {
@@ -214,11 +219,19 @@ export class CommerceService {
       const price = item.prices[ccy];
       // MR-2: a missing price would be converted by quote; until FX quoting is wired, refuse rather than guess.
       if (price === undefined) throw unprocessable("PRICE_MISSING", `${nameOf(item.names, lang)} has no ${ccy} price`, { itemId });
+      // The promotion applies to the dish price (not option surcharges), at the effective time.
+      const promo = promos.length ? bestPromotion(promos, { id: item.id, category: item.category }, effectiveAt, tz) : null;
+      const basePrice = BigInt(price);
+      const promoBase = promo ? promoPrice(basePrice, promo.percent_bps) : basePrice;
       const { surcharge, descriptors } = optionSurcharge(item, lineInput, nameOf(item.names, lang));
-      const unit = Money.ofMinor(BigInt(price) + surcharge, ccy);
+      const unit = Money.ofMinor(promoBase + surcharge, ccy);
       const total = unit.multiply(BigInt(quantity));
       goods = goods.add(total);
-      lines.push({ itemId, name: nameOf(item.names, lang), quantity, unit: unit.toJSON(), total: total.toJSON(), allergens: item.allergens, options: descriptors });
+      const wasUnit = Money.ofMinor(basePrice + surcharge, ccy);
+      lines.push({
+        itemId, name: nameOf(item.names, lang), quantity, unit: unit.toJSON(), total: total.toJSON(), allergens: item.allergens, options: descriptors,
+        ...(promo && promoBase < basePrice ? { promo: { name: promo.name, percent: promo.percent_bps / 100, wasUnit: wasUnit.toJSON() } } : {}),
+      });
     }
 
     let distanceMeters: number | undefined;
@@ -727,7 +740,7 @@ export function serialiseQuote(q: Quote) {
   const m = (x: Money) => ({ amount_minor: x.minor.toString(), currency: x.currency });
   return {
     branch: q.branch,
-    lines: q.lines.map((l) => ({ item_id: l.itemId, name: l.name, quantity: l.quantity, unit: { amount_minor: l.unit.minor, currency: l.unit.currency }, total: { amount_minor: l.total.minor, currency: l.total.currency }, allergens: l.allergens, options: l.options })),
+    lines: q.lines.map((l) => ({ item_id: l.itemId, name: l.name, quantity: l.quantity, unit: { amount_minor: l.unit.minor, currency: l.unit.currency }, total: { amount_minor: l.total.minor, currency: l.total.currency }, allergens: l.allergens, options: l.options, ...(l.promo ? { promo: { name: l.promo.name, percent: l.promo.percent, was_unit: { amount_minor: l.promo.wasUnit.minor, currency: l.promo.wasUnit.currency } } } : {}) })),
     price_lines: b.lines.map((l) => ({ code: l.code, amount: m(l.amount) })),
     commission: m(b.commission),
     total: m(b.total),

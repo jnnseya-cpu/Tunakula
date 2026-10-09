@@ -1,5 +1,6 @@
 /** Catalogue persistence (§21 branch / menu_item). Prices are minor units per currency (MR-1, MR-2). */
 import type { Sql } from "../db/db.ts";
+import { isOpenNow } from "../modules/catalogue/hours.ts";
 
 export interface BranchRow {
   id: string;
@@ -306,6 +307,80 @@ export async function updateZone(sql: Sql, branchId: string, zoneId: string, p: 
 export async function deleteZone(sql: Sql, branchId: string, zoneId: string): Promise<boolean> {
   const rows = await sql.query("DELETE FROM catalogue.delivery_zone WHERE id = $1 AND branch_id = $2 RETURNING id", [zoneId, branchId]);
   return rows.length === 1;
+}
+
+// ── Merchant promotions (happy hour) ──
+export interface PromotionRow {
+  id: string; branch_id: string; name: string;
+  scope: "ITEM" | "CATEGORY" | "BRANCH";
+  target_item_id: string | null; target_category: string | null;
+  percent_bps: number; hours: Record<string, [string, string][]>; active: boolean;
+}
+export interface PromotionInput {
+  name: string; scope: "ITEM" | "CATEGORY" | "BRANCH";
+  targetItemId?: string | null; targetCategory?: string | null;
+  percentBps: number; hours?: Record<string, [string, string][]>; active?: boolean;
+}
+const PROMO_COLUMNS = "id, branch_id, name, scope, target_item_id::text AS target_item_id, target_category, percent_bps, hours, active";
+
+export async function promotionsForBranch(sql: Sql, branchId: string, opts: { activeOnly?: boolean } = {}): Promise<PromotionRow[]> {
+  return sql.query<PromotionRow & Record<string, unknown>>(
+    `SELECT ${PROMO_COLUMNS} FROM catalogue.menu_promotion WHERE branch_id = $1 ${opts.activeOnly ? "AND active = true" : ""} ORDER BY created_at DESC`,
+    [branchId],
+  );
+}
+
+export async function createPromotion(sql: Sql, branch: BranchRow, p: PromotionInput): Promise<PromotionRow> {
+  const [row] = await sql.query<PromotionRow & Record<string, unknown>>(
+    `INSERT INTO catalogue.menu_promotion (country_iso2, branch_id, name, scope, target_item_id, target_category, percent_bps, hours, active)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING ${PROMO_COLUMNS}`,
+    [branch.country_iso2, branch.id, p.name, p.scope, p.targetItemId ?? null, p.targetCategory ?? null, p.percentBps, JSON.stringify(p.hours ?? {}), p.active ?? true],
+  );
+  return row as PromotionRow;
+}
+
+export async function updatePromotion(sql: Sql, branchId: string, promoId: string, p: Partial<PromotionInput>): Promise<PromotionRow | undefined> {
+  const sets: string[] = [];
+  const vals: unknown[] = [promoId, branchId];
+  const add = (col: string, val: unknown) => { vals.push(val); sets.push(`${col} = $${vals.length}`); };
+  if (p.name !== undefined) add("name", p.name);
+  if (p.percentBps !== undefined) add("percent_bps", p.percentBps);
+  if (p.hours !== undefined) add("hours", JSON.stringify(p.hours));
+  if (p.active !== undefined) add("active", p.active);
+  if (sets.length === 0) { const [row] = await sql.query<PromotionRow & Record<string, unknown>>(`SELECT ${PROMO_COLUMNS} FROM catalogue.menu_promotion WHERE id = $1 AND branch_id = $2`, [promoId, branchId]); return row as PromotionRow | undefined; }
+  const [row] = await sql.query<PromotionRow & Record<string, unknown>>(
+    `UPDATE catalogue.menu_promotion SET ${sets.join(", ")}, updated_at = now() WHERE id = $1 AND branch_id = $2 RETURNING ${PROMO_COLUMNS}`,
+    vals,
+  );
+  return row as PromotionRow | undefined;
+}
+
+export async function deletePromotion(sql: Sql, branchId: string, promoId: string): Promise<boolean> {
+  const rows = await sql.query("DELETE FROM catalogue.menu_promotion WHERE id = $1 AND branch_id = $2 RETURNING id", [promoId, branchId]);
+  return rows.length === 1;
+}
+
+/** The best (deepest) promotion that applies to a dish at `at` — item-, category- or branch-scoped, in its window. */
+export function bestPromotion(promos: PromotionRow[], item: { id: string; category: string | null }, at: Date, tz: string): { id: string; name: string; percent_bps: number } | null {
+  let best: { id: string; name: string; percent_bps: number } | null = null;
+  for (const p of promos) {
+    if (!p.active) continue;
+    const matches = p.scope === "BRANCH"
+      || (p.scope === "ITEM" && p.target_item_id === item.id)
+      || (p.scope === "CATEGORY" && p.target_category !== null && item.category === p.target_category);
+    if (!matches) continue;
+    if (Object.keys(p.hours ?? {}).length > 0 && !isOpenNow(p.hours, {}, at, tz)) continue;
+    if (!best || p.percent_bps > best.percent_bps) best = { id: p.id, name: p.name, percent_bps: p.percent_bps };
+  }
+  return best;
+}
+
+/** Applies a percentage-off (basis points) to a minor-unit price, rounding the discount to the nearest minor unit. */
+export function promoPrice(minor: bigint, percentBps: number): bigint {
+  if (!percentBps) return minor;
+  const discount = (minor * BigInt(percentBps) + 5000n) / 10000n;
+  const out = minor - discount;
+  return out < 0n ? 0n : out;
 }
 
 export async function menuOf(sql: Sql, branchId: string): Promise<MenuItemRow[]> {

@@ -3084,3 +3084,97 @@ describe("cashback campaigns", () => {
     assert.equal(await walletUsd(shopper.token), before - total, "no cashback below the minimum spend");
   });
 });
+
+describe("merchant promotions (happy hour)", () => {
+  // CD is Africa/Kinshasa (UTC+1); a UTC instant maps to local +1h.
+  const AT_0800 = "2030-06-03T07:00:00Z"; // 08:00 local — inside a 07:00–11:00 window
+  const AT_1500 = "2030-06-03T14:00:00Z"; // 15:00 local — outside it
+  const everyDay = (o: string, c: string) => Object.fromEntries(["0","1","2","3","4","5","6"].map((d) => [d, [[o, c]]]));
+  let pbranch: string, burger: string, cola: string;
+
+  const quoteLine = async (itemId: string, at?: string) => {
+    const body: Record<string, unknown> = { branch_id: pbranch, items: [{ item_id: itemId, quantity: 1 }], order_type: "DELIVERY", delivery: DROP };
+    if (at) body.scheduled_for = at;
+    const q = await call("POST", "/v1/carts/quote", { country: "CD", body });
+    assert.equal(q.status, 200, JSON.stringify(q.body));
+    return q.body.lines[0];
+  };
+
+  test("a merchant runs percentage promotions by dish, category or branch; the deepest in-window wins", async () => {
+    const br = await call("POST", "/v1/branches", { token: admin.token, country: "CD", body: { name: "Promo Grill", restaurant_group_id: "rg-chez-maman", city: "kinshasa", commune: "gombe", ...KINSHASA } });
+    pbranch = br.body.id;
+    burger = (await call("POST", `/v1/branches/${pbranch}/items`, { token: restaurantOwner.token, country: "CD", body: { names: { fr: "Burger", en: "Burger" }, prices: { USD: "10.00" }, category: "Mains" } })).body.id;
+    cola = (await call("POST", `/v1/branches/${pbranch}/items`, { token: restaurantOwner.token, country: "CD", body: { names: { fr: "Cola", en: "Cola" }, prices: { USD: "2.00" }, category: "Drinks" } })).body.id;
+
+    // No promotions yet: full price.
+    assert.equal((await quoteLine(burger)).unit.amount_minor, "1000");
+    assert.equal((await quoteLine(burger)).promo, undefined);
+
+    // A customer cannot create a promotion; only a branch manager.
+    assert.equal((await call("POST", `/v1/branches/${pbranch}/promotions`, { token: customer.token, country: "CD", body: { scope: "BRANCH", percent: 10 } })).status, 403);
+
+    // A dish-scoped 20% off the burger. The burger drops to $8.00; the cola is untouched.
+    const itemPromo = await call("POST", `/v1/branches/${pbranch}/promotions`, { token: restaurantOwner.token, country: "CD", body: { name: "Burger Tuesday", scope: "ITEM", target_item_id: burger, percent: 20 } });
+    assert.equal(itemPromo.status, 201, JSON.stringify(itemPromo.body));
+    const bl = await quoteLine(burger);
+    assert.equal(bl.unit.amount_minor, "800", "20% off the burger");
+    assert.equal(bl.promo.percent, 20);
+    assert.equal(bl.promo.was_unit.amount_minor, "1000");
+    assert.equal((await quoteLine(cola)).unit.amount_minor, "200", "the cola is not on promotion");
+
+    // A branch-wide 10% off. The burger keeps its deeper 20% (deepest wins); the cola now gets 10%.
+    await call("POST", `/v1/branches/${pbranch}/promotions`, { token: restaurantOwner.token, country: "CD", body: { name: "Storewide 10%", scope: "BRANCH", percent: 10 } });
+    assert.equal((await quoteLine(burger)).unit.amount_minor, "800", "the deeper dish promo still wins");
+    assert.equal((await quoteLine(cola)).unit.amount_minor, "180", "the branch promo applies to the cola");
+
+    // A category promotion (30% off Drinks) now beats the 10% branch promo on the cola.
+    await call("POST", `/v1/branches/${pbranch}/promotions`, { token: restaurantOwner.token, country: "CD", body: { name: "Happy drinks", scope: "CATEGORY", target_category: "Drinks", percent: 30 } });
+    assert.equal((await quoteLine(cola)).unit.amount_minor, "140", "30% off drinks wins over the 10% branch promo");
+
+    // The storefront menu shows the live promo on each dish.
+    const menu = await call("GET", `/v1/branches/${pbranch}/menu`, { country: "CD" });
+    const mBurger = menu.body.items.find((i: { id: string }) => i.id === burger);
+    assert.equal(mBurger.promo.percent, 20);
+    assert.equal(mBurger.promo.now.amount_minor, "800");
+    assert.equal(mBurger.promo.was.amount_minor, "1000");
+
+    // A windowed promotion only applies inside its hours. A fresh branch keeps this isolated.
+    const wbr = await call("POST", "/v1/branches", { token: admin.token, country: "CD", body: { name: "Window Grill", restaurant_group_id: "rg-chez-maman", city: "kinshasa", commune: "gombe", ...KINSHASA } });
+    const wbranch = wbr.body.id;
+    const wItem = (await call("POST", `/v1/branches/${wbranch}/items`, { token: restaurantOwner.token, country: "CD", body: { names: { fr: "Lunch", en: "Lunch" }, prices: { USD: "10.00" } } })).body.id;
+    await call("POST", `/v1/branches/${wbranch}/promotions`, { token: restaurantOwner.token, country: "CD", body: { name: "Morning 25%", scope: "BRANCH", percent: 25, hours: everyDay("07:00", "11:00") } });
+    const inWin = await call("POST", "/v1/carts/quote", { country: "CD", body: { branch_id: wbranch, items: [{ item_id: wItem, quantity: 1 }], order_type: "DELIVERY", delivery: DROP, scheduled_for: AT_0800 } });
+    assert.equal(inWin.body.lines[0].unit.amount_minor, "750", "25% off inside the window");
+    const outWin = await call("POST", "/v1/carts/quote", { country: "CD", body: { branch_id: wbranch, items: [{ item_id: wItem, quantity: 1 }], order_type: "DELIVERY", delivery: DROP, scheduled_for: AT_1500 } });
+    assert.equal(outWin.body.lines[0].unit.amount_minor, "1000", "full price outside the window");
+  });
+
+  test("a promoted order settles with the merchant funding the discount, and the books balance", async () => {
+    // The kitchen staff need rights on this branch to drive the order.
+    await grant({ userId: kitchen.userId, role: "KITCHEN_STAFF", scope: { type: "BRANCH", id: pbranch } });
+    // Top up and place a wallet order for the discounted burger (20% off → $8.00).
+    await call("POST", "/v1/me/wallet/topup", { token: customer.token, country: "CD", body: { amount_minor: "5000", currency: "USD", method_type: "MOBILE_MONEY_PUSH", payer: { msisdn: "+243810000001" } } });
+    const pcart = { branch_id: pbranch, items: [{ item_id: burger, quantity: 1 }], order_type: "DELIVERY", delivery: DROP };
+    const q = await call("POST", "/v1/carts/quote", { country: "CD", body: pcart });
+    const goods = BigInt(q.body.lines[0].total.amount_minor);
+    assert.equal(goods, 800n, "the goods are the discounted price");
+    const placed = await call("POST", "/v1/orders", { token: customer.token, country: "CD", body: { ...pcart, payment_mode: "WALLET", expected_total: q.body.total } });
+    assert.equal(placed.status, 201, JSON.stringify(placed.body));
+    const orderId = placed.body.order_id, code = placed.body.recipient_code;
+    await transition(ops, orderId, { type: "ASSIGN_RIDER", riderId: rider.userId });
+    await transition(kitchen, orderId, { type: "ACCEPT" });
+    await transition(kitchen, orderId, { type: "START_PREPARING" });
+    await transition(kitchen, orderId, { type: "PACK", confirmedLineIds: ["l1"], packageCount: 1, allergenAcknowledged: true });
+    await transition(kitchen, orderId, { type: "MARK_READY", packages: [{ labelId: "PR-1", sealId: "PR-1-S" }], packPhotoRef: "photo://pack" });
+    await transition(rider, orderId, { type: "PICK_UP", scannedLabelIds: ["PR-1"], restaurantConfirmed: true, sealsIntact: true, location: KINSHASA });
+    const done = await transition(rider, orderId, { type: "DELIVER", scannedLabelId: "PR-1", location: DROP, sealIntact: true, verification: { method: "CODE", code }, proofPhotoRef: "photo://door" });
+    assert.equal(done.body.state, "DELIVERED", JSON.stringify(done.body));
+    // The merchant funds the promo by receiving less — there is no platform promotion_expense for it
+    // (unlike a coupon), so the settlement journal has no promotion_expense entry.
+    const promoExp = await inspect("CD", "SELECT e.amount_minor FROM money.ledger_entry e JOIN money.journal j ON j.id = e.journal_id WHERE j.idempotency_key = $1 AND e.account = 'promotion_expense'", [`order:${orderId}:settlement`]);
+    assert.equal(promoExp.length, 0, "a merchant promo is not a platform expense");
+    // The ledger still balances after a discounted order.
+    const [bal] = await inspect("CD", "SELECT sum(amount_minor)::text AS s FROM money.ledger_entry WHERE currency = 'USD'");
+    assert.equal(bal.s, "0", "the ledger balances");
+  });
+});
