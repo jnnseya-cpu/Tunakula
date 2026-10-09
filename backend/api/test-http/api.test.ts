@@ -2970,3 +2970,27 @@ describe("rider shifts (availability scheduling)", () => {
     assert.notEqual(nearJobs.body.offer?.job.order_id, placed.body.order_id, "the nearer off-shift rider is not preferred");
   });
 });
+
+describe("busy-areas heatmap", () => {
+  test("riders and ops see where demand is high; a plain customer cannot", async () => {
+    // Place and pay for an order so Gombe has at least one order waiting for a rider.
+    const p = await placePrepaid();
+    await call("POST", "/v1/payments/intents", { token: customer.token, country: "CD", body: { order_id: p.orderId, method_type: "MOBILE_MONEY_PUSH", payer: { msisdn: "+243810000001" } } });
+
+    const h = await call("GET", "/v1/rider/heatmap", { token: rider.token, country: "CD" });
+    assert.equal(h.status, 200, JSON.stringify(h.body));
+    assert.equal(h.body.window_minutes, 45);
+    const gombe = h.body.zones.find((z: { zone: string }) => z.zone === "gombe");
+    assert.ok(gombe, "Gombe is on the map");
+    assert.ok(gombe.waiting >= 1, "Gombe has at least one waiting order");
+    assert.ok(["HOT", "BUSY", "STEADY"].includes(gombe.level), `Gombe reads busy, not quiet (${gombe.level})`);
+    assert.ok(h.body.hotspots.length >= 1, "recent drop points feed the heat layer");
+    assert.ok(h.body.hotspots.every((pt: { lat: number; lng: number }) => Number.isFinite(pt.lat) && Number.isFinite(pt.lng)));
+
+    // Operations see the same view.
+    assert.equal((await call("GET", "/v1/ops/heatmap", { token: ops.token, country: "CD" })).status, 200);
+    // A plain customer sees neither the rider nor the ops heatmap.
+    assert.equal((await call("GET", "/v1/rider/heatmap", { token: customer.token, country: "CD" })).status, 403);
+    assert.equal((await call("GET", "/v1/ops/heatmap", { token: customer.token, country: "CD" })).status, 403);
+  });
+});

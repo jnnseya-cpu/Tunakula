@@ -265,6 +265,73 @@ export class DispatchService {
     };
   }
 
+  // ── Demand heatmap (busy areas) ──
+
+  /** GET /v1/rider/heatmap: where demand is high right now, so a rider can position themselves well. */
+  async riderHeatmap(principal: Principal, country: string) {
+    if (DispatchService.riderZones(principal).length === 0) throw forbidden("Only riders see the busy-areas map");
+    return this.db.tx({ country }, (sql) => this.#heatmap(sql, country));
+  }
+
+  /** GET /v1/ops/heatmap: the same demand view for operations. */
+  async opsHeatmap(principal: Principal, country: string) {
+    await this.#requireOps(principal, country);
+    return this.db.tx({ country }, (sql) => this.#heatmap(sql, country));
+  }
+
+  /** Demand vs. supply per zone over the last 45 minutes, plus recent drop points for a heat layer. */
+  async #heatmap(sql: Sql, country: string) {
+    const at = this.now();
+    const since = new Date(at.getTime() - 45 * 60_000);
+    const fresh = new Date(at.getTime() - PRESENCE_FRESH_MS);
+    const rows = await sql.query<{ zone: string; waiting: string; recent: string; riders: string }>(
+      `SELECT c.commune AS zone,
+              COALESCE(d.waiting, 0)::text AS waiting, COALESCE(d.recent, 0)::text AS recent,
+              COALESCE(r.riders, 0)::text AS riders
+         FROM (SELECT DISTINCT commune FROM catalogue.branch WHERE commune IS NOT NULL) c
+         LEFT JOIN (
+           SELECT b.commune AS zone,
+                  count(*) FILTER (WHERE o.rider_id IS NULL AND o.state = ANY($2)) AS waiting,
+                  count(*) FILTER (WHERE o.created_at >= $3) AS recent
+             FROM ordering.order_view o JOIN catalogue.branch b ON b.id = o.branch_id
+            WHERE o.type = ANY($1) AND b.commune IS NOT NULL
+              AND (o.created_at >= $3 OR (o.rider_id IS NULL AND o.state = ANY($2)))
+            GROUP BY b.commune
+         ) d ON d.zone = c.commune
+         LEFT JOIN (
+           SELECT b.scope_id AS zone, count(DISTINCT p.rider_id) AS riders
+             FROM identity.role_binding b
+             JOIN dispatch.rider_presence p ON p.rider_id = b.user_id AND p.online = true AND p.updated_at >= $4
+            WHERE b.role = 'RIDER' AND b.scope_type = 'ZONE'
+            GROUP BY b.scope_id
+         ) r ON r.zone = c.commune`,
+      [RIDER_ORDER_TYPES, NEEDS_RIDER, since, fresh],
+    );
+    const zones = rows
+      .map((r) => {
+        const waiting = Number(r.waiting), recent = Number(r.recent), riders = Number(r.riders);
+        // Demand weights unfulfilled orders over recent volume; a zone is hotter when few riders cover it.
+        const score = waiting * 3 + recent;
+        const ratio = score / (riders + 1);
+        const level = score === 0 ? "QUIET" : ratio >= 6 ? "HOT" : ratio >= 2.5 ? "BUSY" : "STEADY";
+        return { zone: r.zone, waiting, recent, riders, level };
+      })
+      .sort((a, b) => (b.waiting * 3 + b.recent) - (a.waiting * 3 + a.recent) || a.zone.localeCompare(b.zone));
+    const hotspots = await sql.query<{ lat: string; lng: string }>(
+      `SELECT (e.payload->'snapshot'->'dropLocation'->>'lat') AS lat, (e.payload->'snapshot'->'dropLocation'->>'lng') AS lng
+         FROM ordering.order_view o JOIN ordering.order_event e ON e.order_id = o.order_id AND e.type = 'ORDER_DRAFTED'
+        WHERE o.type = ANY($1) AND o.created_at >= $2 AND e.payload->'snapshot'->'dropLocation' IS NOT NULL
+        ORDER BY o.created_at DESC LIMIT 200`,
+      [RIDER_ORDER_TYPES, since],
+    );
+    return {
+      now: at.toISOString(),
+      window_minutes: 45,
+      zones,
+      hotspots: hotspots.map((h) => ({ lat: Number(h.lat), lng: Number(h.lng) })).filter((h) => Number.isFinite(h.lat) && Number.isFinite(h.lng)),
+    };
+  }
+
   /** The rider's earned balance: riderReceives on every delivered order, minus what they have cashed out. */
   async #earnedBalance(sql: Sql, riderId: string): Promise<bigint> {
     const [e] = await sql.query<{ earned: string }>(

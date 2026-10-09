@@ -1287,6 +1287,18 @@ section.tight { padding: 44px 0; }
 .r-shift-tag.live { background: var(--ok, #0a7d33); color: #fff; }
 .r-shift-tag.past { opacity: .6; }
 
+/* Rider busy-areas heatmap (additive) */
+.r-heat-list { margin-top: 14px; display: grid; gap: 8px; }
+.r-heat-row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--rule); border-radius: 12px; }
+.r-heat-main { flex: 1; display: flex; flex-direction: column; }
+.r-heat-main small { color: var(--muted); font-size: 12px; }
+.r-heat-dot { width: 12px; height: 12px; border-radius: 999px; flex: none; }
+.r-heat-dot.hot, .r-heat-tag.hot { --h: #c01818; }
+.r-heat-dot.busy, .r-heat-tag.busy { --h: #e8740c; }
+.r-heat-dot.steady, .r-heat-tag.steady { --h: #1f6feb; }
+.r-heat-dot { background: var(--h, #8a93a6); }
+.r-heat-tag { font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 999px; color: #fff; background: var(--h, #8a93a6); }
+
 /* Rider tier + quests (additive) */
 .r-tier { display: flex; align-items: center; gap: 10px; border: 2px solid var(--rule); border-radius: var(--radius); padding: 10px 12px; margin-bottom: 10px; }
 .r-tier-badge { color: #fff; font-weight: 800; letter-spacing: .04em; font-size: 12px; padding: 3px 10px; border-radius: 999px; }

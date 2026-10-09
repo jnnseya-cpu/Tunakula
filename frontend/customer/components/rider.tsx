@@ -68,6 +68,7 @@ export function RiderApp() {
   const [busy, setBusy] = useState(false);
   const [showEarn, setShowEarn] = useState(false);
   const [showShifts, setShowShifts] = useState(false);
+  const [showBusy, setShowBusy] = useState(false);
   const watch = useRef<number | null>(null);
   const lastSent = useRef<{ at: number; pos: Pos } | null>(null);
   const lastOffer = useRef<string | null>(null);
@@ -200,8 +201,10 @@ export function RiderApp() {
       </div>
       <button type="button" className="r-earn-link" onClick={() => setShowEarn(true)}>Earnings &amp; instant cash-out →</button>
       <button type="button" className="r-earn-link" onClick={() => setShowShifts(true)}>My shifts — book when you&apos;ll ride →</button>
+      <button type="button" className="r-earn-link" onClick={() => setShowBusy(true)}>Busy areas — where the jobs are →</button>
       {showEarn ? <EarningsPanel onClose={() => setShowEarn(false)} /> : null}
       {showShifts ? <ShiftsPanel onClose={() => setShowShifts(false)} /> : null}
+      {showBusy ? <BusyAreasPanel pos={pos} onClose={() => setShowBusy(false)} /> : null}
       <SosButton pos={pos} orderId={job?.order_id ?? null} />
     </Frame>
   );
@@ -287,6 +290,46 @@ function ShiftsPanel({ onClose }: { onClose: () => void }) {
             <div key={s.id} className={`r-shift ${s.active_now ? "live" : ""}`}>
               <div><b>{s.zone}</b>{s.active_now ? <span className="r-shift-tag live">On shift now</span> : s.upcoming ? <span className="r-shift-tag">Upcoming</span> : <span className="r-shift-tag past">Past</span>}<br /><small>{when(s.starts_at)} → {when(s.ends_at)}</small></div>
               {s.status === "BOOKED" && new Date(s.ends_at).getTime() > Date.now() ? <button type="button" className="link-btn" onClick={() => cancel(s.id)}>Cancel</button> : s.status === "CANCELLED" ? <small className="muted">Cancelled</small> : null}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+interface HeatZone { zone: string; waiting: number; recent: number; riders: number; level: "HOT" | "BUSY" | "STEADY" | "QUIET" }
+interface Heatmap { window_minutes: number; zones: HeatZone[]; hotspots: { lat: number; lng: number }[] }
+const LEVEL_LABEL: Record<string, string> = { HOT: "Very busy", BUSY: "Busy", STEADY: "Steady", QUIET: "Quiet" };
+
+/** Busy areas: which zones have the most demand right now, so a rider can move to where the jobs are. */
+function BusyAreasPanel({ pos, onClose }: { pos: Pos | null; onClose: () => void }) {
+  const [h, setH] = useState<Heatmap | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    const load = () => api<Heatmap>("/v1/rider/heatmap").then(setH).catch((e: ApiError) => setError(e.message));
+    void load();
+    const t = setInterval(load, 15_000);
+    return () => clearInterval(t);
+  }, []);
+  const pins: MapPin[] = [
+    ...(h?.hotspots ?? []).map((p, i) => ({ lat: p.lat, lng: p.lng, kind: "drop" as const, id: `h${i}` })),
+    ...(pos ? [{ lat: pos.lat, lng: pos.lng, kind: "me" as const, id: "me" }] : []),
+  ];
+  const busy = (h?.zones ?? []).filter((z) => z.level !== "QUIET");
+  return (
+    <div className="r-sheet" role="dialog" aria-modal="true" aria-label="Busy areas" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="r-sheet-card">
+        <div className="r-sheet-head"><h2>Busy areas</h2><button type="button" className="picker-x" onClick={onClose} aria-label="Close">✕</button></div>
+        <p className="muted">Demand over the last {h?.window_minutes ?? 45} minutes. Move toward a hot zone to catch more jobs — and book a shift there to get first pick.</p>
+        {error ? <p className="r-error" role="alert">{error}</p> : null}
+        {h && h.hotspots.length > 0 ? <TileMap height={190} pins={pins} /> : null}
+        <div className="r-heat-list">
+          {busy.length === 0 ? <p className="muted">It&apos;s quiet everywhere right now.</p> : busy.map((z) => (
+            <div key={z.zone} className="r-heat-row">
+              <span className={`r-heat-dot ${z.level.toLowerCase()}`} aria-hidden />
+              <div className="r-heat-main"><b>{z.zone}</b><small>{z.waiting} waiting · {z.recent} recent · {z.riders} rider{z.riders === 1 ? "" : "s"} online</small></div>
+              <span className={`r-heat-tag ${z.level.toLowerCase()}`}>{LEVEL_LABEL[z.level]}</span>
             </div>
           ))}
         </div>

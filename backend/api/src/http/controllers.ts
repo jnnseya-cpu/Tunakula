@@ -466,6 +466,13 @@ export class RiderController {
     const principal = await this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
     return this.dispatch.cancelShift(principal, country(req), id);
   }
+
+  /** Where demand is high right now, so the rider can position themselves. */
+  @Get("heatmap")
+  async heatmap(@Req() req: FastifyRequest) {
+    const principal = await this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+    return this.dispatch.riderHeatmap(principal, country(req));
+  }
 }
 
 /** Operations: the dispatch board, (re)assigning riders, cash hand-ins, refunds and rider applications. */
@@ -508,6 +515,12 @@ export class OpsController {
   @Get("shifts")
   async shifts(@Req() req: FastifyRequest) {
     return this.dispatch.shifts(await this.#me(req), country(req));
+  }
+
+  /** The demand heatmap (busy areas) for operations. */
+  @Get("heatmap")
+  async heatmap(@Req() req: FastifyRequest) {
+    return this.dispatch.opsHeatmap(await this.#me(req), country(req));
   }
 
   @Get("quests")
