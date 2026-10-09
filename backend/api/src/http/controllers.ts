@@ -20,6 +20,7 @@ import type { ReservationService, BookingStatus } from "../app/reservations.ts";
 import type { RefundService } from "../app/refunds.ts";
 import type { WalletService } from "../app/wallet.ts";
 import type { ReferralService } from "../app/referrals.ts";
+import type { LoyaltyService } from "../app/loyalty.ts";
 import type { MerchantOnboardingService } from "../app/merchant-onboarding.ts";
 import type { NotificationService } from "../app/comms.ts";
 import { serialiseQuote, type CommerceService, type PlaceOrderInput, type QuoteInput } from "../app/commerce.ts";
@@ -1155,6 +1156,53 @@ export class ReferralController {
   @Post("referrals/claim")
   async claim(@Req() req: FastifyRequest, @Body() body: { code?: string }) {
     return this.referrals.claim(country(req), await this.#p(req), String(body?.code ?? ""));
+  }
+}
+
+/** Loyalty points: a customer earns points on delivered orders and redeems them for wallet credit; admins set the rates. */
+@Controller("v1")
+export class LoyaltyController {
+  constructor(
+    @Inject(TOKENS.db) private readonly db: Db,
+    @Inject(TOKENS.tokens) private readonly tokens: TokenService,
+    @Inject(TOKENS.loyalty) private readonly loyalty: LoyaltyService,
+  ) {}
+
+  #p(req: FastifyRequest) {
+    return this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+  }
+
+  /** The customer's points balance, what a point is worth, and the current rules. */
+  @Get("me/loyalty")
+  async summary(@Req() req: FastifyRequest) {
+    return this.loyalty.summary(country(req), await this.#p(req));
+  }
+
+  /** The customer's recent points movements. */
+  @Get("me/loyalty/transactions")
+  async history(@Req() req: FastifyRequest) {
+    return this.loyalty.history(country(req), await this.#p(req));
+  }
+
+  /** Redeem points for wallet credit. */
+  @Post("me/loyalty/redeem")
+  @HttpCode(200)
+  async redeem(@Req() req: FastifyRequest, @Body() body: { points?: number }) {
+    const key = req.headers["idempotency-key"] as string;
+    return this.loyalty.redeem(country(req), await this.#p(req), Math.round(Number(body?.points ?? 0)), key);
+  }
+
+  /** Admin: read the market's loyalty settings. */
+  @Get("admin/loyalty")
+  async config(@Req() req: FastifyRequest) {
+    return this.loyalty.adminConfig(country(req), await this.#p(req));
+  }
+
+  /** Admin: set the market's loyalty settings. */
+  @Post("admin/loyalty")
+  @HttpCode(200)
+  async setConfig(@Req() req: FastifyRequest, @Body() body: { enabled?: boolean; earn_bps?: number; redeem_minor_per_point?: number; min_redeem_points?: number }) {
+    return this.loyalty.setConfig(country(req), await this.#p(req), body ?? {});
   }
 }
 

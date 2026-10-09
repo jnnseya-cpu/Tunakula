@@ -17,6 +17,7 @@ import { createApi } from "../src/http/app.ts";
 import { TOKENS } from "../src/http/common.ts";
 import { DispatchService, KITCHEN_TIMEOUT_MIN } from "../src/app/dispatch.ts";
 import type { WalletService } from "../src/app/wallet.ts";
+import type { LoyaltyService } from "../src/app/loyalty.ts";
 import type { ReferralService } from "../src/app/referrals.ts";
 import type { CommerceService } from "../src/app/commerce.ts";
 import type { PaymentService } from "../src/app/payments.ts";
@@ -2690,5 +2691,102 @@ describe("brands and franchises", () => {
     // The linked-branches list reports the markup.
     const copies = await call("GET", `/v1/branches/${src}/menu/copies`, { token: owner.token, country: "CD" });
     assert.equal(copies.body.branches[0].markup_bps, 1000);
+  });
+});
+
+describe("loyalty points", () => {
+  const loyalty = () => api.get<LoyaltyService>(TOKENS.loyalty);
+  const walletUsd = async (token: string) => {
+    const r = await call("GET", "/v1/me/wallet", { token, country: "CD" });
+    const usd = r.body.balances.find((b: { currency: string }) => b.currency === "USD");
+    return usd ? BigInt(usd.amount_minor) : 0n;
+  };
+  // Drives one fresh cash order to DELIVERED for the given customer; returns the order total in minor units.
+  let llabel = 0;
+  const deliverOnce = async (who: { token: string; userId: string }) => {
+    const q = await call("POST", "/v1/carts/quote", { token: who.token, country: "CD", body: cart() });
+    const total = BigInt(q.body.total.amount_minor);
+    const placed = await call("POST", "/v1/orders", { token: who.token, country: "CD", body: { ...cart(), payment_mode: "CASH_ON_DELIVERY", expected_total: q.body.total } });
+    assert.equal(placed.status, 201, JSON.stringify(placed.body));
+    const orderId = placed.body.order_id, code = placed.body.recipient_code;
+    const lb = `LY-${++llabel}`;
+    await transition(ops, orderId, { type: "ASSIGN_RIDER", riderId: rider.userId });
+    await transition(kitchen, orderId, { type: "ACCEPT" });
+    await transition(kitchen, orderId, { type: "START_PREPARING" });
+    await transition(kitchen, orderId, { type: "PACK", confirmedLineIds: ["l1"], packageCount: 1, allergenAcknowledged: true });
+    await transition(kitchen, orderId, { type: "MARK_READY", packages: [{ labelId: lb, sealId: `${lb}-S` }], packPhotoRef: "photo://pack" });
+    await transition(rider, orderId, { type: "PICK_UP", scannedLabelIds: [lb], restaurantConfirmed: true, sealsIntact: true, location: KINSHASA });
+    const done = await transition(rider, orderId, { type: "DELIVER", scannedLabelId: lb, location: DROP, sealIntact: true, verification: { method: "CODE", code }, proofPhotoRef: "photo://door" });
+    assert.equal(done.body.state, "DELIVERED", JSON.stringify(done.body));
+    return total;
+  };
+
+  test("a delivered order earns points, which redeem for wallet credit; the admin sets the rates", async () => {
+    const shopper = await signIn("+243810000210");
+    await backdate(shopper.userId, 30); // COD needs an account older than the floor
+
+    // No points to start with; the summary reports the default rules (1% earn, 1 minor per point, min 100).
+    const start = await call("GET", "/v1/me/loyalty", { token: shopper.token, country: "CD" });
+    assert.equal(start.status, 200, JSON.stringify(start.body));
+    assert.equal(start.body.points, 0);
+    assert.equal(start.body.enabled, true);
+    assert.equal(start.body.earn_bps, 100);
+    assert.equal(start.body.min_redeem_points, 100);
+
+    // A delivered order earns floor(total_minor * earn_bps / 10000) points once the sweep runs.
+    const total = await deliverOnce(shopper);
+    const expected = Number((total * 100n) / 10000n);
+    assert.ok(expected > 0, "the order is large enough to earn at least one point");
+    const swept = await loyalty().awardSweep("CD");
+    assert.ok(swept.awarded >= 1, JSON.stringify(swept));
+    const earned = await call("GET", "/v1/me/loyalty", { token: shopper.token, country: "CD" });
+    assert.equal(earned.body.points, expected, "points equal 1% of the spend in minor units");
+    // The ledger records one EARN movement tied to the order.
+    const hist = await call("GET", "/v1/me/loyalty/transactions", { token: shopper.token, country: "CD" });
+    assert.equal(hist.body.transactions[0].kind, "EARN");
+    assert.equal(hist.body.transactions[0].points, expected);
+
+    // The sweep is idempotent: running it again awards nothing new.
+    await loyalty().awardSweep("CD");
+    assert.equal((await call("GET", "/v1/me/loyalty", { token: shopper.token, country: "CD" })).body.points, expected);
+
+    // Redeeming below the market minimum is refused.
+    const tooFew = await call("POST", "/v1/me/loyalty/redeem", { token: shopper.token, country: "CD", body: { points: 1 } });
+    assert.equal(tooFew.body.code, "BELOW_MIN_REDEEM", JSON.stringify(tooFew.body));
+
+    // The admin lowers the minimum (and the per-point value) so the shopper can redeem what they earned.
+    const forbiddenSet = await call("POST", "/v1/admin/loyalty", { token: shopper.token, country: "CD", body: { min_redeem_points: 5 } });
+    assert.equal(forbiddenSet.status, 403, "only a market admin sets the rates");
+    const cfg = await call("POST", "/v1/admin/loyalty", { token: admin.token, country: "CD", body: { min_redeem_points: 5, redeem_minor_per_point: 2 } });
+    assert.equal(cfg.status, 200, JSON.stringify(cfg.body));
+    assert.equal(cfg.body.min_redeem_points, 5);
+    assert.equal(cfg.body.redeem_minor_per_point, 2);
+    assert.equal((await call("GET", "/v1/admin/loyalty", { token: admin.token, country: "CD" })).body.min_redeem_points, 5);
+
+    // The shopper redeems all their points; the wallet is credited points × value and the points are spent.
+    const walletBefore = await walletUsd(shopper.token);
+    const key = "loyalty-redeem-1";
+    const redeem = await call("POST", "/v1/me/loyalty/redeem", { token: shopper.token, country: "CD", key, body: { points: expected } });
+    assert.equal(redeem.status, 200, JSON.stringify(redeem.body));
+    assert.equal(redeem.body.points_balance, 0, "all points spent");
+    assert.equal(redeem.body.credited.amount_minor, String(expected * 2), "credited points × per-point value");
+    assert.equal(await walletUsd(shopper.token), walletBefore + BigInt(expected * 2), "wallet made richer by the credit");
+    assert.equal((await call("GET", "/v1/me/loyalty", { token: shopper.token, country: "CD" })).body.points, 0);
+
+    // A repeat with the same idempotency key does not redeem again.
+    const again = await call("POST", "/v1/me/loyalty/redeem", { token: shopper.token, country: "CD", key, body: { points: expected } });
+    assert.equal(again.status, 200, JSON.stringify(again.body));
+    assert.equal(await walletUsd(shopper.token), walletBefore + BigInt(expected * 2), "no double credit on replay");
+
+    // With no points left, redeeming is refused for want of points.
+    const empty = await call("POST", "/v1/me/loyalty/redeem", { token: shopper.token, country: "CD", body: { points: 5 } });
+    assert.equal(empty.body.code, "INSUFFICIENT_POINTS", JSON.stringify(empty.body));
+
+    // The money books still balance after the redemption credit.
+    const [bal] = await inspect("CD", "SELECT sum(amount_minor)::text AS s FROM money.ledger_entry WHERE currency = 'USD'");
+    assert.equal(bal.s, "0", "the ledger still balances");
+
+    // Restore the market default so later assertions elsewhere are unaffected.
+    await call("POST", "/v1/admin/loyalty", { token: admin.token, country: "CD", body: { min_redeem_points: 100, redeem_minor_per_point: 1 } });
   });
 });

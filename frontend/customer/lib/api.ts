@@ -156,7 +156,7 @@ export const myBookings = () => api<{ bookings: Booking[] }>("/v1/me/reservation
 export const cancelBooking = (id: string) => api<{ id: string; status: BookingStatus }>(`/v1/reservations/${id}/cancel`, { method: "POST" });
 
 // ── Wallet ──
-export interface WalletTxn { id: string; kind: "TOPUP" | "ORDER_PAYMENT" | "REFUND" | "ADJUSTMENT"; amount: MoneyWire; balance_after: MoneyWire; order_id: string | null; reference: string | null; created_at: string }
+export interface WalletTxn { id: string; kind: "TOPUP" | "ORDER_PAYMENT" | "REFUND" | "ADJUSTMENT" | "REFERRAL" | "LOYALTY"; amount: MoneyWire; balance_after: MoneyWire; order_id: string | null; reference: string | null; created_at: string }
 export const walletBalance = () => api<{ balances: MoneyWire[] }>("/v1/me/wallet").then((r) => r.balances);
 export const walletHistory = () => api<{ transactions: WalletTxn[] }>("/v1/me/wallet/transactions").then((r) => r.transactions);
 export const walletTopup = (amountMinor: string, currency: string, methodType: string, msisdn?: string) =>
@@ -168,6 +168,14 @@ export interface ReferralClaim { first_order_discount_pct: number; discount_avai
 export const myReferral = () => api<ReferralSummary>("/v1/me/referral");
 export const myReferralClaim = () => api<{ claim: ReferralClaim | null }>("/v1/me/referral/claim").then((r) => r.claim);
 export const claimReferral = (code: string) => api<{ id: string; first_order_discount_pct: number }>("/v1/referrals/claim", { method: "POST", body: { code } });
+
+// ── Loyalty points ──
+export interface LoyaltySummary { enabled: boolean; points: number; point_value: MoneyWire; worth: MoneyWire; min_redeem_points: number; earn_bps: number }
+export interface LoyaltyTxn { id: string; points: number; kind: "EARN" | "REDEEM" | "ADJUSTMENT"; order_id: string | null; balance_after: number; created_at: string }
+export const myLoyalty = () => api<LoyaltySummary>("/v1/me/loyalty");
+export const myLoyaltyHistory = () => api<{ transactions: LoyaltyTxn[] }>("/v1/me/loyalty/transactions").then((r) => r.transactions);
+export const redeemLoyalty = (points: number) =>
+  api<{ points_balance: number; credited?: MoneyWire; wallet_balance: MoneyWire }>("/v1/me/loyalty/redeem", { method: "POST", body: { points } });
 
 // ── Refund requests ──
 export type RefundStatus = "PENDING" | "APPROVED" | "DECLINED";

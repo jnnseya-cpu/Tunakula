@@ -27,6 +27,7 @@ const T = {
   membership: { fr: "Abonnement Plus", en: "Plus membership" },
   scorecards: { fr: "Performance des restaurants", en: "Restaurant performance" },
   coupons: { fr: "Codes promo", en: "Promo codes" },
+  loyalty: { fr: "Points de fidélité", en: "Loyalty points" },
   support: { fr: "Aide et soutien", en: "Support" },
   customers: { fr: "Clients", en: "Customers" },
   riders: { fr: "Livreurs et candidatures", en: "Riders and applications" },

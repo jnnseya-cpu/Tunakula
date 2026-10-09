@@ -16,7 +16,7 @@ import type { CommerceService } from "./commerce.ts";
 import type { PaymentService } from "./payments.ts";
 import { badRequest, notFound, unprocessable } from "./errors.ts";
 
-type TxKind = "TOPUP" | "ORDER_PAYMENT" | "REFUND" | "ADJUSTMENT" | "REFERRAL";
+type TxKind = "TOPUP" | "ORDER_PAYMENT" | "REFUND" | "ADJUSTMENT" | "REFERRAL" | "LOYALTY";
 const MIN_TOPUP_MINOR = 100n; // at least one major unit
 
 export class WalletService {

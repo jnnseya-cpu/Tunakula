@@ -7,8 +7,9 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { getSession, money, walletBalance, walletHistory, walletTopup, type MoneyWire, type WalletTxn } from "../lib/api";
 import { ReferralInvite, ReferralClaimCard } from "./referral";
+import { LoyaltyCard } from "./loyalty";
 
-const KIND_LABEL: Record<WalletTxn["kind"], string> = { TOPUP: "Top-up", ORDER_PAYMENT: "Order", REFUND: "Refund", ADJUSTMENT: "Adjustment" };
+const KIND_LABEL: Record<WalletTxn["kind"], string> = { TOPUP: "Top-up", ORDER_PAYMENT: "Order", REFUND: "Refund", ADJUSTMENT: "Adjustment", REFERRAL: "Referral reward", LOYALTY: "Points redeemed" };
 const TOPUP_AMOUNTS = ["5.00", "10.00", "20.00", "50.00"];
 
 export function Wallet() {
@@ -61,6 +62,7 @@ export function Wallet() {
         <button type="button" className="btn accent wide" disabled={busy} onClick={topup}>{busy ? "Topping up…" : `Top up $${amount}`}</button>
       </section>
 
+      <LoyaltyCard onRedeemed={load} />
       <ReferralClaimCard />
       <ReferralInvite />
 

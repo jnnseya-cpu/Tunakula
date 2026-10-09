@@ -39,6 +39,7 @@ import type { DispatchService } from "../app/dispatch.ts";
 import type { PaymentService } from "../app/payments.ts";
 import type { WalletService } from "../app/wallet.ts";
 import type { ReferralService } from "../app/referrals.ts";
+import type { LoyaltyService } from "../app/loyalty.ts";
 import { createApi } from "./app.ts";
 import { TOKENS } from "./common.ts";
 
@@ -123,6 +124,7 @@ if (dispatchMs > 0) {
   const payments = app.get<PaymentService>(TOKENS.payments);
   const wallet = app.get<WalletService>(TOKENS.wallet);
   const referrals = app.get<ReferralService>(TOKENS.referrals);
+  const loyalty = app.get<LoyaltyService>(TOKENS.loyalty);
   let running = false;
   const loop = setInterval(async () => {
     if (running) return;
@@ -141,6 +143,9 @@ if (dispatchMs > 0) {
         // Referral rewards unlock once the referee has spent the threshold.
         const unlocked = await referrals.unlockSweep(c.iso2);
         if (unlocked.unlocked) log.info("referrals", { country: c.iso2, ...unlocked });
+        // Delivered orders earn loyalty points.
+        const loyaltyAwards = await loyalty.awardSweep(c.iso2);
+        if (loyaltyAwards.awarded) log.info("loyalty", { country: c.iso2, ...loyaltyAwards });
       }
     } catch (error) { log.error("dispatch failed", { error }); } finally { running = false; }
   }, dispatchMs);

@@ -57,6 +57,7 @@ const ICON: Record<string, string> = {
   membership: "M12 2 15 8l6 .9-4.5 4.3L17.6 20 12 16.9 6.4 20l1.1-6.8L3 8.9 9 8l3-6Z",
   scorecards: "M4 13h3v7H4v-7Zm6.5-5h3v12h-3V8ZM17 4h3v16h-3V4Z",
   coupons: "M4 6h16a2 2 0 0 1 2 2v2a2 2 0 0 0 0 4v2a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-2a2 2 0 0 0 0-4V8a2 2 0 0 1 2-2Zm11 2v2h2V8h-2Zm0 4v4h2v-4h-2Z",
+  loyalty: "M12 2 9.2 7.6 3 8.5l4.5 4.4L6.4 19 12 16.1 17.6 19l-1.1-6.1L21 8.5l-6.2-.9L12 2Zm0 4.5 1.6 3.2 3.5.5-2.5 2.5.6 3.5L12 18l-3.2-1.7.6-3.5-2.5-2.5 3.5-.5L12 6.5Z",
 };
 const Icon = ({ k }: { k: string }) => <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden className="nav-ico"><path fill="currentColor" d={ICON[k] ?? ""} /></svg>;
 
@@ -76,6 +77,7 @@ const NAV: { group: Key; items: NavItem[] }[] = [
     { href: "/zones/", key: "zones", soon: true },
     { href: "/membership/", key: "membership", cap: "membership" },
     { href: "/coupons/", key: "coupons", cap: "markets" },
+    { href: "/loyalty/", key: "loyalty", cap: "markets" },
     { href: "/promotions/", key: "promotions", soon: true },
     { href: "/customers/", key: "customers", soon: true },
     { href: "/riders/", key: "riders", cap: "riders" },

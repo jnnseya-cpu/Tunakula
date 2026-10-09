@@ -1221,6 +1221,11 @@ section.tight { padding: 44px 0; }
 .wallet-split input { margin-top: 2px; flex: none; width: 17px; height: 17px; }
 .wallet-split b { font-weight: 700; }
 
+/* Loyalty points (additive) */
+.loyalty-card .loyalty-balance { display: flex; align-items: baseline; gap: 10px; margin: 8px 0 6px; }
+.loyalty-points { font-size: 32px; font-weight: 800; letter-spacing: -0.02em; color: var(--accent-ink, #8a4b00); }
+.loyalty-card .btn.wide { margin-top: 12px; }
+
 /* Referrals (additive) */
 .referral-code { display: flex; align-items: center; gap: 10px; margin: 10px 0; }
 .referral-code code { flex: 1; font-size: 22px; font-weight: 800; letter-spacing: 0.12em; text-align: center; padding: 12px; border-radius: 12px; border: 2px dashed var(--rule-strong); background: var(--tint); }
