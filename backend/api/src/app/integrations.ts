@@ -43,6 +43,11 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
     { envKey: "TUNAKULA_GOOGLE_ROUTES_KEY", label: "Google Routes API key", required: false, secret: true },
     { envKey: "TUNAKULA_OSRM_URL", label: "or self-hosted OSRM URL", required: false, secret: false },
   ] },
+  { id: "ai", name: "AI assistant (LLM)", description: "Optional hosted model for the customer-service assistant. With no key the built-in grounded assistant runs.", fields: [
+    { envKey: "TUNAKULA_ASSISTANT_PROVIDER", label: "Provider (e.g. anthropic)", required: false, secret: false },
+    { envKey: "TUNAKULA_ASSISTANT_API_KEY", label: "API key", required: false, secret: true },
+    { envKey: "TUNAKULA_ASSISTANT_MODEL", label: "Model id", required: false, secret: false },
+  ] },
 ];
 const FIELD_BY_KEY = new Map(INTEGRATIONS.flatMap((i) => i.fields.map((f) => [f.envKey, f] as const)));
 

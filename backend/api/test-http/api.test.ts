@@ -3835,3 +3835,70 @@ describe("integration credentials (added from the admin panel, never returned)",
     assert.equal((await call("POST", "/v1/admin/integrations/nope", { token: admin.token, country: "CD", body: { X: "y" } })).status, 400);
   });
 });
+
+describe("AI customer-service assistant (grounded, escalates to a human)", () => {
+  let support: { token: string; userId: string };
+  let orderId: string;
+
+  test("answers a grounded question about the customer's own order and records the conversation", async () => {
+    support = await signIn("+243810000700");
+    await grant({ userId: support.userId, role: "SUPPORT_AGENT", scope: { type: "COUNTRY", id: "CD" } });
+    ({ orderId } = await placePrepaid());
+
+    const r = await call("POST", "/v1/support/ask", { token: customer.token, country: "CD", body: { text: "where is my order?", order_id: orderId, lang: "en" } });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.equal(r.body.reply.intent, "ORDER_STATUS");
+    assert.equal(r.body.reply.escalated, false);
+    assert.ok(r.body.conversation_id);
+
+    // The conversation and both turns (customer + AI) are persisted.
+    const mine = await call("GET", "/v1/support/conversations", { token: customer.token, country: "CD" });
+    assert.ok(mine.body.conversations.find((c: { id: string }) => c.id === r.body.conversation_id));
+    const t = await call("GET", `/v1/support/conversations/${r.body.conversation_id}`, { token: customer.token, country: "CD" });
+    assert.equal(t.body.messages.length, 2);
+    assert.deepEqual(t.body.messages.map((m: { sender: string }) => m.sender), ["CUSTOMER", "AI"]);
+  });
+
+  test("explains the service charge from the order and cites the pricing policy", async () => {
+    const r = await call("POST", "/v1/support/ask", { token: customer.token, country: "CD", body: { text: "why is there a service charge?", order_id: orderId, lang: "en" } });
+    assert.equal(r.body.reply.intent, "EXPLAIN_CHARGE");
+    assert.equal(r.body.reply.citations[0]?.policySlug, "pricing");
+    assert.equal(r.body.reply.escalated, false);
+  });
+
+  test("a discretionary complaint escalates to a human, and the conversation is marked ESCALATED", async () => {
+    const r = await call("POST", "/v1/support/ask", { token: customer.token, country: "CD", body: { text: "I want to speak to a person, this is a complaint", lang: "en" } });
+    assert.equal(r.body.reply.escalated, true);
+    const convoId = r.body.conversation_id;
+
+    // A plain customer cannot see the escalations queue; a support agent can.
+    assert.equal((await call("GET", "/v1/ops/support/escalations", { token: customer.token, country: "CD" })).status, 403);
+    const queue = await call("GET", "/v1/ops/support/escalations", { token: support.token, country: "CD" });
+    assert.equal(queue.status, 200);
+    assert.ok(queue.body.conversations.find((c: { id: string }) => c.id === convoId), "the escalated conversation is in the queue");
+
+    // The support agent takes over and replies; the customer sees the human turn.
+    const reply = await call("POST", `/v1/ops/support/conversations/${convoId}/reply`, { token: support.token, country: "CD", body: { text: "Hi, this is Amina from support — I've got this.", resolve: true } });
+    assert.equal(reply.status, 200, JSON.stringify(reply.body));
+    const t = await call("GET", `/v1/support/conversations/${convoId}`, { token: customer.token, country: "CD" });
+    assert.ok(t.body.messages.find((m: { sender: string }) => m.sender === "AGENT"));
+    assert.equal(t.body.status, "RESOLVED");
+  });
+
+  test("a customer cannot read another customer's conversation or reach the ops reply endpoint", async () => {
+    const r = await call("POST", "/v1/support/ask", { token: customer.token, country: "CD", body: { text: "how do I pay?", lang: "en" } });
+    const convoId = r.body.conversation_id;
+    assert.equal((await call("GET", `/v1/support/conversations/${convoId}`, { token: support.token, country: "CD" })).status, 200, "support can read via takeover");
+    const stranger = await signIn("+243810000701");
+    assert.equal((await call("GET", `/v1/support/conversations/${convoId}`, { token: stranger.token, country: "CD" })).status, 403);
+    assert.equal((await call("POST", `/v1/ops/support/conversations/${convoId}/reply`, { token: stranger.token, country: "CD", body: { text: "x" } })).status, 403);
+  });
+
+  test("the order is only grounded for its owner — a stranger's order_id yields no order facts", async () => {
+    const stranger = await signIn("+243810000702");
+    const r = await call("POST", "/v1/support/ask", { token: stranger.token, country: "CD", body: { text: "where is my order?", order_id: orderId, lang: "en" } });
+    assert.equal(r.status, 200);
+    // No order facts → the assistant asks for the order rather than reading someone else's.
+    assert.ok(r.body.reply.action.type === "SHOW_ORDER" || r.body.reply.escalated, JSON.stringify(r.body.reply));
+  });
+});

@@ -26,6 +26,7 @@ import type { ChatService } from "../app/chat.ts";
 import type { BannerService } from "../app/banners.ts";
 import type { SiteContentService } from "../app/site-content.ts";
 import type { ChefService } from "../app/chef.ts";
+import type { AssistantService } from "../app/assistant.ts";
 import type { IntegrationsService } from "../app/integrations.ts";
 import type { SubscriptionService } from "../app/subscriptions.ts";
 import type { PosService } from "../app/pos.ts";
@@ -1575,6 +1576,47 @@ export class IntegrationsController {
   @HttpCode(200)
   async set(@Req() req: FastifyRequest, @Param("id") id: string, @Body() body: Record<string, unknown>) {
     return this.integrations.set(country(req), await this.#p(req), id, body ?? {});
+  }
+}
+
+/** AI customer-service assistant: the customer asks and reads their conversations; support handles escalations. */
+@Controller("v1")
+export class SupportController {
+  constructor(
+    @Inject(TOKENS.db) private readonly db: Db,
+    @Inject(TOKENS.tokens) private readonly tokens: TokenService,
+    @Inject(TOKENS.assistant) private readonly assistant: AssistantService,
+  ) {}
+
+  #p(req: FastifyRequest) {
+    return this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+  }
+
+  @Post("support/ask")
+  @HttpCode(200)
+  async ask(@Req() req: FastifyRequest, @Body() body: { text?: string; lang?: string; order_id?: string; conversation_id?: string }) {
+    return this.assistant.ask(country(req), await this.#p(req), { text: body?.text ?? "", ...(body?.lang ? { lang: body.lang } : {}), ...(body?.order_id ? { orderId: body.order_id } : {}), ...(body?.conversation_id ? { conversationId: body.conversation_id } : {}) });
+  }
+
+  @Get("support/conversations")
+  async mine(@Req() req: FastifyRequest) {
+    return this.assistant.myConversations(country(req), await this.#p(req));
+  }
+
+  @Get("support/conversations/:id")
+  async transcript(@Req() req: FastifyRequest, @Param("id") id: string) {
+    return this.assistant.transcript(country(req), await this.#p(req), id);
+  }
+
+  @Get("ops/support/escalations")
+  async escalations(@Req() req: FastifyRequest) {
+    return this.assistant.escalations(country(req), await this.#p(req));
+  }
+
+  @Post("ops/support/conversations/:id/reply")
+  @HttpCode(200)
+  async reply(@Req() req: FastifyRequest, @Param("id") id: string, @Body() body: { text?: string; resolve?: boolean }) {
+    return this.assistant.respond(country(req), await this.#p(req), id, body?.text ?? "", body?.resolve ?? false);
   }
 }
 

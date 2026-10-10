@@ -9,3 +9,4 @@ export {
 } from "./validate-country-profile.ts";
 
 export * from "./comms.ts";
+export * from "./assistant.ts";

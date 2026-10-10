@@ -36,6 +36,7 @@ export const TOKENS = {
   banners: "BANNER_SERVICE",
   siteContent: "SITE_CONTENT_SERVICE",
   chef: "CHEF_SERVICE",
+  assistant: "ASSISTANT_SERVICE",
   integrations: "INTEGRATIONS_SERVICE",
   subscriptions: "SUBSCRIPTION_SERVICE",
   pos: "POS_SERVICE",

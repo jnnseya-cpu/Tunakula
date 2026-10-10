@@ -77,7 +77,7 @@ const NAV: { group: Key; items: NavItem[] }[] = [
     { href: "/orders/", key: "orders", cap: "orders" },
     { href: "/pos/", key: "pos", cap: "pos" },
     { href: "/kiosk/", key: "kiosk", cap: "pos" },
-    { href: "/support/", key: "support", soon: true },
+    { href: "/support/", key: "support", cap: "support" },
   ] },
   { group: "g_business", items: [
     { href: "/merchants/", key: "merchants", always: true },

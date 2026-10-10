@@ -725,3 +725,25 @@ tr.sel td { background: rgba(250, 210, 14, 0.12); }
 /* Merchant plans (additive) */
 .mplans { display: grid; gap: 16px; }
 .mplans .filters { flex-wrap: wrap; }
+
+/* AI support console (escalations) */
+.support-split { display: grid; grid-template-columns: 0.9fr 1.1fr; gap: 16px; align-items: start; }
+.support-list { display: flex; flex-direction: column; gap: 2px; max-height: 64vh; overflow-y: auto; }
+.support-row { text-align: left; background: transparent; border: 0; border-top: 1px solid var(--border); padding: 12px 6px; cursor: pointer; display: flex; flex-direction: column; gap: 6px; color: var(--ink); }
+.support-row:first-child { border-top: 0; }
+.support-row:hover { background: var(--surface-2); }
+.support-row.on { background: var(--surface-2); box-shadow: inset 3px 0 0 var(--s1, #6b4cc0); }
+.support-row-msg { font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.support-row-meta { font-size: 12px; display: flex; align-items: center; gap: 6px; }
+.support-thread { display: flex; flex-direction: column; gap: 10px; max-height: 54vh; overflow-y: auto; padding: 4px 2px 12px; }
+.support-msg { max-width: 88%; padding: 9px 12px; border-radius: 12px; font-size: 14px; line-height: 1.45; }
+.support-msg.customer { align-self: flex-end; background: var(--navy, #1f305d); color: #fff; }
+.support-msg.ai { align-self: flex-start; background: var(--surface-2); }
+.support-msg.agent { align-self: flex-start; background: #ece6fb; color: #2a1a52; }
+.support-msg p { margin: 0; }
+.support-who { display: block; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; opacity: .75; margin-bottom: 3px; }
+.support-cite { margin-top: 6px !important; font-size: 12px; opacity: .8; }
+.support-reply { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--border); padding-top: 12px; }
+.support-reply textarea { width: 100%; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; font: inherit; font-size: 14px; background: var(--surface); color: var(--ink); resize: vertical; }
+.support-actions { display: flex; gap: 10px; justify-content: flex-end; }
+@media (max-width: 860px) { .support-split { grid-template-columns: 1fr; } }
