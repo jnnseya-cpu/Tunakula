@@ -3596,3 +3596,41 @@ describe("web push notifications", () => {
     assert.equal(r.status, "logged", "no device → nothing to push, logged not failed");
   });
 });
+
+describe("storefront CMS (editable landing content)", () => {
+  test("defaults are served until an admin overrides, then the edit shows live", async () => {
+    // Before any edit, the storefront still gets a full document from the shipped defaults.
+    const before = await call("GET", "/v1/site-content", { country: "CD" });
+    assert.equal(before.status, 200, JSON.stringify(before.body));
+    assert.ok(before.body.home.hero.title.length > 0);
+    assert.equal(before.body.home.hero.cta_href, "/order/");
+
+    // Only a market admin can edit it.
+    assert.equal((await call("POST", "/v1/admin/site-content", { token: customer.token, country: "CD", body: { hero: { title: "x" } } })).status, 403);
+    // The hero needs a title.
+    assert.equal((await call("POST", "/v1/admin/site-content", { token: admin.token, country: "CD", body: { hero: { title: "" } } })).body.code, "TITLE_REQUIRED");
+    // Social links must be real https URLs.
+    assert.equal((await call("POST", "/v1/admin/site-content", { token: admin.token, country: "CD", body: { hero: { title: "Hi" }, social: { instagram: "javascript:alert(1)" } } })).body.code, "LINK_INVALID");
+    // The hero CTA cannot be a dangerous scheme.
+    assert.equal((await call("POST", "/v1/admin/site-content", { token: admin.token, country: "CD", body: { hero: { title: "Hi", cta_href: "javascript:alert(1)" } } })).body.code, "LINK_INVALID");
+
+    const saved = await call("POST", "/v1/admin/site-content", {
+      token: admin.token, country: "CD",
+      body: { hero: { title: "Mangez bien à Kinshasa", subtitle: "Livré par la route", cta_label: "Commander", cta_href: "/order/" }, social: { instagram: "https://instagram.com/tunakula", whatsapp: "https://wa.me/243810000000" }, tagline: "Tunakula — bon appétit, Kinshasa." },
+    });
+    assert.equal(saved.status, 200, JSON.stringify(saved.body));
+    assert.equal(saved.body.home.hero.title, "Mangez bien à Kinshasa");
+    assert.equal(saved.body.home.social.instagram, "https://instagram.com/tunakula");
+
+    // The customer app now sees the edited content.
+    const live = await call("GET", "/v1/site-content", { country: "CD" });
+    assert.equal(live.body.home.hero.title, "Mangez bien à Kinshasa");
+    assert.equal(live.body.home.hero.cta_label, "Commander");
+    assert.equal(live.body.home.social.whatsapp, "https://wa.me/243810000000");
+    assert.equal(live.body.home.tagline, "Tunakula — bon appétit, Kinshasa.");
+
+    // The admin editor reads the same document back.
+    const got = await call("GET", "/v1/admin/site-content", { token: admin.token, country: "CD" });
+    assert.equal(got.body.home.hero.subtitle, "Livré par la route");
+  });
+});

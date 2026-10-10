@@ -489,6 +489,12 @@ tr.sel td { background: rgba(250, 210, 14, 0.12); }
 .form-grid label.check { flex-direction: row; align-items: center; gap: 8px; }
 .form-grid label.check input { width: auto; }
 .card-foot { padding: 0 16px 16px; display: flex; gap: 10px; justify-content: flex-end; }
+.form-grid label.wide { grid-column: 1 / -1; }
+/* CMS hero preview — a scaled-down glimpse of how the storefront renders the landing hero. */
+.cms-hero { margin: 0 16px 8px; padding: 26px 28px; border-radius: 16px; background: linear-gradient(135deg, var(--navy), #243a73); color: #fff; }
+.cms-hero h1 { font-size: 32px; font-weight: 850; line-height: 1.05; letter-spacing: -0.01em; }
+.cms-hero p { margin-top: 10px; font-size: 15px; max-width: 46ch; opacity: 0.92; }
+.cms-cta { display: inline-block; margin-top: 16px; padding: 9px 16px; border-radius: 999px; background: var(--orange, #f5a524); color: var(--navy); font-weight: 750; font-size: 14px; }
 
 /* Dietary chips + nutrition inputs on the menu item form (additive) */
 .ff-label { display: block; font-size: 13px; color: var(--muted, #667); margin-bottom: 6px; }

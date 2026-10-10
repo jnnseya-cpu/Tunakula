@@ -11,6 +11,7 @@ const T = {
   team: { fr: "Équipe et rôles", en: "Team and roles" },
   markets: { fr: "Marchés", en: "Markets" },
   comms: { fr: "Communications", en: "Communications" },
+  cms: { fr: "Contenu vitrine", en: "Storefront content" },
   menu: { fr: "Carte et plats", en: "Menu" },
   finance: { fr: "Finance", en: "Finance" },
   payments: { fr: "Paiements", en: "Payments" },

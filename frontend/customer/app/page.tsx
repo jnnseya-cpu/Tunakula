@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Phone, SiteFooter, SiteNav } from "../components/site";
-import { HeroCarousel, NearMeButton, PlaceLine } from "../components/hero";
+import { HeroCarousel, PlaceLine } from "../components/hero";
+import { HeroFoodCopy } from "../components/hero-cms";
 import { EtaChip, StoreSorter } from "../components/location";
 import { PayScreen, TrackingScreen } from "../components/screens";
 import { JoinCard } from "../components/merchant";
@@ -33,15 +34,7 @@ export default function Home() {
             labels={["Food near you", "Send a meal home", "For restaurants", "For riders"]}
             slides={[
               <div key="food" className="hs hs-food">
-                <div className="hs-copy">
-                  <p className="eyebrow light"><b>Kinshasa</b> · 24 communes · francs or dollars</p>
-                  <h1 className="display">Hungry, <em>Kinshasa?</em></h1>
-                  <p className="hs-lede">Moambe, pondu, brochettes off the grill and bread still warm, from the kitchens you already love. See how far each one is and when it reaches you.</p>
-                  <div className="hs-actions">
-                    <NearMeButton className="btn navy">Find food near me</NearMeButton>
-                    <a className="btn ghost-light" href="/order/">Browse all</a>
-                  </div>
-                </div>
+                <HeroFoodCopy />
                 <div className="hs-art" aria-hidden>
                   <PlateArt className="hp hp-main" recipe="moambe" seed="hero" />
                   <PlateArt className="hp hp-a" recipe="brochettes" seed="hero" />

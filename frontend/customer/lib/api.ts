@@ -57,6 +57,17 @@ export async function api<T>(path: string, opts: { method?: string; body?: unkno
   return body as T;
 }
 
+export interface SiteContent {
+  home: { hero: { title: string; subtitle: string; cta_label: string; cta_href: string }; social: Record<string, string>; tagline: string };
+  customized: boolean;
+}
+/** The storefront's editable content (landing hero, social links, tagline) for this market. Returns null when the
+ * API is offline (static preview) so callers keep their built-in defaults. */
+export async function siteContent(): Promise<SiteContent | null> {
+  try { return await api<SiteContent>("/v1/site-content", { auth: false }); }
+  catch { return null; }
+}
+
 /** The public URL of a food photo, for an <img src>. Country is in the query so no header is needed. */
 export const foodPhotoUrl = (imageId: string) => `${API_URL}/v1/menu-images/${imageId}?c=${COUNTRY}`;
 

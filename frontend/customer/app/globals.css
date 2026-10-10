@@ -285,6 +285,11 @@ footer h5 { font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; 
 footer li { list-style: none; font-size: 15px; padding: 4px 0; color: var(--ink-2); }
 footer .legal { margin-top: 64px; padding-top: 22px; border-top: 1px solid var(--rule); display: flex; justify-content: space-between; font-size: 13px; color: var(--muted); }
 
+/* Footer social links (admin-managed via the CMS). */
+.social-links { display: inline-flex; gap: 10px; margin-top: 16px; }
+.social-links a { width: 34px; height: 34px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: rgba(255, 255, 255, 0.1); color: #fff; font-weight: 700; font-size: 15px; text-decoration: none; transition: background 0.15s; }
+.social-links a:hover { background: rgba(255, 255, 255, 0.22); }
+
 /* ---------- Responsive ---------- */
 @media (max-width: 960px) {
   :root { --page: calc(100vw - 32px); }

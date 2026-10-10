@@ -24,6 +24,7 @@ import type { LoyaltyService } from "../app/loyalty.ts";
 import type { CashbackService } from "../app/cashback.ts";
 import type { ChatService } from "../app/chat.ts";
 import type { BannerService } from "../app/banners.ts";
+import type { SiteContentService } from "../app/site-content.ts";
 import type { SubscriptionService } from "../app/subscriptions.ts";
 import type { PosService } from "../app/pos.ts";
 import type { MerchantPlanService } from "../app/merchant-plans.ts";
@@ -1486,6 +1487,36 @@ export class BannerController {
   @HttpCode(200)
   async remove(@Req() req: FastifyRequest, @Param("id") id: string) {
     return this.banners.remove(country(req), await this.#p(req), id);
+  }
+}
+
+/** Storefront CMS: the live landing content for the customer app, and the market-admin editor. */
+@Controller("v1")
+export class SiteContentController {
+  constructor(
+    @Inject(TOKENS.db) private readonly db: Db,
+    @Inject(TOKENS.tokens) private readonly tokens: TokenService,
+    @Inject(TOKENS.siteContent) private readonly siteContent: SiteContentService,
+  ) {}
+
+  #p(req: FastifyRequest) {
+    return this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+  }
+
+  @Get("site-content")
+  async live(@Req() req: FastifyRequest) {
+    return this.siteContent.live(country(req));
+  }
+
+  @Get("admin/site-content")
+  async get(@Req() req: FastifyRequest) {
+    return this.siteContent.get(country(req), await this.#p(req));
+  }
+
+  @Post("admin/site-content")
+  @HttpCode(200)
+  async save(@Req() req: FastifyRequest, @Body() body: unknown) {
+    return this.siteContent.save(country(req), await this.#p(req), body);
   }
 }
 

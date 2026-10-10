@@ -4,6 +4,7 @@ import Link from "next/link";
 import { CONTACT_EMAIL } from "../lib/site";
 import { MarketSwitcher } from "./market";
 import { LangSwitcher } from "./lang-switcher";
+import { SocialLinks, useSiteContent } from "./site-content";
 import { useT } from "./use-t";
 import { AccountLink } from "./account";
 import { LocationButton } from "./location";
@@ -83,13 +84,17 @@ const TABS: [string, string, string][] = [
 
 export function SiteFooter() {
   const t = useT();
+  const sc = useSiteContent();
+  // A market admin's tagline (set in the console) overrides the translated default when present.
+  const tagline = sc?.customized && sc.home.tagline ? sc.home.tagline : t("foot.tagline");
   return (
     <footer>
       <div className="wrap">
         <div className="cols">
           <div>
             <Wordmark />
-            <p className="small" style={{ marginTop: 14, maxWidth: "26em" }}>{t("foot.tagline")}</p>
+            <p className="small" style={{ marginTop: 14, maxWidth: "26em" }}>{tagline}</p>
+            <SocialLinks />
           </div>
           {FOOTER.map(([title, links]) => (
             <div key={title}>

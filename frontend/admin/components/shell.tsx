@@ -61,6 +61,7 @@ const ICON: Record<string, string> = {
   loyalty: "M12 2 9.2 7.6 3 8.5l4.5 4.4L6.4 19 12 16.1 17.6 19l-1.1-6.1L21 8.5l-6.2-.9L12 2Zm0 4.5 1.6 3.2 3.5.5-2.5 2.5.6 3.5L12 18l-3.2-1.7.6-3.5-2.5-2.5 3.5-.5L12 6.5Z",
   cashback: "M12 1a11 11 0 1 0 0 22 11 11 0 0 0 0-22Zm0 2a9 9 0 1 1 0 18 9 9 0 0 1 0-18Zm.9 3h-1.6v1.2c-1.4.3-2.3 1.2-2.3 2.5 0 1.6 1.4 2.2 2.7 2.6 1 .3 1.5.6 1.5 1.2 0 .5-.5.9-1.3.9-1 0-1.6-.5-1.7-1.3H8.5c.1 1.4 1 2.3 2.4 2.6V18h1.6v-1.3c1.5-.3 2.4-1.3 2.4-2.6 0-1.7-1.5-2.3-2.8-2.7-.9-.3-1.4-.5-1.4-1.1 0-.5.4-.8 1.2-.8.9 0 1.4.4 1.5 1.2h1.7c-.1-1.3-.9-2.2-2.3-2.5V6Z",
   banners: "M3 5h18a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1Zm1 2v7h16V7H4Zm2 2h8v1.5H6V9Zm0 3h6v1.5H6V12Zm5 7h2v2h-2v-2Z",
+  cms: "M4 3h16a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Zm1 2v3h14V5H5Zm0 5v9h5v-9H5Zm7 0v4h7v-4h-7Zm0 6v3h7v-3h-7Z",
 };
 const Icon = ({ k }: { k: string }) => <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden className="nav-ico"><path fill="currentColor" d={ICON[k] ?? ""} /></svg>;
 
@@ -99,6 +100,7 @@ const NAV: { group: Key; items: NavItem[] }[] = [
     { href: "/team/", key: "team", cap: "team" },
     { href: "/markets/", key: "markets", cap: "markets" },
     { href: "/comms/", key: "comms", cap: "markets" },
+    { href: "/cms/", key: "cms", cap: "markets" },
     { href: "/audit/", key: "audit", cap: "audit" },
   ] },
 ];
