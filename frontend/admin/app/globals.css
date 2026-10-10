@@ -622,3 +622,12 @@ tr.sel td { background: rgba(250, 210, 14, 0.12); }
   .pos-receipt { position: absolute; left: 0; top: 0; width: 80mm; box-shadow: none; }
   .pos-noprint { display: none !important; }
 }
+
+/* Payouts & earnings (additive) */
+.payouts { display: grid; gap: 16px; }
+.payouts .toolbar { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; justify-content: space-between; }
+.payouts .kpis { display: flex; gap: 22px; }
+.payouts .kpi { display: grid; gap: 2px; }
+.payouts .kpi-n { font-size: 20px; font-weight: 750; font-variant-numeric: tabular-nums; }
+.payouts .kpi-l { font-size: 12px; color: var(--muted); }
+.payouts .card-head .kpis .kpi-n { font-size: 16px; }

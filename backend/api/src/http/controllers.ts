@@ -690,6 +690,17 @@ export class AdminController {
     return this.admin.ledger(await this.#principal(req), country(req));
   }
 
+  @Get("payouts")
+  async payouts(@Req() req: FastifyRequest, @Query("from") from?: string, @Query("to") to?: string) {
+    return this.admin.payouts(await this.#principal(req), country(req), { ...(from ? { from } : {}), ...(to ? { to } : {}) });
+  }
+
+  @Post("payouts/merchants")
+  async recordMerchantPayout(@Req() req: FastifyRequest, @Body() body: { restaurant_group_id?: string; amount_minor?: string; method?: string; reference?: string }) {
+    const key = (req.headers["idempotency-key"] as string) ?? crypto.randomUUID();
+    return this.admin.recordMerchantPayout(await this.#principal(req), country(req), body ?? {}, key);
+  }
+
   @Get("audit")
   async audit(@Req() req: FastifyRequest, @Query("limit") limit?: string) {
     return this.admin.audit(await this.#principal(req), country(req), Number(limit ?? 100));

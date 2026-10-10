@@ -13,8 +13,11 @@ import type { CountryConfigRegistry } from "../modules/config/config-registry.ts
 import { authorize, type Principal, type ResourceContext } from "../modules/identity/policy.ts";
 import { assertValidBinding, ROLES, type Action, type Role, type RoleBinding, type Scope } from "../modules/identity/roles.ts";
 import { addBinding, audit, createUser, userByPhone, verifyAuditChain } from "../persistence/identity.ts";
+import { createJournal } from "../modules/money/journal.ts";
+import { postJournal } from "../persistence/ledger.ts";
+import { Money } from "@tunakula/ts-money";
 import { parseSpecial, parseWeekly, type SpecialHours, type WeeklyHours } from "../modules/catalogue/hours.ts";
-import { badRequest, conflict, forbidden, notFound } from "./errors.ts";
+import { badRequest, conflict, forbidden, notFound, unprocessable } from "./errors.ts";
 
 export interface BranchInfo {
   id: string;
@@ -131,6 +134,7 @@ export class AdminService {
           customers: vis.all,
           kitchen: prep.all || prep.branches.length > 0,
           pos: this.#can(principal, "pos:operate", marketWide, profile) || vis.branches.some((b) => this.#can(principal, "pos:operate", this.#branchResource(country, b), profile)),
+          payouts: this.#can(principal, "ledger:read", marketWide, profile) || vis.branches.some((b) => this.#can(principal, "restaurant:manage", this.#branchResource(country, b), profile)),
           dispatch: this.#can(principal, "dispatch:manage", marketWide, profile) || vis.branches.some((b) => this.#can(principal, "dispatch:manage", this.#branchResource(country, b), profile)),
           riders: this.#can(principal, "rider:manage", marketWide, profile) || vis.branches.some((b) => this.#can(principal, "rider:manage", this.#branchResource(country, b), profile)),
         };
@@ -427,6 +431,125 @@ export class AdminService {
         [country],
       );
       return { balances: balances.map((b) => ({ account: b.account, currency: b.currency, balance_minor: b.balance })), journals };
+    });
+  }
+
+  /**
+   * GET /v1/admin/payouts — merchant earnings statements and rider payouts for a period. A restaurant owner sees
+   * only their own group's statement; finance/country roles see every group in the market. Earnings come from the
+   * order snapshots (merchantReceives / riderReceives) since the ledger carries no party dimension; the outstanding
+   * balance is lifetime earned minus what has already been paid out.
+   */
+  async payouts(principal: Principal, country: string, range: { from?: string; to?: string } = {}) {
+    const profile = this.#profile(country);
+    const ccy = profile.money.settlement_currency;
+    const to = range.to ? new Date(range.to) : this.now();
+    const from = range.from ? new Date(range.from) : new Date(to.getTime() - 30 * 86_400_000);
+    return this.db.tx({ country }, async (sql) => {
+      const vis = await this.#visibility(sql, principal, country, profile);
+      const canSeeAll = this.#can(principal, "ledger:read", { type: "scope", country }, profile);
+      const branchIds = vis.branches.map((b) => b.id);
+      // Merchant earnings per group, scoped to what the caller can see (all branches for finance; own group for an owner).
+      const merchants = await sql.query<{ group_id: string; name: string; orders_period: string; earned_period: string; earned_lifetime: string }>(
+        `SELECT b.restaurant_group_id AS group_id, COALESCE(g.name, b.restaurant_group_id) AS name,
+                (count(*) FILTER (WHERE o.updated_at >= $1 AND o.updated_at < $2))::text AS orders_period,
+                COALESCE(sum((d.payload->'snapshot'->'money'->'merchantReceives'->>'minor')::bigint)
+                         FILTER (WHERE o.updated_at >= $1 AND o.updated_at < $2), 0)::text AS earned_period,
+                COALESCE(sum((d.payload->'snapshot'->'money'->'merchantReceives'->>'minor')::bigint), 0)::text AS earned_lifetime
+           FROM ordering.order_view o
+           JOIN ordering.order_event d ON d.order_id = o.order_id AND d.type = 'ORDER_DRAFTED'
+           JOIN catalogue.branch b ON b.id = o.branch_id
+           LEFT JOIN catalogue.restaurant_group g ON g.id = b.restaurant_group_id
+          WHERE o.state = 'DELIVERED' AND ($3::boolean OR o.branch_id = ANY($4::uuid[]))
+          GROUP BY b.restaurant_group_id, g.name
+          ORDER BY earned_lifetime DESC`,
+        [from.toISOString(), to.toISOString(), canSeeAll, branchIds],
+      );
+      const paidRows = await sql.query<{ group_id: string; paid: string }>(
+        "SELECT restaurant_group_id AS group_id, COALESCE(sum(amount_minor), 0)::text AS paid FROM money.restaurant_payout GROUP BY restaurant_group_id",
+      );
+      const paidBy = new Map(paidRows.map((r) => [r.group_id, BigInt(r.paid)]));
+      const m = (minor: bigint) => ({ amount_minor: minor.toString(), currency: ccy });
+      const merchantView = merchants.map((r) => {
+        const lifetime = BigInt(r.earned_lifetime);
+        const paid = paidBy.get(r.group_id) ?? 0n;
+        return {
+          group_id: r.group_id, name: r.name,
+          orders_period: Number(r.orders_period),
+          earned_period: m(BigInt(r.earned_period)),
+          earned_lifetime: m(lifetime),
+          paid_lifetime: m(paid),
+          outstanding: m(lifetime - paid),
+        };
+      });
+
+      // Rider payouts: a finance view of what has been cashed out and what riders are still owed (market-wide).
+      let riders: unknown = null;
+      if (canSeeAll) {
+        const recent = await sql.query<{ id: string; rider: string; amount_minor: string; currency: string; method: string; at: Date }>(
+          `SELECT p.id, COALESCE(u.display_name, 'Rider') AS rider, p.amount_minor::text, p.currency, p.method, p.at
+             FROM dispatch.rider_payout p JOIN identity.app_user u ON u.id = p.rider_id
+            WHERE p.at >= $1 AND p.at < $2 ORDER BY p.at DESC LIMIT 50`,
+          [from.toISOString(), to.toISOString()],
+        );
+        const [earned] = await sql.query<{ earned: string }>(
+          `SELECT COALESCE(sum((d.payload->'snapshot'->'money'->'riderReceives'->>'minor')::bigint), 0)::text AS earned
+             FROM ordering.order_view o JOIN ordering.order_event d ON d.order_id = o.order_id AND d.type = 'ORDER_DRAFTED'
+            WHERE o.state = 'DELIVERED'`,
+        );
+        const [bonus] = await sql.query<{ b: string }>("SELECT COALESCE(sum(amount_minor), 0)::text AS b FROM dispatch.rider_bonus");
+        const [paidR] = await sql.query<{ p: string }>("SELECT COALESCE(sum(amount_minor), 0)::text AS p FROM dispatch.rider_payout");
+        const earnedTot = BigInt(earned?.earned ?? "0") + BigInt(bonus?.b ?? "0");
+        const paidTot = BigInt(paidR?.p ?? "0");
+        riders = {
+          paid_lifetime: m(paidTot),
+          outstanding: m(earnedTot - paidTot),
+          recent: recent.map((p) => ({ id: p.id, rider: p.rider, amount: { amount_minor: p.amount_minor, currency: p.currency }, method: p.method, at: new Date(p.at).toISOString() })),
+        };
+      }
+      return { currency: ccy, from: from.toISOString(), to: to.toISOString(), merchants: merchantView, riders };
+    });
+  }
+
+  /** POST /v1/admin/payouts/merchants — record a payout of a group's outstanding balance (finance only). */
+  async recordMerchantPayout(principal: Principal, country: string, input: { restaurant_group_id?: string; amount_minor?: string; method?: string; reference?: string }, key: string) {
+    const profile = this.#profile(country);
+    if (!this.#can(principal, "ledger:read", { type: "scope", country }, profile)) throw forbidden("Issuing a payout needs ledger:read");
+    const groupId = String(input.restaurant_group_id ?? "").trim();
+    if (!groupId) throw badRequest("GROUP_REQUIRED", "Name the restaurant group to pay");
+    const method = String(input.method ?? "MOBILE_MONEY").toUpperCase();
+    if (method !== "MOBILE_MONEY" && method !== "BANK") throw badRequest("METHOD_INVALID", "method is MOBILE_MONEY or BANK");
+    const ccy = profile.money.settlement_currency;
+    return this.db.tx({ country }, async (sql) => {
+      const jkey = `merchant-payout:${groupId}:${key}`;
+      const [existing] = await sql.query<{ amount_minor: string }>("SELECT amount_minor::text FROM money.restaurant_payout WHERE journal_key = $1", [jkey]);
+      // Outstanding = lifetime earned (merchantReceives on delivered orders) - already paid.
+      const [earnedRow] = await sql.query<{ earned: string }>(
+        `SELECT COALESCE(sum((d.payload->'snapshot'->'money'->'merchantReceives'->>'minor')::bigint), 0)::text AS earned
+           FROM ordering.order_view o
+           JOIN ordering.order_event d ON d.order_id = o.order_id AND d.type = 'ORDER_DRAFTED'
+           JOIN catalogue.branch b ON b.id = o.branch_id
+          WHERE o.state = 'DELIVERED' AND b.restaurant_group_id = $1`,
+        [groupId],
+      );
+      const [paidRow] = await sql.query<{ paid: string }>("SELECT COALESCE(sum(amount_minor), 0)::text AS paid FROM money.restaurant_payout WHERE restaurant_group_id = $1", [groupId]);
+      const outstanding = BigInt(earnedRow?.earned ?? "0") - BigInt(paidRow?.paid ?? "0");
+      if (existing) return { paid: { amount_minor: existing.amount_minor, currency: ccy }, outstanding: { amount_minor: outstanding.toString(), currency: ccy } };
+      const amount = input.amount_minor && /^\d+$/.test(String(input.amount_minor)) ? BigInt(String(input.amount_minor)) : outstanding;
+      if (amount <= 0n) throw unprocessable("NOTHING_TO_PAY", "This group has no outstanding balance");
+      if (amount > outstanding) throw conflict("MORE_THAN_OUTSTANDING", `Outstanding is ${outstanding} minor units; pay at most that`);
+      const at = this.now();
+      const money = Money.ofMinor(amount, ccy);
+      await postJournal(sql, createJournal({
+        id: jkey, idempotencyKey: jkey, description: `Merchant payout to ${groupId}`, postedAt: at,
+        entries: [{ account: "restaurant_payable", country, amount: money }, { account: "psp_clearing", country, amount: money.negate() }],
+      }));
+      await sql.query(
+        "INSERT INTO money.restaurant_payout (country_iso2, restaurant_group_id, amount_minor, currency, method, reference, journal_key, at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)",
+        [country, groupId, amount.toString(), ccy, method, input.reference ? String(input.reference).slice(0, 120) : null, jkey, at],
+      );
+      await audit(sql, { actor: principal.userId, action: "merchant.payout", target: `group:${groupId}`, country, detail: { amount_minor: amount.toString(), currency: ccy, method } });
+      return { paid: { amount_minor: amount.toString(), currency: ccy }, outstanding: { amount_minor: (outstanding - amount).toString(), currency: ccy } };
     });
   }
 

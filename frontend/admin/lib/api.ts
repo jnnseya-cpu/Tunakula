@@ -84,7 +84,7 @@ export interface Me {
   user: { id: string; display_name: string; phone: string | null };
   bindings: { id: string; role: string; scope: Scope }[];
   markets: { iso2: string; name: string; status: string }[];
-  capabilities: Partial<Record<"overview" | "orders" | "kitchen" | "pos" | "dispatch" | "riders" | "catalogue" | "markets" | "membership" | "team" | "finance" | "payments" | "refunds" | "audit" | "customers", boolean>>;
+  capabilities: Partial<Record<"overview" | "orders" | "kitchen" | "pos" | "dispatch" | "riders" | "catalogue" | "markets" | "membership" | "team" | "finance" | "payments" | "refunds" | "payouts" | "audit" | "customers", boolean>>;
 }
 
 export interface Kpis { orders: number; delivered: number; gmv_minor: string; aov_minor: string; delivered_rate: number; lost_rate: number; customers: number }

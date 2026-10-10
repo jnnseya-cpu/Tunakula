@@ -3461,3 +3461,54 @@ describe("grocery / convenience vertical", () => {
     assert.equal(up.body.store_type, "CONVENIENCE");
   });
 });
+
+
+describe("merchant payouts & earnings statements", () => {
+  let fin: { token: string; userId: string };
+  before(async () => {
+    // A finance person (ledger:read + payout authority), bound directly for an isolated test.
+    fin = await signIn("+243810000091");
+    await grant({ userId: fin.userId, role: "COUNTRY_FINANCE", scope: { type: "COUNTRY", id: "CD" } });
+  });
+
+  test("a merchant sees their own earnings; finance sees every group and pays one out", async () => {
+    // The owner sees only their own group's statement, earned from delivered orders, nothing paid out yet.
+    const ownerView = await call("GET", "/v1/admin/payouts", { token: restaurantOwner.token, country: "CD" });
+    assert.equal(ownerView.status, 200, JSON.stringify(ownerView.body));
+    const mine = ownerView.body.merchants.find((m: { group_id: string }) => m.group_id === "rg-chez-maman");
+    assert.ok(mine, "the owner sees their group's earnings");
+    assert.ok(BigInt(mine.earned_lifetime.amount_minor) > 0n, "earned from delivered orders");
+    assert.equal(mine.outstanding.amount_minor, mine.earned_lifetime.amount_minor, "nothing paid out yet");
+    assert.equal(ownerView.body.riders, null, "an owner does not see rider payouts");
+
+    // Finance sees every group and the rider payout view.
+    const finView = await call("GET", "/v1/admin/payouts", { token: fin.token, country: "CD" });
+    assert.equal(finView.status, 200, JSON.stringify(finView.body));
+    assert.ok(finView.body.merchants.length >= 1);
+    assert.ok(finView.body.riders, "finance sees rider payouts");
+    const before = finView.body.merchants.find((m: { group_id: string }) => m.group_id === "rg-chez-maman");
+
+    // Finance records a payout of the whole outstanding balance.
+    const pay = await call("POST", "/v1/admin/payouts/merchants", { token: fin.token, country: "CD", body: { restaurant_group_id: "rg-chez-maman", method: "MOBILE_MONEY", reference: "MM-TX-1" } });
+    assert.equal(pay.status, 201, JSON.stringify(pay.body));
+    assert.equal(pay.body.paid.amount_minor, before.outstanding.amount_minor);
+    assert.equal(pay.body.outstanding.amount_minor, "0");
+
+    // The statement now shows the group fully paid, and the books still balance.
+    const after = await call("GET", "/v1/admin/payouts", { token: fin.token, country: "CD" });
+    assert.equal(after.body.merchants.find((m: { group_id: string }) => m.group_id === "rg-chez-maman").outstanding.amount_minor, "0");
+    const l = await call("GET", "/v1/admin/ledger", { token: fin.token, country: "CD" });
+    const bySum = new Map<string, bigint>();
+    for (const b of l.body.balances) bySum.set(b.currency, (bySum.get(b.currency) ?? 0n) + BigInt(b.balance_minor));
+    for (const [c, s] of bySum) assert.equal(s, 0n, `the books balance in ${c} after the payout`);
+
+    // An owner cannot issue a payout to themselves.
+    assert.equal((await call("POST", "/v1/admin/payouts/merchants", { token: restaurantOwner.token, country: "CD", body: { restaurant_group_id: "rg-chez-maman" } })).status, 403);
+  });
+
+  test("paying a group with nothing outstanding is refused", async () => {
+    const again = await call("POST", "/v1/admin/payouts/merchants", { token: fin.token, country: "CD", body: { restaurant_group_id: "rg-chez-maman" } });
+    assert.equal(again.status, 422);
+    assert.equal(again.body.code, "NOTHING_TO_PAY");
+  });
+});

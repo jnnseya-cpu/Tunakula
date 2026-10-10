@@ -90,7 +90,7 @@ const NAV: { group: Key; items: NavItem[] }[] = [
     { href: "/finance/", key: "finance", cap: "finance" },
     { href: "/payments/", key: "payments", cap: "payments" },
     { href: "/refunds/", key: "refunds", cap: "refunds" },
-    { href: "/payouts/", key: "payouts", soon: true },
+    { href: "/payouts/", key: "payouts", cap: "payouts" },
   ] },
   { group: "g_platform", items: [
     { href: "/team/", key: "team", cap: "team" },
