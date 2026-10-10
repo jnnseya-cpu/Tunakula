@@ -3976,3 +3976,26 @@ describe("growth agent (recommendations + win-back)", () => {
     assert.equal(w.body.credited.amount_minor, "10000", "clamped to the cap");
   });
 });
+
+describe("merchant copilot (grounded per-branch insights)", () => {
+  test("returns ranked insights grounded in the branch's menu and orders", async () => {
+    const r = await call("GET", `/v1/admin/branches/${branchId}/copilot?lang=en`, { token: admin.token, country: "CD" });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.equal(r.body.branch.id, branchId);
+    assert.ok(Array.isArray(r.body.insights));
+    assert.ok(r.body.facts.menu.total >= 1, "the branch's real menu is counted");
+    // Warnings (if any) sort ahead of suggestions/info.
+    const sev = r.body.insights.map((i: { severity: string }) => ({ WARNING: 3, SUGGESTION: 2, INFO: 1 }[i.severity]));
+    assert.deepEqual(sev, [...sev].sort((a, b) => b - a), "insights are ranked by severity");
+    // Every insight cites a real category — the brain invents no section.
+    assert.ok(r.body.insights.every((i: { category: string }) => ["MENU", "DEMAND", "PERFORMANCE", "REVIEWS"].includes(i.category)));
+  });
+
+  test("a customer cannot read a branch's copilot", async () => {
+    assert.equal((await call("GET", `/v1/admin/branches/${branchId}/copilot`, { token: customer.token, country: "CD" })).status, 403);
+  });
+
+  test("an unknown branch is a 404", async () => {
+    assert.equal((await call("GET", `/v1/admin/branches/${randomUUID()}/copilot`, { token: admin.token, country: "CD" })).status, 404);
+  });
+});

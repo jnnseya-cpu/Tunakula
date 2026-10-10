@@ -132,6 +132,7 @@ export class AdminService {
           refunds: this.#can(principal, "refund:issue", marketWide, profile) || this.#can(principal, "order:manage", marketWide, profile),
           support: this.#can(principal, "ai_chat:takeover", marketWide, profile) || this.#can(principal, "order:manage", marketWide, profile),
           growth: this.#can(principal, "campaign:write", marketWide, profile),
+          copilot: this.#can(principal, "restaurant:manage", marketWide, profile) || vis.branches.some((b) => this.#can(principal, "menu:write", { ...this.#branchResource(country, b), type: "menu" }, profile)),
           audit: this.#can(principal, "audit:read", marketWide, profile),
           customers: vis.all,
           kitchen: prep.all || prep.branches.length > 0,

@@ -764,3 +764,19 @@ tr.sel td { background: rgba(250, 210, 14, 0.12); }
 .growth-win { display: flex; gap: 8px; align-items: center; }
 .growth-win input { width: 88px; height: 34px; padding: 0 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--ink); font: inherit; }
 @media (max-width: 860px) { .growth-tiles { grid-template-columns: repeat(2, 1fr); } }
+
+/* Merchant copilot (insights) */
+.copilot-head { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; flex-wrap: wrap; }
+.copilot-head h2 { margin: 0; }
+.copilot-meta { color: var(--ink-2); font-size: 13px; }
+.copilot-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; }
+.copilot-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 16px 18px; border-left: 4px solid var(--muted, #99a); }
+.copilot-card.sev-warning { border-left-color: #c0531a; }
+.copilot-card.sev-suggestion { border-left-color: #e7a008; }
+.copilot-card.sev-info { border-left-color: #1f6d9d; }
+.copilot-card h3 { margin: 8px 0 6px; font-size: 16px; }
+.copilot-card p { margin: 0; color: var(--ink-2); font-size: 14px; line-height: 1.5; }
+.copilot-card-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.copilot-cat { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--ink-2); }
+.copilot-metric { font-family: var(--display, inherit); font-weight: 800; font-size: 18px; font-variant-numeric: tabular-nums; }
+.copilot-card.sev-warning .copilot-metric { color: #c0531a; }

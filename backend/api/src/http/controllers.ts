@@ -28,6 +28,7 @@ import type { SiteContentService } from "../app/site-content.ts";
 import type { ChefService } from "../app/chef.ts";
 import type { AssistantService } from "../app/assistant.ts";
 import type { GrowthService } from "../app/growth.ts";
+import type { MerchantCopilotService } from "../app/merchant-copilot.ts";
 import type { IntegrationsService } from "../app/integrations.ts";
 import type { SubscriptionService } from "../app/subscriptions.ts";
 import type { PosService } from "../app/pos.ts";
@@ -1618,6 +1619,25 @@ export class SupportController {
   @HttpCode(200)
   async reply(@Req() req: FastifyRequest, @Param("id") id: string, @Body() body: { text?: string; resolve?: boolean }) {
     return this.assistant.respond(country(req), await this.#p(req), id, body?.text ?? "", body?.resolve ?? false);
+  }
+}
+
+/** Merchant copilot: grounded, ranked insights for one of the merchant's branches. */
+@Controller("v1")
+export class MerchantCopilotController {
+  constructor(
+    @Inject(TOKENS.db) private readonly db: Db,
+    @Inject(TOKENS.tokens) private readonly tokens: TokenService,
+    @Inject(TOKENS.merchantCopilot) private readonly copilot: MerchantCopilotService,
+  ) {}
+
+  #p(req: FastifyRequest) {
+    return this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+  }
+
+  @Get("admin/branches/:id/copilot")
+  async insights(@Req() req: FastifyRequest, @Param("id") id: string, @Query("lang") lang?: string) {
+    return this.copilot.insights(country(req), await this.#p(req), id, lang === "en" ? "en" : "fr");
   }
 }
 
