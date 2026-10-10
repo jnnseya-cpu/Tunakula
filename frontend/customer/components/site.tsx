@@ -12,6 +12,7 @@ import { LocationButton } from "./location";
 // Nav/footer link labels carry an i18n key alongside the href; the label is resolved per viewer with `useT`.
 const LINKS: { href: string; key: string }[] = [
   { href: "/order/", key: "nav.restaurants" },
+  { href: "/chefs/", key: "nav.chefs" },
   { href: "/membership/", key: "nav.plus" },
   { href: "/send-home/", key: "nav.sendHome" },
   { href: "/restaurants/", key: "nav.forRestaurants" },

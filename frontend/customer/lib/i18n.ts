@@ -56,6 +56,7 @@ const DICT: Record<string, Entry> = {
   "nav.signOut": { en: "Sign out", fr: "Se déconnecter", ln: "Kobima", sw: "Toka" },
   // ── Main nav links ──
   "nav.restaurants": { en: "Restaurants", fr: "Restaurants", ln: "Bandako ya kolia", sw: "Migahawa" },
+  "nav.chefs": { en: "Book a chef", fr: "Réserver un chef", ln: "Réserver chef", sw: "Weka mpishi" },
   "nav.plus": { en: "Tunakula Plus", fr: "Tunakula Plus", ln: "Tunakula Plus", sw: "Tunakula Plus" },
   "nav.sendHome": { en: "Send a meal home", fr: "Envoyer un repas", ln: "Tindela bandeko bilei", sw: "Tuma mlo nyumbani" },
   "nav.forRestaurants": { en: "For restaurants", fr: "Pour les restaurants", ln: "Mpo na bandako ya kolia", sw: "Kwa migahawa" },
