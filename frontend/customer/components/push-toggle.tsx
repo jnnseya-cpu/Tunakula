@@ -6,6 +6,7 @@
  */
 import { useEffect, useState } from "react";
 import { ApiError, disablePush, enablePush, getSession, pushStatus } from "../lib/api";
+import { t } from "../lib/i18n";
 
 export function PushToggle() {
   const [status, setStatus] = useState<{ enabled: boolean; configured: boolean; public_key: string } | null>(null);
@@ -28,8 +29,8 @@ export function PushToggle() {
   return (
     <section className="app-card push-card">
       <div className="push-text">
-        <h2 className="app-title" style={{ fontSize: 17 }}>🔔 Order updates on your phone</h2>
-        <p className="muted small">Get a notification when the kitchen accepts your order, when your rider sets off, and when it’s at your door.</p>
+        <h2 className="app-title" style={{ fontSize: 17 }}>🔔 {t("push.title")}</h2>
+        <p className="muted small">{t("push.body")}</p>
         {!supported ? <p className="muted small">This browser doesn’t support push notifications.</p> : null}
         {error ? <p className="form-error small">{error}</p> : null}
       </div>

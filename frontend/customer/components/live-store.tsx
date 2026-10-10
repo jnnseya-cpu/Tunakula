@@ -9,6 +9,7 @@ import { api, ApiError, foodPhotoUrl, getSession, listFavourites, loadCart, line
 import { ClockIcon, PinIcon, useLocationCtx, type LiveStoreRow } from "./location";
 import { PlateArt, recipeFor } from "./plate-art";
 import { BookTable } from "./book-table";
+import { t } from "../lib/i18n";
 
 interface VOption { id: string; name: string; price: string }
 interface Variation { id: string; name: string; type: "SINGLE" | "MULTI"; required: boolean; min: number; max: number; options: VOption[] }
@@ -346,9 +347,9 @@ function liveCard(s: LiveStoreRow) {
           </div>
         </div>
         <span className="mcard-badges">
-          {s.featured ? <span className="featured-badge">★ Featured</span> : null}
+          {s.featured ? <span className="featured-badge">★ {t("disc.featured")}</span> : null}
           {grocery ? <span className="store-type-badge">{STORE_TYPE_LABEL[s.storeType] ?? "Store"}</span> : null}
-          <span className={`open-badge ${s.open ? "on" : "off"}`}>{s.open ? "Open" : "Closed now"}</span>
+          <span className={`open-badge ${s.open ? "on" : "off"}`}>{s.open ? t("common.open") : t("common.closedNow")}</span>
         </span>
       </div>
       <div className="mcard-body">
@@ -374,8 +375,8 @@ export function LiveStoreGrid({ exclude }: { exclude: readonly string[] }) {
       {restaurants.length ? <div className="mgrid live-grid">{restaurants.map(liveCard)}</div> : null}
       {shops.length ? (
         <section className="shops-section">
-          <h2 className="shops-head">🛒 Groceries &amp; essentials</h2>
-          <p className="muted shops-sub">Supermarkets, convenience stores and pharmacies delivering near you.</p>
+          <h2 className="shops-head">🛒 {t("disc.groceries")}</h2>
+          <p className="muted shops-sub">{t("disc.groceriesSub")}</p>
           <div className="mgrid live-grid">{shops.map(liveCard)}</div>
         </section>
       ) : null}
