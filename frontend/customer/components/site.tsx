@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { CONTACT_EMAIL } from "../lib/site";
+import { MarketSwitcher } from "./market";
 import { AccountLink } from "./account";
 import { LocationButton } from "./location";
 
@@ -101,7 +102,7 @@ export function SiteFooter() {
         </div>
         <div className="legal">
           <span>© 2026 Groupe Nseya · <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a> · <Link href="/legal/legal-notice/">Legal notice</Link></span>
-          <span>Français · Lingála · Kiswahili · English</span>
+          <span className="legal-right"><MarketSwitcher />Français · Lingála · Kiswahili · English</span>
         </div>
       </div>
     </footer>

@@ -3,8 +3,9 @@
  * header and Idempotency-Key on writes, problem+json errors, and money in minor units.
  */
 import { API_URL } from "./geo";
+import { COUNTRY } from "./country";
 
-export const COUNTRY = "CD";
+export { COUNTRY } from "./country";
 const SESSION_KEY = "tk-session";
 
 export interface Session { readonly token: string; readonly userId: string; readonly phone: string }

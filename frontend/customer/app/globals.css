@@ -1404,3 +1404,9 @@ section.tight { padding: 44px 0; }
 .shops-section { margin-top: 30px; }
 .shops-head { font-size: 20px; font-weight: 800; margin: 0 0 2px; }
 .shops-sub { margin: 0 0 16px; }
+
+/* Market (country) switcher in the footer (additive) */
+.legal-right { display: inline-flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.market-switch { display: inline-flex; align-items: center; gap: 6px; }
+.market-switch select { font: inherit; font-size: 13px; color: inherit; background: transparent; border: 1px solid var(--rule); border-radius: 8px; padding: 4px 8px; cursor: pointer; }
+.market-switch select:focus-visible { outline: 2px solid var(--yellow); outline-offset: 1px; }
