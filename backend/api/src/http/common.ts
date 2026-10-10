@@ -35,6 +35,7 @@ export const TOKENS = {
   chat: "CHAT_SERVICE",
   banners: "BANNER_SERVICE",
   siteContent: "SITE_CONTENT_SERVICE",
+  chef: "CHEF_SERVICE",
   subscriptions: "SUBSCRIPTION_SERVICE",
   pos: "POS_SERVICE",
   kiosk: "KIOSK_SERVICE",

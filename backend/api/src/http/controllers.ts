@@ -25,6 +25,7 @@ import type { CashbackService } from "../app/cashback.ts";
 import type { ChatService } from "../app/chat.ts";
 import type { BannerService } from "../app/banners.ts";
 import type { SiteContentService } from "../app/site-content.ts";
+import type { ChefService } from "../app/chef.ts";
 import type { SubscriptionService } from "../app/subscriptions.ts";
 import type { PosService } from "../app/pos.ts";
 import type { KioskService } from "../app/kiosk.ts";
@@ -1548,6 +1549,99 @@ export class SiteContentController {
   @HttpCode(200)
   async save(@Req() req: FastifyRequest, @Body() body: unknown) {
     return this.siteContent.save(country(req), await this.#p(req), body);
+  }
+}
+
+/** Book-a-chef: public discovery, customer bookings, the chef console, and ops review. */
+@Controller("v1")
+export class ChefController {
+  constructor(
+    @Inject(TOKENS.db) private readonly db: Db,
+    @Inject(TOKENS.tokens) private readonly tokens: TokenService,
+    @Inject(TOKENS.chef) private readonly chef: ChefService,
+  ) {}
+
+  #p(req: FastifyRequest) {
+    return this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+  }
+
+  // Public discovery
+  @Get("chefs")
+  async list(@Req() req: FastifyRequest, @Query("cuisine") cuisine?: string, @Query("commune") commune?: string, @Query("kind") kind?: string) {
+    return this.chef.list(country(req), { ...(cuisine ? { cuisine } : {}), ...(commune ? { commune } : {}), ...(kind ? { kind } : {}) });
+  }
+
+  @Get("chefs/:id")
+  async get(@Req() req: FastifyRequest, @Param("id") id: string) {
+    return this.chef.get(country(req), id);
+  }
+
+  @Post("chefs/quote")
+  @HttpCode(200)
+  async quote(@Req() req: FastifyRequest, @Body() body: { service_id?: string; party_size?: number; hours?: number }) {
+    return this.chef.quote(country(req), { serviceId: body?.service_id, partySize: body?.party_size, hours: body?.hours });
+  }
+
+  // Customer bookings
+  @Post("chef-bookings")
+  async requestBooking(@Req() req: FastifyRequest, @Body() body: { service_id?: string; scheduled_for?: string; party_size?: number; hours?: number; location_label?: string; lat?: number; lng?: number; note?: string }) {
+    return this.chef.requestBooking(country(req), await this.#p(req), { serviceId: body?.service_id, scheduledFor: body?.scheduled_for, partySize: body?.party_size, hours: body?.hours, locationLabel: body?.location_label, lat: body?.lat, lng: body?.lng, note: body?.note });
+  }
+
+  @Get("me/chef-bookings")
+  async myBookings(@Req() req: FastifyRequest) {
+    return this.chef.myBookings(country(req), await this.#p(req));
+  }
+
+  @Post("chef-bookings/:id/cancel")
+  @HttpCode(200)
+  async cancel(@Req() req: FastifyRequest, @Param("id") id: string) {
+    return this.chef.cancel(country(req), await this.#p(req), id);
+  }
+
+  // Chef console
+  @Post("chef/apply")
+  async apply(@Req() req: FastifyRequest, @Body() body: { display_name?: string; bio?: string; cuisines?: string[]; communes?: string[]; photo_ref?: string }) {
+    return this.chef.apply(country(req), await this.#p(req), { displayName: body?.display_name, bio: body?.bio, cuisines: body?.cuisines, communes: body?.communes, photoRef: body?.photo_ref });
+  }
+
+  @Get("chef/me")
+  async me(@Req() req: FastifyRequest) {
+    return this.chef.me(country(req), await this.#p(req));
+  }
+
+  @Post("chef/services")
+  async saveService(@Req() req: FastifyRequest, @Body() body: { id?: string; kind?: string; title?: string; description?: string; pricing_model?: string; rate?: string; currency?: string; min_guests?: number; max_guests?: number | null; remote?: boolean; active?: boolean; sort?: number }) {
+    return this.chef.saveService(country(req), await this.#p(req), { id: body?.id, kind: body?.kind, title: body?.title, description: body?.description, pricingModel: body?.pricing_model, rate: body?.rate, currency: body?.currency, minGuests: body?.min_guests, maxGuests: body?.max_guests, remote: body?.remote, active: body?.active, sort: body?.sort });
+  }
+
+  @Get("chef/bookings")
+  async inbox(@Req() req: FastifyRequest) {
+    return this.chef.inbox(country(req), await this.#p(req));
+  }
+
+  @Post("chef/bookings/:id/respond")
+  @HttpCode(200)
+  async respond(@Req() req: FastifyRequest, @Param("id") id: string, @Body() body: { accept?: boolean; reason?: string }) {
+    return this.chef.respond(country(req), await this.#p(req), id, body?.accept === true, body?.reason);
+  }
+
+  @Post("chef/bookings/:id/complete")
+  @HttpCode(200)
+  async complete(@Req() req: FastifyRequest, @Param("id") id: string) {
+    return this.chef.complete(country(req), await this.#p(req), id);
+  }
+
+  // Ops review
+  @Get("ops/chefs/pending")
+  async pending(@Req() req: FastifyRequest) {
+    return this.chef.pending(country(req), await this.#p(req));
+  }
+
+  @Post("ops/chefs/:id/decide")
+  @HttpCode(200)
+  async decide(@Req() req: FastifyRequest, @Param("id") id: string, @Body() body: { approve?: boolean }) {
+    return this.chef.decide(country(req), await this.#p(req), id, body?.approve === true);
   }
 }
 

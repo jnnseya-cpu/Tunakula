@@ -3711,3 +3711,82 @@ describe("self-service kiosk (HUB channel, customer orders in-store)", () => {
     assert.equal(row.channel, "HUB");
   });
 });
+
+describe("book a chef (private-chef marketplace, 0% commission + service charge)", () => {
+  const future = () => new Date(Date.now() + 2 * 86_400_000).toISOString();
+  let chef: { token: string; userId: string };
+  let chefId: string; let serviceId: string;
+
+  test("a cook applies, ops approve, and they list a per-guest service", async () => {
+    chef = await signIn("+243810000600");
+    // Apply.
+    const applied = await call("POST", "/v1/chef/apply", { token: chef.token, country: "CD", body: { display_name: "Chef Kï", bio: "Congolese fine dining at home", cuisines: ["Congolese", "Grill"], communes: ["Gombe", "Limete"] } });
+    assert.equal(applied.status, 201, JSON.stringify(applied.body));
+    assert.equal(applied.body.status, "PENDING");
+    chefId = applied.body.id;
+    // A plain customer cannot approve.
+    assert.equal((await call("POST", `/v1/ops/chefs/${chefId}/decide`, { token: customer.token, country: "CD", body: { approve: true } })).status, 403);
+    // Ops approve.
+    const decided = await call("POST", `/v1/ops/chefs/${chefId}/decide`, { token: admin.token, country: "CD", body: { approve: true } });
+    assert.equal(decided.status, 200, JSON.stringify(decided.body));
+    assert.equal(decided.body.status, "APPROVED");
+    // Only the chef themselves can add services.
+    assert.equal((await call("POST", "/v1/chef/services", { token: customer.token, country: "CD", body: { kind: "PRIVATE_DINING", title: "x", pricing_model: "PER_HEAD", rate: "30.00", currency: "USD" } })).status, 403);
+    const svc = await call("POST", "/v1/chef/services", { token: chef.token, country: "CD", body: { kind: "PRIVATE_DINING", title: "Private dinner at your home", pricing_model: "PER_HEAD", rate: "30.00", currency: "USD", min_guests: 2, max_guests: 10 } });
+    assert.equal(svc.status, 201, JSON.stringify(svc.body));
+    serviceId = svc.body.id;
+    // Also an ADVICE (consultation) service.
+    await call("POST", "/v1/chef/services", { token: chef.token, country: "CD", body: { kind: "ADVICE", title: "Menu planning call", pricing_model: "FIXED", rate: "15.00", currency: "USD", remote: true } });
+
+    // The chef now shows in public discovery.
+    const listed = await call("GET", "/v1/chefs", { country: "CD" });
+    assert.equal(listed.status, 200);
+    const mine = listed.body.chefs.find((c: { id: string }) => c.id === chefId);
+    assert.ok(mine, "approved chef is discoverable");
+    assert.equal(mine.services.length, 2);
+  });
+
+  test("the quote keeps the chef whole and adds the 10% service charge on top", async () => {
+    const q = await call("POST", "/v1/chefs/quote", { token: customer.token, country: "CD", body: { service_id: serviceId, party_size: 4 } });
+    assert.equal(q.status, 200, JSON.stringify(q.body));
+    // 4 guests × $30 = $120 to the chef.
+    assert.equal(q.body.fee.amount_minor, "12000");
+    // Platform's 10% on top, paid by the customer.
+    assert.equal(q.body.service_charge.amount_minor, "1200");
+    assert.equal(q.body.total.amount_minor, "13200");
+    assert.equal(q.body.commission.amount_minor, "0", "0% commission");
+  });
+
+  test("a booking runs request → confirm → complete and settles to a balanced journal", async () => {
+    const booked = await call("POST", "/v1/chef-bookings", { token: customer.token, country: "CD", body: { service_id: serviceId, scheduled_for: future(), party_size: 4, location_label: "Avenue Colonel Lukusa, Gombe" } });
+    assert.equal(booked.status, 201, JSON.stringify(booked.body));
+    assert.equal(booked.body.status, "REQUESTED");
+    assert.equal(booked.body.total.amount_minor, "13200");
+    const bookingId = booked.body.id;
+
+    // Only the chef can respond to their booking.
+    assert.equal((await call("POST", `/v1/chef/bookings/${bookingId}/respond`, { token: customer.token, country: "CD", body: { accept: true } })).status, 403);
+    assert.equal((await call("POST", `/v1/chef/bookings/${bookingId}/respond`, { token: chef.token, country: "CD", body: { accept: true } })).body.status, "CONFIRMED");
+    // Cannot complete a booking that isn't confirmed twice; complete it once.
+    const done = await call("POST", `/v1/chef/bookings/${bookingId}/complete`, { token: chef.token, country: "CD" });
+    assert.equal(done.status, 200, JSON.stringify(done.body));
+    assert.equal(done.body.status, "COMPLETED");
+
+    // The money settled: chef keeps $120, platform earns the $12 service charge, nothing is commission.
+    const rows = await inspect("CD",
+      `SELECT e.account, sum(e.amount_minor)::text AS total
+         FROM money.ledger_entry e JOIN money.journal j ON j.id = e.journal_id
+        WHERE j.idempotency_key = $1 GROUP BY e.account`, [`chef-booking:${bookingId}:settlement`]);
+    const bal = Object.fromEntries(rows.map((r: { account: string; total: string }) => [r.account, r.total]));
+    assert.equal(bal["chef_payable"], "-12000", "the chef is owed the full fee");
+    assert.equal(bal["service_charge_revenue"], "-1200", "the platform earns the 10% service charge");
+    assert.equal(bal["psp_clearing"], "13200", "the customer's payment balances the journal");
+  });
+
+  test("a customer can cancel their own booking before it happens", async () => {
+    const booked = await call("POST", "/v1/chef-bookings", { token: customer.token, country: "CD", body: { service_id: serviceId, scheduled_for: future(), party_size: 2 } });
+    const id = booked.body.id;
+    assert.equal((await call("POST", `/v1/chef-bookings/${id}/cancel`, { token: chef.token, country: "CD" })).status, 403);
+    assert.equal((await call("POST", `/v1/chef-bookings/${id}/cancel`, { token: customer.token, country: "CD" })).body.status, "CANCELLED");
+  });
+});
