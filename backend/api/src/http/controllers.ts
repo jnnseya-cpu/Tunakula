@@ -27,6 +27,7 @@ import type { BannerService } from "../app/banners.ts";
 import type { SubscriptionService } from "../app/subscriptions.ts";
 import type { PosService } from "../app/pos.ts";
 import type { MerchantPlanService } from "../app/merchant-plans.ts";
+import type { PushService } from "../app/push.ts";
 import type { MerchantOnboardingService } from "../app/merchant-onboarding.ts";
 import type { NotificationService } from "../app/comms.ts";
 import { serialiseQuote, type CommerceService, type PlaceOrderInput, type QuoteInput } from "../app/commerce.ts";
@@ -1390,6 +1391,36 @@ const toPosInput = (b: PosBody) => ({
   ...(typeof b?.kitchen_note === "string" && b.kitchen_note.trim() ? { kitchenNote: b.kitchen_note } : {}),
   ...(b?.expected_total ? { expectedTotal: b.expected_total } : {}),
 });
+
+/** Web push: a signed-in customer turns device notifications on/off; the comms engine's push channel delivers to them. */
+@Controller("v1")
+export class PushController {
+  constructor(
+    @Inject(TOKENS.db) private readonly db: Db,
+    @Inject(TOKENS.tokens) private readonly tokens: TokenService,
+    @Inject(TOKENS.push) private readonly push: PushService,
+  ) {}
+  #p(req: FastifyRequest) {
+    return this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+  }
+
+  @Get("me/push")
+  async status(@Req() req: FastifyRequest) {
+    return this.push.status(country(req), await this.#p(req));
+  }
+
+  @Post("me/push-subscription")
+  @HttpCode(200)
+  async subscribe(@Req() req: FastifyRequest, @Body() body: { endpoint?: string; keys?: { p256dh?: string; auth?: string }; user_agent?: string }) {
+    return this.push.subscribe(country(req), await this.#p(req), body ?? {});
+  }
+
+  @Post("me/push-subscription/remove")
+  @HttpCode(200)
+  async unsubscribe(@Req() req: FastifyRequest, @Body() body: { endpoint?: string }) {
+    return this.push.unsubscribe(country(req), await this.#p(req), body?.endpoint ?? "");
+  }
+}
 
 @Controller("v1")
 export class PosController {

@@ -37,6 +37,7 @@ export const TOKENS = {
   subscriptions: "SUBSCRIPTION_SERVICE",
   pos: "POS_SERVICE",
   merchantPlans: "MERCHANT_PLAN_SERVICE",
+  push: "PUSH_SERVICE",
   onboardingMerchant: "MERCHANT_ONBOARDING_SERVICE",
   logger: "LOGGER",
 } as const;

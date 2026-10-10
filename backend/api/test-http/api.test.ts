@@ -21,6 +21,8 @@ import type { LoyaltyService } from "../src/app/loyalty.ts";
 import type { CashbackService } from "../src/app/cashback.ts";
 import type { SubscriptionService } from "../src/app/subscriptions.ts";
 import type { MerchantPlanService } from "../src/app/merchant-plans.ts";
+import { webPushSender } from "../src/app/push.ts";
+import webpush from "web-push";
 import type { ReferralService } from "../src/app/referrals.ts";
 import type { CommerceService } from "../src/app/commerce.ts";
 import type { PaymentService } from "../src/app/payments.ts";
@@ -3556,5 +3558,41 @@ describe("merchant subscription plans (0% commission preserved)", () => {
     assert.equal(free.body.code, "FREE_IS_FREE");
     assert.equal((await call("POST", "/v1/admin/merchant-plans", { token: restaurantOwner.token, country: "CD", body: { code: "X2", name: "x" } })).status, 403);
     assert.equal((await call("POST", "/v1/admin/merchant-plans/assign", { token: restaurantOwner.token, country: "CD", body: { group_id: "rg-chez-maman", plan_code: "FREE" } })).status, 403);
+  });
+});
+
+describe("web push notifications", () => {
+  test("a customer enables (idempotently) and disables push", async () => {
+    const u = await signIn("+243810000310");
+    const st0 = await call("GET", "/v1/me/push", { token: u.token, country: "CD" });
+    assert.equal(st0.status, 200);
+    assert.equal(st0.body.enabled, false);
+
+    const sub = { endpoint: "https://push.example.com/abc-123", keys: { p256dh: "BPUBLICKEY", auth: "AUTHSECRET" } };
+    assert.equal((await call("POST", "/v1/me/push-subscription", { token: u.token, country: "CD", body: sub })).body.enabled, true);
+    assert.equal((await call("GET", "/v1/me/push", { token: u.token, country: "CD" })).body.enabled, true);
+    // Re-subscribing the same endpoint upserts, it does not duplicate.
+    await call("POST", "/v1/me/push-subscription", { token: u.token, country: "CD", body: sub });
+    const [n] = await inspect("CD", "SELECT count(*)::int AS n FROM comms.push_subscription WHERE endpoint = $1", [sub.endpoint]);
+    assert.equal(n!.n, 1, "the subscription is upserted, not duplicated");
+
+    assert.equal((await call("POST", "/v1/me/push-subscription/remove", { token: u.token, country: "CD", body: { endpoint: sub.endpoint } })).body.enabled, false);
+    assert.equal((await call("GET", "/v1/me/push", { token: u.token, country: "CD" })).body.enabled, false);
+  });
+
+  test("an invalid subscription is refused", async () => {
+    const u = await signIn("+243810000311");
+    const bad = await call("POST", "/v1/me/push-subscription", { token: u.token, country: "CD", body: { endpoint: "https://x" } });
+    assert.equal(bad.status, 400);
+    assert.equal(bad.body.code, "SUBSCRIPTION_INVALID");
+  });
+
+  test("the push channel logs when a recipient has no device registered", async () => {
+    const u = await signIn("+243810000312");
+    const keys = webpush.generateVAPIDKeys();
+    const sender = webPushSender(db, { publicKey: keys.publicKey, privateKey: keys.privateKey, subject: "mailto:test@tunakula.com" });
+    const event = { key: "order.delivered", title: "Delivered", subject: "Delivered", severity: "success", mandatory: false, audience: ["customer"], channels: ["push"] } as const;
+    const r = await sender.send({ country: "CD", channel: "push", to: { userId: u.userId }, subject: "Your order arrived", event, data: {} });
+    assert.equal(r.status, "logged", "no device → nothing to push, logged not failed");
   });
 });

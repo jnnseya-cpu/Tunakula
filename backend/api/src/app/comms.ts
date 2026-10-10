@@ -25,6 +25,8 @@ import {
 
 export interface ChannelMessage {
   readonly channel: CommsChannel;
+  /** The market, so a channel adapter can look up country-scoped data (e.g. push subscriptions). */
+  readonly country: string;
   /** The recipient and the contact details a channel adapter needs (phone for SMS/WhatsApp, email). */
   readonly to: { readonly userId: string; readonly phone?: string | null; readonly email?: string | null };
   readonly subject: string;
@@ -80,7 +82,7 @@ export class NotificationService {
         let failure: string | undefined;
         if (!suppressed) {
           try {
-            const r = await this.#sender.send({ channel, to, subject, event, data });
+            const r = await this.#sender.send({ country: input.country, channel, to, subject, event, data });
             status = r.status;
             ref = r.ref;
             failure = r.failure;

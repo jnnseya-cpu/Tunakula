@@ -192,6 +192,34 @@ export const sendOrderMessage = (orderId: string, body: string) => api<ChatMessa
 export interface CashbackOffer { name: string; percent: number; min_spend: MoneyWire; max_cashback: MoneyWire | null; ends_at: string }
 export const cashbackOffer = () => api<{ offer: CashbackOffer | null }>("/v1/cashback").then((r) => r.offer);
 
+// ── Web push notifications ──
+export interface PushStatus { enabled: boolean; configured: boolean; public_key: string }
+export const pushStatus = () => api<PushStatus>("/v1/me/push");
+const urlBase64ToUint8Array = (base64: string) => {
+  const padding = "=".repeat((4 - (base64.length % 4)) % 4);
+  const raw = atob((base64 + padding).replace(/-/g, "+").replace(/_/g, "/"));
+  return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
+};
+/** Registers the service worker, asks permission, subscribes with the server's VAPID key, and stores it. */
+export async function enablePush(publicKey: string): Promise<void> {
+  if (!("serviceWorker" in navigator) || !("PushManager" in window)) throw new ApiError(0, "UNSUPPORTED", "This browser does not support notifications.");
+  const perm = await Notification.requestPermission();
+  if (perm !== "granted") throw new ApiError(0, "DENIED", "Allow notifications in your browser to turn them on.");
+  const reg = await navigator.serviceWorker.register("/sw.js");
+  await navigator.serviceWorker.ready;
+  const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(publicKey) });
+  const json = sub.toJSON() as { endpoint?: string; keys?: { p256dh?: string; auth?: string } };
+  await api("/v1/me/push-subscription", { method: "POST", body: { endpoint: json.endpoint, keys: json.keys, user_agent: navigator.userAgent } });
+}
+/** Removes the browser subscription and tells the server to stop pushing to it. */
+export async function disablePush(): Promise<void> {
+  try {
+    const reg = await navigator.serviceWorker.getRegistration();
+    const sub = await reg?.pushManager.getSubscription();
+    if (sub) { const endpoint = sub.endpoint; await sub.unsubscribe(); await api("/v1/me/push-subscription/remove", { method: "POST", body: { endpoint } }); }
+  } catch { /* best effort */ }
+}
+
 // ── Repeat / subscription orders ──
 export type SubCadence = "DAILY" | "WEEKLY";
 export interface Subscription {

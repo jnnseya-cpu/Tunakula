@@ -25,6 +25,7 @@ import { SandboxConnector } from "@tunakula/payment-connector-sandbox";
 import type { ConnectorCapability, PaymentConnector } from "@tunakula/ts-contracts";
 import type { OtpSender } from "../app/auth.ts";
 import { messagingSender, otpViaMessaging } from "../app/channels.ts";
+import { composeSenders, webPushSender, type VapidConfig } from "../app/push.ts";
 import type { ChannelSender } from "../app/comms.ts";
 import type { MessagingChannel } from "../modules/messaging/messaging.ts";
 import { twilioMessaging } from "../modules/messaging/twilio.ts";
@@ -86,7 +87,15 @@ if (!messaging && env("TUNAKULA_DEV_OTP") !== "1") throw new Error("No Messaging
 const otp: OtpSender = messaging
   ? otpViaMessaging(messaging)
   : { async send(phone, code, channel) { log.warn("development sign-in code", { channel, phoneSuffix: phone.slice(-4), code }); } };
-const senders: ChannelSender | undefined = messaging ? messagingSender(messaging) : undefined;
+// Web Push (VAPID): when keys are set, customers can enable push and the comms push channel delivers to their devices.
+const vapid: VapidConfig | undefined = env("TUNAKULA_VAPID_PUBLIC_KEY")
+  ? { publicKey: required("TUNAKULA_VAPID_PUBLIC_KEY"), privateKey: required("TUNAKULA_VAPID_PRIVATE_KEY"), subject: env("TUNAKULA_VAPID_SUBJECT") ?? "mailto:info@tunakula.com" }
+  : undefined;
+const senderParts: ChannelSender[] = [];
+if (messaging) senderParts.push(messagingSender(messaging));
+if (vapid) senderParts.push(webPushSender(db, vapid));
+const senders: ChannelSender | undefined = senderParts.length ? composeSenders(...senderParts) : undefined;
+if (vapid) log.info("web push configured", {});
 const registry = new CountryConfigRegistry({
   brands: [TUNAKULA_BRAND, GROUP_INTERNAL_BRAND],
   connectors: connectors.map((c) => ({ id: c.id, certified: true })),
@@ -110,6 +119,7 @@ const app = await createApi({
   tokenSecret: required("TUNAKULA_TOKEN_SECRET"),
   otp,
   ...(senders ? { senders } : {}),
+  ...(vapid ? { vapid } : {}),
   routing,
   corsOrigins: (env("TUNAKULA_CONSOLE_ORIGINS") ?? "").split(",").map((o) => o.trim()).filter(Boolean),
   onError: (e) => log.error("unhandled", { error: e }),
