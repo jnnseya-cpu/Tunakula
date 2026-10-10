@@ -46,12 +46,25 @@ import type { LoyaltyService } from "../app/loyalty.ts";
 import type { CashbackService } from "../app/cashback.ts";
 import type { SubscriptionService } from "../app/subscriptions.ts";
 import type { MerchantPlanService } from "../app/merchant-plans.ts";
+import { loadIntegrationConfig } from "../app/integrations.ts";
 import { createApi } from "./app.ts";
 import { TOKENS } from "./common.ts";
 
-const env = (k: string) => process.env[k];
-const required = (k: string) => env(k) ?? (() => { throw new Error(`${k} is required`); })();
 const log = createLogger({ service: "api" });
+
+// Run migrations and connect first, so integration credentials entered from the admin panel are available when
+// the providers are built. A real environment variable still wins; otherwise the stored value is used.
+if (process.env["DATABASE_OWNER_URL"]) {
+  const applied = await migrate(process.env["DATABASE_OWNER_URL"], process.env["DATABASE_APP_ROLE"] ?? "tunakula_app");
+  log.info("migrations applied", { applied });
+}
+const db = connect(process.env["DATABASE_URL"] ?? (() => { throw new Error("DATABASE_URL is required"); })());
+const integrationConfig = await loadIntegrationConfig(db);
+if (integrationConfig.size) log.info("integration credentials loaded from the admin panel", { keys: integrationConfig.size });
+
+// Each credential resolves to the real environment variable, else the value stored from the admin panel.
+const env = (k: string) => process.env[k] ?? integrationConfig.get(k);
+const required = (k: string) => env(k) ?? (() => { throw new Error(`${k} is required`); })();
 
 const CD_MOBILE_MONEY: ConnectorCapability = {
   methodType: "MOBILE_MONEY_PUSH", countries: ["CD"], currencies: ["USD", "CDF"], limits: [], flow: "ASYNC",
@@ -77,12 +90,6 @@ if (env("STRIPE_SECRET_KEY")) {
   connectors.push(new StripeConnector({ apiKey: required("STRIPE_SECRET_KEY"), webhookSecret: required("STRIPE_WEBHOOK_SECRET"), capabilities: [CD_CARD] }));
 }
 if (env("TUNAKULA_SANDBOX_PAYMENTS") === "1") connectors.push(new SandboxConnector({ capabilities: [CD_MOBILE_MONEY] }));
-
-if (env("DATABASE_OWNER_URL")) {
-  const applied = await migrate(required("DATABASE_OWNER_URL"), env("DATABASE_APP_ROLE") ?? "tunakula_app");
-  log.info("migrations applied", { applied });
-}
-const db = connect(required("DATABASE_URL"));
 
 // The MessagingChannel adapter (SMS/WhatsApp, §7.3) serves both sign-in codes and the communication
 // dispatch engine. Configure a provider for production; without one, the dev flag logs codes instead.

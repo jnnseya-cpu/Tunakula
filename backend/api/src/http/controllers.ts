@@ -26,6 +26,7 @@ import type { ChatService } from "../app/chat.ts";
 import type { BannerService } from "../app/banners.ts";
 import type { SiteContentService } from "../app/site-content.ts";
 import type { ChefService } from "../app/chef.ts";
+import type { IntegrationsService } from "../app/integrations.ts";
 import type { SubscriptionService } from "../app/subscriptions.ts";
 import type { PosService } from "../app/pos.ts";
 import type { KioskService } from "../app/kiosk.ts";
@@ -1549,6 +1550,31 @@ export class SiteContentController {
   @HttpCode(200)
   async save(@Req() req: FastifyRequest, @Body() body: unknown) {
     return this.siteContent.save(country(req), await this.#p(req), body);
+  }
+}
+
+/** Integration credentials entered from the admin panel (status only; values are never returned). */
+@Controller("v1")
+export class IntegrationsController {
+  constructor(
+    @Inject(TOKENS.db) private readonly db: Db,
+    @Inject(TOKENS.tokens) private readonly tokens: TokenService,
+    @Inject(TOKENS.integrations) private readonly integrations: IntegrationsService,
+  ) {}
+
+  #p(req: FastifyRequest) {
+    return this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+  }
+
+  @Get("admin/integrations")
+  async status(@Req() req: FastifyRequest) {
+    return this.integrations.status(country(req), await this.#p(req));
+  }
+
+  @Post("admin/integrations/:id")
+  @HttpCode(200)
+  async set(@Req() req: FastifyRequest, @Param("id") id: string, @Body() body: Record<string, unknown>) {
+    return this.integrations.set(country(req), await this.#p(req), id, body ?? {});
   }
 }
 

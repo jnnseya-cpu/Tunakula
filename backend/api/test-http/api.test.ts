@@ -3790,3 +3790,48 @@ describe("book a chef (private-chef marketplace, 0% commission + service charge)
     assert.equal((await call("POST", `/v1/chef-bookings/${id}/cancel`, { token: customer.token, country: "CD" })).body.status, "CANCELLED");
   });
 });
+
+describe("integration credentials (added from the admin panel, never returned)", () => {
+  const find = (body: { integrations: { id: string; configured: boolean; fields: { env_key: string; set: boolean; source: string | null }[] }[] }, id: string) =>
+    body.integrations.find((i) => i.id === id)!;
+
+  test("a market admin sees the catalogue; a plain customer cannot", async () => {
+    assert.equal((await call("GET", "/v1/admin/integrations", { token: customer.token, country: "CD" })).status, 403);
+    const r = await call("GET", "/v1/admin/integrations", { token: admin.token, country: "CD" });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    const stripe = find(r.body, "stripe");
+    assert.ok(stripe, "the Stripe integration is listed");
+    assert.equal(stripe.configured, false, "nothing set yet");
+    // The payload never carries a value field — only whether each field is set.
+    assert.ok(!JSON.stringify(r.body).includes("\"value\""), "no stored value is ever returned to the client");
+  });
+
+  test("setting the keys marks the integration configured, with source 'panel' — and the value is still never returned", async () => {
+    assert.equal((await call("POST", "/v1/admin/integrations/stripe", { token: customer.token, country: "CD", body: { STRIPE_SECRET_KEY: "sk_test_x" } })).status, 403);
+    const set = await call("POST", "/v1/admin/integrations/stripe", { token: admin.token, country: "CD", body: { STRIPE_SECRET_KEY: "sk_test_abc123", STRIPE_WEBHOOK_SECRET: "whsec_abc123" } });
+    assert.equal(set.status, 200, JSON.stringify(set.body));
+    const stripe = find(set.body, "stripe");
+    assert.equal(stripe.configured, true, "both required keys are now set");
+    const secret = stripe.fields.find((f) => f.env_key === "STRIPE_SECRET_KEY")!;
+    assert.equal(secret.set, true);
+    assert.equal(secret.source, "panel", "the value came from the panel, not the environment");
+    assert.ok(!JSON.stringify(set.body).includes("sk_test_abc123"), "the secret itself is never echoed back");
+    // The value really is stored (only this one service reads it) — the boot loader resolves it.
+    const stored = await inspect("CD", "SELECT value FROM platform.integration WHERE env_key = $1", ["STRIPE_SECRET_KEY"]);
+    assert.equal(stored[0]?.value, "sk_test_abc123");
+  });
+
+  test("saving a blank value clears the stored key", async () => {
+    const cleared = await call("POST", "/v1/admin/integrations/stripe", { token: admin.token, country: "CD", body: { STRIPE_SECRET_KEY: "" } });
+    assert.equal(cleared.status, 200);
+    const secret = find(cleared.body, "stripe").fields.find((f) => f.env_key === "STRIPE_SECRET_KEY")!;
+    assert.equal(secret.set, false, "a blank value removed the stored key");
+    assert.equal(find(cleared.body, "stripe").configured, false);
+    const stored = await inspect("CD", "SELECT value FROM platform.integration WHERE env_key = $1", ["STRIPE_SECRET_KEY"]);
+    assert.equal(stored.length, 0, "the row is gone");
+  });
+
+  test("an unknown integration id is rejected", async () => {
+    assert.equal((await call("POST", "/v1/admin/integrations/nope", { token: admin.token, country: "CD", body: { X: "y" } })).status, 400);
+  });
+});

@@ -64,6 +64,7 @@ const ICON: Record<string, string> = {
   banners: "M3 5h18a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1Zm1 2v7h16V7H4Zm2 2h8v1.5H6V9Zm0 3h6v1.5H6V12Zm5 7h2v2h-2v-2Z",
   cms: "M4 3h16a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Zm1 2v3h14V5H5Zm0 5v9h5v-9H5Zm7 0v4h7v-4h-7Zm0 6v3h7v-3h-7Z",
   chefs: "M12 2a5 5 0 0 0-4.9 4.1A4 4 0 0 0 6 14v1h12v-1a4 4 0 0 0-1.1-7.9A5 5 0 0 0 12 2ZM6 17h12v2a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2v-2Z",
+  integrations: "M10 2h4v4.1a6 6 0 0 1 2.1 1.2l3.5-2 2 3.4-3.5 2a6 6 0 0 1 0 2.6l3.5 2-2 3.4-3.5-2A6 6 0 0 1 14 17.9V22h-4v-4.1a6 6 0 0 1-2.1-1.2l-3.5 2-2-3.4 3.5-2a6 6 0 0 1 0-2.6l-3.5-2 2-3.4 3.5 2A6 6 0 0 1 10 6.1V2Zm2 7a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z",
 };
 const Icon = ({ k }: { k: string }) => <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden className="nav-ico"><path fill="currentColor" d={ICON[k] ?? ""} /></svg>;
 
@@ -105,6 +106,7 @@ const NAV: { group: Key; items: NavItem[] }[] = [
     { href: "/markets/", key: "markets", cap: "markets" },
     { href: "/comms/", key: "comms", cap: "markets" },
     { href: "/cms/", key: "cms", cap: "markets" },
+    { href: "/integrations/", key: "integrations", cap: "markets" },
     { href: "/audit/", key: "audit", cap: "audit" },
   ] },
 ];

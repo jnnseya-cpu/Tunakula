@@ -26,6 +26,7 @@ const T = {
   pos: { fr: "Point de vente", en: "Point of sale" },
   kiosk: { fr: "Borne self-service", en: "Self-service kiosk" },
   chefs: { fr: "Chefs (validation)", en: "Chef review" },
+  integrations: { fr: "Intégrations / API", en: "Integrations / API" },
   zones: { fr: "Zones de livraison", en: "Delivery zones" },
   promotions: { fr: "Promotions", en: "Promotions" },
   membership: { fr: "Abonnement Plus", en: "Plus membership" },
