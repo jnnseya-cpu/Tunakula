@@ -245,6 +245,17 @@ dl.kv dt { color: var(--muted); }
 .k-photo { display: flex; align-items: center; justify-content: center; min-height: 120px; border: 2px dashed var(--border); border-radius: 14px; cursor: pointer; font-weight: 650; overflow: hidden; }
 .k-photo input { display: none; }
 .k-photo img { max-height: 220px; width: 100%; object-fit: cover; }
+
+/* Kitchen Display (bump) — bigger everything, built to read from across the line. */
+.kds .k-ref { font-size: 26px; }
+.kds .k-lines { font-size: 18px; }
+.kds .k-qty { font-size: 20px; }
+.kds .k-timer { font-size: 17px; }
+.kds-card { border-left-width: 8px; }
+.kds-bump { height: 62px; font-size: 20px; font-weight: 800; }
+.k-wait { font-size: 14px; color: var(--muted); font-weight: 600; padding: 6px 2px; }
+.kds-foot { font-size: 13.5px; padding: 4px 2px 2px; }
+@media (min-width: 1100px) { .kds-card .k-lines { font-size: 19px; } }
 .k-code { height: 64px; font-size: 32px; text-align: center; letter-spacing: 0.4em; font-weight: 800; }
 @media (max-width: 1100px) { .k-cols { grid-template-columns: 1fr 1fr; } .k-col.k-ready { grid-column: span 2; } }
 @media (max-width: 700px) { .k-cols { grid-template-columns: 1fr; } .k-col.k-ready { grid-column: auto; } .k-sound { margin-left: 0; } }

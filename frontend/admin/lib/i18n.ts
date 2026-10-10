@@ -5,6 +5,7 @@ const T = {
   overview: { fr: "Tableau de bord", en: "Overview" },
   orders: { fr: "Commandes", en: "Orders" },
   kitchen: { fr: "Cuisine en direct", en: "Kitchen" },
+  kds: { fr: "Écran cuisine (bump)", en: "Kitchen display (bump)" },
   dispatch: { fr: "Dispatch en direct", en: "Live dispatch" },
   merchants: { fr: "Restaurants et commerces", en: "Merchants" },
   team: { fr: "Équipe et rôles", en: "Team and roles" },
