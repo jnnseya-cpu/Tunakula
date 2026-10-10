@@ -24,6 +24,7 @@ const T = {
   g_platform: { fr: "Plateforme", en: "Platform" },
   soon: { fr: "bientôt", en: "soon" },
   pos: { fr: "Point de vente", en: "Point of sale" },
+  kiosk: { fr: "Borne self-service", en: "Self-service kiosk" },
   zones: { fr: "Zones de livraison", en: "Delivery zones" },
   promotions: { fr: "Promotions", en: "Promotions" },
   membership: { fr: "Abonnement Plus", en: "Plus membership" },

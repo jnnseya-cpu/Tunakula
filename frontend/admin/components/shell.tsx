@@ -39,6 +39,7 @@ const ICON: Record<string, string> = {
   dispatch: "M12 2a7 7 0 0 0-7 7c0 5.2 7 13 7 13s7-7.8 7-13a7 7 0 0 0-7-7Zm0 3 1.5 3.2 3.5.4-2.6 2.4.7 3.5L12 13l-3.1 1.5.7-3.5L7 8.6l3.5-.4L12 5Z",
   orders: "M7 4h10l1 3h3v2h-1l-1.5 10h-13L4 9H3V7h3l1-3Zm1.4 3h7.2l-.3-1H8.7l-.3 1ZM6 9l1.3 8h9.4L18 9H6Z",
   pos: "M4 4h16v10H4V4Zm2 2v6h12V6H6Zm-1 10h14v4H5v-4Zm3 1v2h2v-2H8Zm4 0v2h2v-2h-2Z",
+  kiosk: "M7 2h10a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3l1 2v2H9v-2l1-2H7a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Zm0 2v10h10V4H7Zm2 2h6v2H9V6Zm0 3h6v2H9V9Z",
   support: "M12 3a8 8 0 0 0-8 8v5a3 3 0 0 0 3 3h2v-7H6v-1a6 6 0 1 1 12 0v1h-3v7h2.2a2 2 0 0 1-2 1H13v2h2.2a4 4 0 0 0 3.9-3.2A3 3 0 0 0 20 16v-5a8 8 0 0 0-8-8Z",
   merchants: "M4 4h16l1 5a3 3 0 0 1-2 2.8V20H5v-8.2A3 3 0 0 1 3 9l1-5Zm3 9v5h4v-5H7Zm6 0v5h4v-5h-4Z",
   get_started: "M12 2 15 9l7 .5-5.3 4.6L18.4 21 12 17.3 5.6 21l1.7-6.9L2 9.5 9 9l3-7Z",
@@ -73,6 +74,7 @@ const NAV: { group: Key; items: NavItem[] }[] = [
     { href: "/kds/", key: "kds", cap: "kitchen" },
     { href: "/orders/", key: "orders", cap: "orders" },
     { href: "/pos/", key: "pos", cap: "pos" },
+    { href: "/kiosk/", key: "kiosk", cap: "pos" },
     { href: "/support/", key: "support", soon: true },
   ] },
   { group: "g_business", items: [
