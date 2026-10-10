@@ -82,6 +82,25 @@ export default function HowItWorks() {
         </div>
       </section>
 
+      <section id="book-a-chef">
+        <div className="wrap">
+          <div className="head-row">
+            <div className="stack">
+              <div className="kicker"><span className="n">04</span><span className="eyebrow">Book a chef</span></div>
+              <h2 className="display">A chef at your table, the same fair deal.</h2>
+            </div>
+            <p className="lede">Beyond delivery, you can book an approved private chef — for a dinner at home, meal prep, an event, a class or a quick consultation.</p>
+          </div>
+          <ol className="flow">
+            <li><h4>Choose a chef</h4><p>Browse approved chefs by cuisine and commune, and what they offer.</p></li>
+            <li><h4>See the quote</h4><p>Guests and hours set the price; the chef&rsquo;s fee and the 10% service charge are shown as separate lines.</p></li>
+            <li><h4>Request a date</h4><p>The chef confirms or declines; nothing is owed on a request that isn&rsquo;t accepted.</p></li>
+            <li><h4>They cook, it settles</h4><p>The chef keeps 100% of their fee — 0% commission — and the platform earns only the service charge.</p></li>
+          </ol>
+          <p style={{ marginTop: 18 }}><Link className="link" href="/chefs/">Book a chef</Link> &nbsp;·&nbsp; <Link className="link" href="/legal/chef-terms/">Book-a-chef terms</Link></p>
+        </div>
+      </section>
+
       <section className="tight" style={{ borderBottom: 0 }}>
         <div className="wrap duo">
           <Link href="/restaurants/">

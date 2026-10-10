@@ -33,6 +33,7 @@ export function Chefs() {
         <p className="eyebrow"><b>Kinshasa</b> · private chefs</p>
         <h1 className="display">Book a chef</h1>
         <p className="lede">A chef at your table for a dinner, meal prep for the week, an event, a class — or a quick consultation. You pay the chef’s price plus a 10% service charge; the chef keeps every franc of their fee.</p>
+        <p className="small chefs-links"><a className="link" href="/how-it-works/#book-a-chef">How it works</a> &nbsp;·&nbsp; <a className="link" href="/legal/chef-terms/">Book-a-chef terms</a></p>
         <div className="chefs-tabs" role="tablist">
           <button type="button" role="tab" aria-selected={tab === "browse"} className={tab === "browse" ? "on" : ""} onClick={() => setTab("browse")}>Browse chefs</button>
           <button type="button" role="tab" aria-selected={tab === "mine"} className={tab === "mine" ? "on" : ""} onClick={() => setTab("mine")}>My bookings</button>

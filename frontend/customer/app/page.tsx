@@ -31,7 +31,7 @@ export default function Home() {
       <section className="m-hero">
         <div className="wrap">
           <HeroCarousel
-            labels={["Food near you", "Send a meal home", "For restaurants", "For riders"]}
+            labels={["Food near you", "Book a chef", "Send a meal home", "For restaurants", "For riders"]}
             slides={[
               <div key="food" className="hs hs-food">
                 <HeroFoodCopy />
@@ -41,6 +41,19 @@ export default function Home() {
                   <PlateArt className="hp hp-b" recipe="pondu" seed="hero" />
                   <PlateArt className="hp hp-c" recipe="jus" seed="hero" />
                   <PlateArt className="hp hp-d" recipe="makemba" seed="hero" />
+                </div>
+              </div>,
+              <div key="chef" className="hs hs-chef">
+                <div className="hs-copy">
+                  <p className="eyebrow light"><b>Private chefs in Kinshasa</b></p>
+                  <h2 className="display">Book a chef to <em>your table.</em></h2>
+                  <p className="hs-lede">A chef for a dinner at home, meal prep for the week, an event or a class — or a quick cooking consultation. The chef keeps every franc of their fee; you add our 10% service charge, nothing more.</p>
+                  <div className="hs-actions"><a className="btn accent" href="/chefs/">Book a chef</a></div>
+                </div>
+                <div className="hs-art" aria-hidden>
+                  <PlateArt className="hp hp-main" recipe="moambe" seed="chef" />
+                  <PlateArt className="hp hp-a" recipe="brochettes" seed="chef" />
+                  <PlateArt className="hp hp-c" recipe="pondu" seed="chef2" />
                 </div>
               </div>,
               <div key="send" className="hs hs-send">
@@ -141,6 +154,40 @@ export default function Home() {
                 <EtaChip slug={m.slug} />
               </Link>
             ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="tight chef-promo">
+        <div className="wrap split even" style={{ alignItems: "center" }}>
+          <div className="stack">
+            <p className="eyebrow"><b>New</b> · Book a chef</p>
+            <h2 className="display">Not just delivery. <em>A chef at your table.</em></h2>
+            <p className="lede">Book an approved private chef for a dinner at home, meal prep, an event or a class — or get a quick cooking consultation. You see the full quote first: the chef&rsquo;s fee plus our 10% service charge. The chef keeps every franc of their fee.</p>
+            <ol className="steps3">
+              <li><b>Choose a chef and what you want.</b> Browse approved chefs by cuisine and commune, and pick advice, a private dinner, meal prep, an event or a class.</li>
+              <li><b>See the quote, request a date.</b> Guests and hours set the price; the chef&rsquo;s fee and the 10% service charge are shown as separate lines before you request.</li>
+              <li><b>The chef confirms.</b> They accept your date, cook, and the booking settles the same way every order does — 0% commission, the chef paid in full.</li>
+            </ol>
+            <div className="cta-row"><Link className="btn accent" href="/chefs/">Book a chef</Link><Link className="link" href="/chefs/#offer">Offer your cooking</Link></div>
+          </div>
+          <div className="chef-cards" aria-hidden>
+            <div className="chef-card">
+              <PlateArt className="chef-card-pic" recipe="moambe" seed="promo-a" />
+              <div className="chef-card-body">
+                <b>Private dining</b>
+                <span className="muted">Congolese fine dining, cooked in your home</span>
+                <span className="chef-card-price">from <b className="num">$30</b> / guest</span>
+              </div>
+            </div>
+            <div className="chef-card">
+              <PlateArt className="chef-card-pic" recipe="jus" seed="promo-b" />
+              <div className="chef-card-body">
+                <b>Menu planning call</b>
+                <span className="muted">A remote consultation with a chef</span>
+                <span className="chef-card-price"><b className="num">$15</b> fixed</span>
+              </div>
+            </div>
           </div>
         </div>
       </section>

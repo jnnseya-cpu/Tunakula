@@ -159,4 +159,33 @@ export const CUSTOMER_POLICIES: Policy[] = [
       { h: "Report a problem", p: ["Report any reaction or safety concern from the order, or write to info@tunakula.com. Allergen incidents are investigated every time."] },
     ],
   },
+  {
+    slug: "chef-terms",
+    title: "Book a chef",
+    audience: "Customers & chefs",
+    summary: "How private-chef bookings work: what you pay, how chefs set their fee, our 10% service charge, and cancellations.",
+    sections: [
+      { h: "What Book a chef is", p: [
+        "Book a chef is a marketplace for private cooking: a chef at your table for a dinner, meal prep for the week, an event, a class, or a remote consultation. The chef prepares and provides the service; Tunakula provides discovery, the booking, payment orchestration and support.",
+        "Only chefs who have applied and been approved for your market appear. Approval checks identity and basic suitability; it is not an endorsement of any particular menu or outcome.",
+      ] },
+      { h: "What you pay", p: [
+        "The chef sets their own fee — a fixed price, a price per guest, or a price per hour. Before you request a booking you see the full quote as separate lines: the chef's fee, our 10% service charge, and the total you pay.",
+        "The chef keeps 100% of their fee. Tunakula is funded only by the service charge added on top — the same principle as every order, with 0% commission taken from the chef.",
+      ] },
+      { h: "Requesting and confirming", p: [
+        "You choose a service, a date, the number of guests and where it happens, and send a request. The booking is not final until the chef accepts it; a chef may decline (for example if they are not free that day), and nothing is owed on a declined request.",
+        "Agree any details — menu, dietary needs, what the chef brings versus what you provide — through the booking before the date.",
+      ] },
+      { h: "Cancellations", p: [
+        "You can cancel a booking that has not yet happened. Where a market sets a cancellation window close to the date, the applicable terms are shown at the time you book.",
+        "If a chef cancels a confirmed booking, you are not charged, and anything collected is returned by the original method.",
+      ] },
+      { h: "Conduct and safety", p: [
+        "Chefs and customers both follow the Acceptable use policy. Treat each other and each other's homes with respect. Allergies and dietary requirements should be agreed explicitly with the chef, as in Allergens and food safety.",
+        "Each chef is responsible for preparing food safely and for holding any registration their market requires of them.",
+      ] },
+      { h: "Questions", p: ["Anything about a booking: open it and tap Help, or write to info@tunakula.com."] },
+    ],
+  },
 ];

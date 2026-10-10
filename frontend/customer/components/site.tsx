@@ -20,10 +20,10 @@ const LINKS: { href: string; key: string }[] = [
 ];
 
 const FOOTER: [string, [string, string][]][] = [
-  ["foot.order", [["Order food", "/order/"], ["My wallet", "/wallet/"], ["Repeat orders", "/subscriptions/"], ["Invite & earn", "/wallet/"], ["My table bookings", "/bookings/"], ["Kinshasa", "/kinshasa/"], ["How it works", "/how-it-works/"], ["Send a meal home", "/send-home/"], ["How pricing works", "/legal/pricing/"]]],
+  ["foot.order", [["Order food", "/order/"], ["Book a chef", "/chefs/"], ["My wallet", "/wallet/"], ["Repeat orders", "/subscriptions/"], ["Invite & earn", "/wallet/"], ["My table bookings", "/bookings/"], ["Kinshasa", "/kinshasa/"], ["How it works", "/how-it-works/"], ["Send a meal home", "/send-home/"], ["How pricing works", "/legal/pricing/"]]],
   ["foot.partners", [["Restaurants & shops", "/restaurants/"], ["Riders & fleets", "/riders/"], ["Merchant terms", "/legal/merchant-terms/"], ["Rider terms", "/legal/rider-terms/"]]],
   ["foot.trust", [["Reviews & moderation", "/legal/reviews/"], ["Ranking & fairness", "/legal/ranking/"], ["Allergens & food safety", "/legal/food-safety/"], ["Accessibility", "/legal/accessibility/"]]],
-  ["foot.company", [["About", "/about/"], ["Terms of use", "/legal/terms/"], ["Privacy", "/legal/privacy/"], ["All policies", "/legal/"]]],
+  ["foot.company", [["About", "/about/"], ["Contact", "/contact/"], ["Terms of use", "/legal/terms/"], ["Privacy", "/legal/privacy/"], ["All policies", "/legal/"]]],
 ];
 
 export function Wordmark() {
