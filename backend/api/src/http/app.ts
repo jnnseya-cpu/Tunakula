@@ -89,7 +89,7 @@ export async function createApi(deps: ApiDeps): Promise<NestFastifyApplication> 
   const siteContent = new SiteContentService(deps.db, deps.registry);
   const subscriptions = new SubscriptionService(deps.db, deps.registry, commerce, now);
   const pos = new PosService(deps.db, deps.registry, commerce, now);
-  const kiosk = new KioskService(deps.db, deps.registry, commerce);
+  const kiosk = new KioskService(deps.db, deps.registry, commerce, payments);
   const merchantPlans = new MerchantPlanService(deps.db, deps.registry, now);
   const push = new PushService(deps.db, deps.vapid);
   const merchantOnboarding = new MerchantOnboardingService(deps.db, deps.registry);

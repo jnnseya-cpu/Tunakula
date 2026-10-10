@@ -145,14 +145,18 @@ export class PaymentService {
     });
   }
 
-  async create(country: string, principal: Principal, input: { orderId: string; methodType: PaymentMethodType; payerCountry: string; payer: { msisdn?: string; token?: string } }, idempotencyKey: string) {
+  async create(country: string, principal: Principal, input: { orderId: string; methodType: PaymentMethodType; payerCountry: string; payer: { msisdn?: string; token?: string } }, idempotencyKey: string, opts: { trusted?: boolean } = {}) {
     const profile = this.commerce.profile(country);
     return this.db.tx({ country }, async (sql) => {
       const existing = await intentByKey(sql, idempotencyKey);
       if (existing) return view(existing);
       const order = replay(await loadOrderEvents(sql, input.orderId));
       if (!order) throw notFound("Order");
-      if (order.snapshot.customerId !== principal.userId) throw forbidden("Only the person who placed the order can pay for it");
+      // Normally only the person who placed the order may pay for it. A trusted in-store caller (the kiosk/POS,
+      // already authorised on the branch) raises the payment on behalf of the walk-in customer the order is for.
+      const inStore = order.snapshot.channel === "HUB" || order.snapshot.channel === "POS";
+      if (!(opts.trusted && inStore) && order.snapshot.customerId !== principal.userId) throw forbidden("Only the person who placed the order can pay for it");
+      const payerUserId = opts.trusted && inStore ? order.snapshot.customerId : principal.userId;
       if (order.state !== "PENDING_PAYMENT") throw conflict("ORDER_NOT_AWAITING_PAYMENT", `Order is ${order.state}`);
       if (!/^[A-Z]{2}$/.test(input.payerCountry ?? "")) throw badRequest("PAYER_COUNTRY_INVALID", "payer_country is an ISO 3166 code");
       // On a split order the provider only charges the remainder; the wallet portion is debited on confirmation.
@@ -164,7 +168,7 @@ export class PaymentService {
         order_id: input.orderId,
         country_iso2: country,
         brand_id: order.snapshot.brandId,
-        payer_user_id: principal.userId,
+        payer_user_id: payerUserId,
         payer_country: input.payerCountry,
         method_type: input.methodType,
         amount_minor: due.minor.toString(),

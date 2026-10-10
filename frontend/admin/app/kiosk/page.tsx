@@ -10,6 +10,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api, ApiError, session } from "../../lib/api";
 import { money } from "../../lib/format";
+import { qrSvg } from "../../lib/qr";
 
 type Lang = "fr" | "en";
 interface MoneyWire { amount_minor: string; currency: string }
@@ -50,8 +51,9 @@ function Kiosk() {
   const [stage, setStage] = useState<Stage>("attract");
   const [cart, setCart] = useState<CartLine[]>([]);
   const [orderType, setOrderType] = useState<"TAKEAWAY" | "DINE_IN">("TAKEAWAY");
-  const [payMethod, setPayMethod] = useState<"COUNTER" | "MOBILE_MONEY">("COUNTER");
+  const [payMethod, setPayMethod] = useState<"COUNTER" | "MOBILE_MONEY" | "QR">("COUNTER");
   const [phone, setPhone] = useState("");
+  const [qr, setQr] = useState<string | null>(null);
   const [quote, setQuote] = useState<Quote | null>(null);
   const [placing, setPlacing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -69,7 +71,7 @@ function Kiosk() {
 
   // Auto-reset to the attract screen after a finished order, so the next customer starts fresh.
   const resetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const resetAll = useCallback(() => { setCart([]); setQuote(null); setPhone(""); setPayMethod("COUNTER"); setOrderType("TAKEAWAY"); setDone(null); setError(null); setStage("attract"); }, []);
+  const resetAll = useCallback(() => { setCart([]); setQuote(null); setPhone(""); setPayMethod("COUNTER"); setOrderType("TAKEAWAY"); setDone(null); setQr(null); setError(null); setStage("attract"); }, []);
   useEffect(() => { if (stage === "done") { resetTimer.current = setTimeout(resetAll, 12000); return () => { if (resetTimer.current) clearTimeout(resetTimer.current); }; } }, [stage, resetAll]);
 
   const addLine = useCallback((it: Item, options: { group: string; choices: string[] }[], descriptors: string[]) => {
@@ -101,11 +103,9 @@ function Kiosk() {
     if (payMethod === "MOBILE_MONEY" && !/^\+[1-9][0-9]{6,14}$/.test(phone.trim())) { setError(L("Entrez un numéro valide, ex. +243…", "Enter a valid number, e.g. +243…")); return; }
     setPlacing(true); setError(null);
     try {
-      const placed = await api<Placed>("/v1/kiosk/orders", { method: "POST", country, body: { ...body, pay_method: payMethod, device_id: "kiosk-web", expected_total: quote.total, ...(payMethod === "MOBILE_MONEY" ? { customer_phone: phone.trim() } : {}) } });
-      // Mobile money: raise the push to the customer's phone (best-effort; they approve on their handset).
-      if (payMethod === "MOBILE_MONEY") {
-        await api("/v1/payments/intents", { method: "POST", country, body: { order_id: placed.order_id, method_type: "MOBILE_MONEY_PUSH", payer: { msisdn: phone.trim() } } }).catch(() => undefined);
-      }
+      // The kiosk endpoint raises the payment server-side and returns the next step (a QR to scan, a push sent).
+      const placed = await api<Placed & { next_action?: { type?: string; payload?: string } }>("/v1/kiosk/orders", { method: "POST", country, body: { ...body, pay_method: payMethod, device_id: "kiosk-web", expected_total: quote.total, ...(payMethod === "MOBILE_MONEY" ? { customer_phone: phone.trim() } : {}) } });
+      if (payMethod === "QR" && placed.next_action?.type === "QR" && placed.next_action.payload) setQr(placed.next_action.payload);
       setDone(placed); setStage("done");
     } catch (e) { setError(e instanceof ApiError ? e.message : (e as Error).message); } finally { setPlacing(false); }
   };
@@ -206,9 +206,11 @@ function Kiosk() {
               </div>
               <h3>{L("Comment payer ?", "How to pay?")}</h3>
               <div className="kiosk-seg">
-                {(["COUNTER", "MOBILE_MONEY"] as const).map((pm) => <button key={pm} type="button" className={payMethod === pm ? "on" : ""} onClick={() => setPayMethod(pm)}>{pm === "COUNTER" ? L("Au comptoir", "At the counter") : L("Mobile Money", "Mobile Money")}</button>)}
+                {(["COUNTER", "MOBILE_MONEY", "QR"] as const).map((pm) => <button key={pm} type="button" className={payMethod === pm ? "on" : ""} onClick={() => setPayMethod(pm)}>{pm === "COUNTER" ? L("Au comptoir", "At the counter") : pm === "MOBILE_MONEY" ? L("Mobile Money", "Mobile Money") : L("QR", "QR")}</button>)}
               </div>
-              {payMethod === "MOBILE_MONEY" ? <input className="input kiosk-phone" inputMode="tel" placeholder="+243…" value={phone} onChange={(e) => setPhone(e.target.value)} /> : <p className="muted">{L("Prenez votre numéro de commande au comptoir pour payer.", "Take your order number to the counter to pay.")}</p>}
+              {payMethod === "MOBILE_MONEY" ? <input className="input kiosk-phone" inputMode="tel" placeholder="+243…" value={phone} onChange={(e) => setPhone(e.target.value)} />
+                : payMethod === "QR" ? <p className="muted">{L("Un QR s'affiche après la commande ; scannez-le pour payer.", "A QR appears after you order; scan it to pay.")}</p>
+                : <p className="muted">{L("Prenez votre numéro de commande au comptoir pour payer.", "Take your order number to the counter to pay.")}</p>}
             </div>
             <div className="kiosk-summary">
               <dl className="kiosk-totals">
@@ -225,10 +227,21 @@ function Kiosk() {
 
       {stage === "done" && done ? (
         <div className="kiosk-done">
-          <div className="kiosk-tick" aria-hidden>✓</div>
-          <h1>{L("C'est commandé !", "Order placed!")}</h1>
-          <p className="kiosk-code">{L("Votre numéro", "Your number")}<b>{done.recipient_code}</b></p>
-          <p className="kiosk-done-msg">{done.pay_method === "MOBILE_MONEY" ? L("Validez le paiement sur votre téléphone.", "Approve the payment on your phone.") : L("Présentez ce numéro au comptoir pour payer.", "Show this number at the counter to pay.")}</p>
+          {qr ? (
+            <>
+              <h1>{L("Scannez pour payer", "Scan to pay")}</h1>
+              <div className="kiosk-qr" dangerouslySetInnerHTML={{ __html: qrSvg(qr, { size: 260 }) ?? "" }} />
+              <p className="kiosk-code">{L("Commande", "Order")}<b>{done.recipient_code}</b></p>
+              <p className="kiosk-done-msg">{L("Scannez avec votre appli mobile money ou bancaire, puis validez.", "Scan with your mobile-money or bank app, then approve.")}</p>
+            </>
+          ) : (
+            <>
+              <div className="kiosk-tick" aria-hidden>✓</div>
+              <h1>{L("C'est commandé !", "Order placed!")}</h1>
+              <p className="kiosk-code">{L("Votre numéro", "Your number")}<b>{done.recipient_code}</b></p>
+              <p className="kiosk-done-msg">{done.pay_method === "MOBILE_MONEY" ? L("Validez le paiement sur votre téléphone.", "Approve the payment on your phone.") : L("Présentez ce numéro au comptoir pour payer.", "Show this number at the counter to pay.")}</p>
+            </>
+          )}
           <button type="button" className="btn primary big" onClick={resetAll}>{L("Nouvelle commande", "New order")}</button>
         </div>
       ) : null}

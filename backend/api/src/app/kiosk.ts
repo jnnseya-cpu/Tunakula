@@ -18,7 +18,7 @@ import { badRequest, notFound } from "./errors.ts";
 import type { CommerceService, QuoteInput } from "./commerce.ts";
 
 type CounterType = "TAKEAWAY" | "DINE_IN";
-type PayMethod = "COUNTER" | "MOBILE_MONEY";
+type PayMethod = "COUNTER" | "MOBILE_MONEY" | "QR";
 interface KioskInput {
   branchId?: string;
   items?: QuoteInput["items"];
@@ -36,15 +36,21 @@ const E164 = /^\+[1-9][0-9]{6,14}$/;
 /** One shared, format-valid sentinel account for anonymous kiosk sales (app_user.phone_e164 is globally unique). */
 const KIOSK_WALK_IN_PHONE = "+99900000001";
 
+interface IntentInitiator {
+  create(country: string, principal: Principal, input: { orderId: string; methodType: string; payerCountry: string; payer: { msisdn?: string; token?: string } }, idempotencyKey: string, opts?: { trusted?: boolean }): Promise<{ status?: string; next_action?: unknown }>;
+}
+
 export class KioskService {
   private readonly db: Db;
   private readonly registry: CountryConfigRegistry;
   private readonly commerce: CommerceService;
+  private readonly payments: IntentInitiator;
 
-  constructor(db: Db, registry: CountryConfigRegistry, commerce: CommerceService) {
+  constructor(db: Db, registry: CountryConfigRegistry, commerce: CommerceService, payments: IntentInitiator) {
     this.db = db;
     this.registry = registry;
     this.commerce = commerce;
+    this.payments = payments;
   }
 
   #profile(country: string): CountryProfile {
@@ -61,8 +67,8 @@ export class KioskService {
 
   #payMethod(m?: string): PayMethod {
     const v = String(m ?? "COUNTER").toUpperCase();
-    if (v !== "COUNTER" && v !== "MOBILE_MONEY") throw badRequest("PAY_METHOD_INVALID", "Pay at the counter or by mobile money");
-    return v;
+    if (v !== "COUNTER" && v !== "MOBILE_MONEY" && v !== "QR") throw badRequest("PAY_METHOD_INVALID", "Pay at the counter, by mobile money or by QR");
+    return v as PayMethod;
   }
 
   /** The device must be unlocked by staff holding pos:operate at this branch. Returns the branch row. */
@@ -115,7 +121,20 @@ export class KioskService {
       deviceId: (input.deviceId?.trim() || "kiosk-web").slice(0, 64),
       ...(orderType === "DINE_IN" && input.tableId?.trim() ? { tableId: String(input.tableId).trim().slice(0, 16) } : {}),
     });
-    return { orderId: r.orderId, state: r.state, recipientCode: r.recipientCode, quote: r.quote, orderType, payMethod, ...(phone ? { customerPhone: phone } : {}) };
+    // For the electronic methods the order is PENDING_PAYMENT; the kiosk device (trusted, branch-authorised)
+    // raises the payment on the walk-in's behalf and hands back the next step (a QR to scan, or a push sent).
+    let nextAction: unknown;
+    if (payMethod === "QR" || payMethod === "MOBILE_MONEY") {
+      const methodType = payMethod === "QR" ? "QR" : "MOBILE_MONEY_PUSH";
+      const intent = await this.payments.create(
+        country, principal,
+        { orderId: r.orderId, methodType, payerCountry: country, payer: payMethod === "MOBILE_MONEY" && phone ? { msisdn: phone } : {} },
+        `kiosk-pay:${r.orderId}:${payMethod}`,
+        { trusted: true },
+      ).catch(() => undefined);
+      nextAction = intent?.next_action;
+    }
+    return { orderId: r.orderId, state: r.state, recipientCode: r.recipientCode, quote: r.quote, orderType, payMethod, ...(phone ? { customerPhone: phone } : {}), ...(nextAction ? { nextAction } : {}) };
   }
 
   /** Resolves the customer: a known customer by phone (so they keep history and loyalty) or the anonymous kiosk account. */

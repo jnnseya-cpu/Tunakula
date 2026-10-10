@@ -285,6 +285,17 @@ footer h5 { font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; 
 footer li { list-style: none; font-size: 15px; padding: 4px 0; color: var(--ink-2); }
 footer .legal { margin-top: 64px; padding-top: 22px; border-top: 1px solid var(--rule); display: flex; justify-content: space-between; font-size: 13px; color: var(--muted); }
 
+/* QR payment modal (scan-to-pay). */
+.qr-backdrop { position: fixed; inset: 0; z-index: 80; background: rgba(10, 14, 30, 0.6); display: grid; place-items: center; padding: 20px; }
+.qr-card { background: #fff; color: var(--ink, #141b33); border-radius: 20px; padding: 26px; width: min(380px, 100%); text-align: center; box-shadow: 0 30px 60px -20px rgba(0, 0, 0, 0.5); }
+.qr-card h2 { font-size: 20px; font-weight: 800; margin-bottom: 6px; }
+.qr-card .muted { font-size: 14px; }
+.qr-img { margin: 18px auto; width: 240px; height: 240px; border-radius: 14px; overflow: hidden; }
+.qr-img svg { display: block; width: 100%; height: 100%; }
+.qr-amount { font-size: 26px; font-weight: 850; margin-bottom: 16px; font-variant-numeric: tabular-nums; }
+.qr-card .btn.wide { width: 100%; }
+.qr-card .link-btn { margin-top: 12px; display: inline-block; }
+
 /* Footer social links (admin-managed via the CMS). */
 .social-links { display: inline-flex; gap: 10px; margin-top: 16px; }
 .social-links a { width: 34px; height: 34px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: rgba(255, 255, 255, 0.1); color: #fff; font-weight: 700; font-size: 15px; text-decoration: none; transition: background 0.15s; }

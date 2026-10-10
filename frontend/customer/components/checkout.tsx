@@ -6,6 +6,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError, createSubscription, getSession, listAddresses, live, loadCart, money, rememberCode, saveAddress, saveCart, walletBalance, type Cart, type MoneyWire, type SavedAddress, type SubCadence } from "../lib/api";
+import { qrSvg } from "../lib/qr";
 import { useLocationCtx } from "./location";
 
 interface Quote {
@@ -26,13 +27,14 @@ interface Quote {
   age_restricted?: boolean;
 }
 type Mode = "DELIVERY" | "TAKEAWAY";
-type Pay = "MOBILE_MONEY_PUSH" | "CARD" | "CASH_ON_DELIVERY" | "WALLET";
+type Pay = "MOBILE_MONEY_PUSH" | "CARD" | "QR" | "CASH_ON_DELIVERY" | "WALLET";
 
 const LINE_LABEL: Record<string, string> = { GOODS: "Food", SERVICE_CHARGE: "Service charge (10%)", DELIVERY_FEE: "Delivery", DELIVERY_PROMOTION: "Delivery offer", TIP: "Tip for your rider" };
 const PAY_LABEL: Record<string, [string, string]> = {
   WALLET: ["Wallet", "Pay instantly from your Tunakula balance"],
   MOBILE_MONEY_PUSH: ["Mobile money", "M-Pesa, Orange Money or Airtel Money — approve on your phone"],
   CARD: ["Card", "Visa or Mastercard"],
+  QR: ["QR code", "Scan with your mobile-money or bank app"],
   CASH_ON_DELIVERY: ["Cash on delivery", "Pay the rider in francs or dollars"],
 };
 const TIPS = ["0", "0.50", "1.00", "2.00"];
@@ -69,6 +71,7 @@ export function Checkout() {
   const [methods, setMethods] = useState<string[]>([]);
   const [wallet, setWallet] = useState<MoneyWire | null>(null);
   const [pay, setPay] = useState<Pay>("MOBILE_MONEY_PUSH");
+  const [qr, setQr] = useState<{ payload: string; orderId: string } | null>(null);
   const [useWalletPart, setUseWalletPart] = useState(false);
   const [msisdn, setMsisdn] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
@@ -146,7 +149,7 @@ export function Checkout() {
     const due = quote.payable ?? quote.membership?.payable_total ?? quote.total;
     api<{ data: string[] }>(`/v1/countries/CD/payment-methods?amount_minor=${due.amount_minor}&currency=${due.currency}`, { auth: false })
       .then((r) => {
-        const usable = r.data.filter((m) => m === "MOBILE_MONEY_PUSH" || m === "CARD" || m === "CASH_ON_DELIVERY");
+        const usable = r.data.filter((m) => m === "MOBILE_MONEY_PUSH" || m === "CARD" || m === "QR" || m === "CASH_ON_DELIVERY");
         if (mode === "DELIVERY" && !usable.includes("CASH_ON_DELIVERY")) usable.push("CASH_ON_DELIVERY");
         setMethods(usable);
         if (pay !== "WALLET" && !usable.includes(pay)) setPay((usable[0] as Pay) ?? "MOBILE_MONEY_PUSH");
@@ -194,8 +197,8 @@ export function Checkout() {
       }
       // Cash and wallet orders are placed already paid; only card/mobile money need a payment intent.
       if (pay !== "CASH_ON_DELIVERY" && pay !== "WALLET") {
-        setBusy(pay === "MOBILE_MONEY_PUSH" ? "Approve the payment on your phone…" : "Processing your card…");
-        const intent = await api<{ status: string; reason_code?: string; next_action?: { url?: string } }>("/v1/payments/intents", {
+        setBusy(pay === "MOBILE_MONEY_PUSH" ? "Approve the payment on your phone…" : pay === "QR" ? "Generating your QR code…" : "Processing your card…");
+        const intent = await api<{ status: string; reason_code?: string; next_action?: { type?: string; url?: string; payload?: string } }>("/v1/payments/intents", {
           method: "POST", key: `pay-${orderId}-${pay}-${msisdn}`,
           body: { order_id: orderId, method_type: pay, payer: pay === "MOBILE_MONEY_PUSH" ? { msisdn: msisdn.replace(/\s/g, "") } : {} },
         });
@@ -204,6 +207,8 @@ export function Checkout() {
           setError(`The payment did not go through${intent.reason_code ? ` (${intent.reason_code.replace(/_/g, " ").toLowerCase()})` : ""}. Try again or choose another way to pay.`);
           return;
         }
+        // QR: show the code to scan; the order confirms server-side when the provider's webhook lands.
+        if (intent.next_action?.type === "QR" && intent.next_action.payload) { setBusy(null); setQr({ payload: intent.next_action.payload, orderId }); return; }
         if (intent.next_action?.url) { window.location.href = intent.next_action.url; return; }
       }
       saveCart({ ...cart, lines: [] });
@@ -416,6 +421,19 @@ export function Checkout() {
         </button>
         <Link className="link-btn" href={`/store/?id=${cart.branch_id}`}>Change my order</Link>
       </aside>
+
+      {qr ? (
+        <div className="qr-backdrop" role="dialog" aria-modal="true" aria-label="Scan to pay">
+          <div className="qr-card">
+            <h2>Scan to pay</h2>
+            <p className="muted">Open your mobile-money or bank app, scan this code and approve the payment.</p>
+            <div className="qr-img" dangerouslySetInnerHTML={{ __html: qrSvg(qr.payload, { size: 240 }) ?? "" }} />
+            <p className="qr-amount">{quote ? money(quote.payable ?? quote.membership?.payable_total ?? quote.total) : ""}</p>
+            <button type="button" className="btn accent wide" onClick={() => { saveCart({ ...cart, lines: [] }); window.location.href = `/track/?id=${qr.orderId}`; }}>I’ve scanned — track my order</button>
+            <button type="button" className="link-btn" onClick={() => setQr(null)}>Choose another way to pay</button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

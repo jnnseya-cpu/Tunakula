@@ -3698,4 +3698,16 @@ describe("self-service kiosk (HUB channel, customer orders in-store)", () => {
     // The merchant receives the full goods price; the platform is funded by the customer service charge, not a cut.
     assert.equal(q.body.commission.amount_minor, "0", "kiosk orders carry 0% commission");
   });
+
+  test("a QR kiosk order is accepted (prepaid, stamped HUB) so the device can show a QR to scan", async () => {
+    const q = await call("POST", "/v1/kiosk/quote", { token: restaurantOwner.token, country: "CD", body: kCart() });
+    const placed = await call("POST", "/v1/kiosk/orders", { token: restaurantOwner.token, country: "CD", body: { ...kCart(), pay_method: "QR", expected_total: q.body.total } });
+    assert.equal(placed.status, 201, JSON.stringify(placed.body));
+    assert.equal(placed.body.pay_method, "QR");
+    const [row] = await inspect("CD",
+      `SELECT d.payload->'snapshot'->>'channel' AS channel
+         FROM ordering.order_view o JOIN ordering.order_event d ON d.order_id = o.order_id AND d.type = 'ORDER_DRAFTED'
+        WHERE o.order_id = $1`, [placed.body.order_id]);
+    assert.equal(row.channel, "HUB");
+  });
 });

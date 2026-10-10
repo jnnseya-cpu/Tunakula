@@ -1476,7 +1476,7 @@ export class KioskController {
   async place(@Req() req: FastifyRequest, @Body() body: KioskBody) {
     const key = req.headers["idempotency-key"] as string;
     const r = await this.kiosk.place(country(req), await this.#p(req), toKioskInput(body), key);
-    return { order_id: r.orderId, state: r.state, recipient_code: r.recipientCode, order_type: r.orderType, pay_method: r.payMethod, ...(r.customerPhone ? { customer_phone: r.customerPhone } : {}), quote: serialiseQuote(r.quote) };
+    return { order_id: r.orderId, state: r.state, recipient_code: r.recipientCode, order_type: r.orderType, pay_method: r.payMethod, ...(r.customerPhone ? { customer_phone: r.customerPhone } : {}), ...((r as { nextAction?: unknown }).nextAction ? { next_action: (r as { nextAction?: unknown }).nextAction } : {}), quote: serialiseQuote(r.quote) };
   }
 }
 
