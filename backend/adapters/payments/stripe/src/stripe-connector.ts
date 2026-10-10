@@ -197,7 +197,8 @@ export class StripeConnector implements PaymentConnector {
         method,
         path,
         headers: { Authorization: `Bearer ${this.#options.apiKey}`, ...headers },
-        ...(body !== undefined ? { body } : {}),
+        // Stripe's API accepts only form-urlencoded bodies, never JSON.
+        ...(body !== undefined ? { body, form: true } : {}),
         ...(query ? { query } : {}),
       });
       if (movesMoney) classifyStatus(this.id, res);

@@ -18,6 +18,12 @@ export interface HttpRequest {
   readonly headers?: Readonly<Record<string, string>>;
   readonly query?: Readonly<Record<string, string>>;
   readonly body?: unknown;
+  /**
+   * Encode the body as `application/x-www-form-urlencoded` with PHP/Rails bracket
+   * notation (`a[b]=c`, `a[0]=x`) instead of JSON. Stripe's API speaks only this
+   * form encoding, so its connector sets it; providers with JSON APIs leave it off.
+   */
+  readonly form?: boolean;
 }
 
 export interface HttpResponse {
@@ -35,12 +41,14 @@ export function fetchTransport(options: { connectorId: string; baseUrl: string; 
   return async (req) => {
     const url = new URL(options.baseUrl.replace(/\/$/, "") + req.path);
     for (const [k, v] of Object.entries(req.query ?? {})) url.searchParams.set(k, v);
+    const encoded = req.body !== undefined ? (req.form ? formEncode(req.body) : JSON.stringify(req.body)) : undefined;
+    const contentType = req.form ? "application/x-www-form-urlencoded" : "application/json";
     let res: Response;
     try {
       res = await doFetch(url, {
         method: req.method,
-        headers: { Accept: "application/json", ...(req.body !== undefined ? { "Content-Type": "application/json" } : {}), ...req.headers },
-        ...(req.body !== undefined ? { body: JSON.stringify(req.body) } : {}),
+        headers: { Accept: "application/json", ...(encoded !== undefined ? { "Content-Type": contentType } : {}), ...req.headers },
+        ...(encoded !== undefined ? { body: encoded } : {}),
         signal: AbortSignal.timeout(options.timeoutMs ?? 15_000),
       });
     } catch (error) {
@@ -59,6 +67,28 @@ export function fetchTransport(options: { connectorId: string; baseUrl: string; 
     res.headers.forEach((v, k) => (headers[k.toLowerCase()] = v));
     return { status: res.status, headers, body };
   };
+}
+
+/**
+ * Form-encodes a value the way Stripe (and other Rails/PHP-style APIs) expect:
+ * nested objects as `parent[child]`, arrays as `parent[0]`, booleans as
+ * `true`/`false`, and `undefined`/`null` omitted. Keys that already carry
+ * bracket notation (e.g. `metadata[intent_id]`) pass straight through.
+ */
+export function formEncode(body: unknown): string {
+  const params = new URLSearchParams();
+  const walk = (prefix: string, value: unknown): void => {
+    if (value === undefined || value === null) return;
+    if (Array.isArray(value)) {
+      value.forEach((v, i) => walk(prefix ? `${prefix}[${i}]` : String(i), v));
+    } else if (typeof value === "object") {
+      for (const [k, v] of Object.entries(value as Record<string, unknown>)) walk(prefix ? `${prefix}[${k}]` : k, v);
+    } else {
+      params.append(prefix, typeof value === "boolean" ? String(value) : String(value));
+    }
+  };
+  walk("", body);
+  return params.toString();
 }
 
 /** Applies the sent / not-sent rule to an HTTP status from a money-moving call. */

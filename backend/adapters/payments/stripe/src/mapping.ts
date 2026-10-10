@@ -2,12 +2,11 @@
  * Everything Stripe-specific about names and codes lives here.
  *
  * Source: Stripe API reference (PaymentIntents, Refunds, webhook events, the
- * Stripe-Signature scheme) as of 2026-10. Items marked VERIFY are wire details
- * to confirm against https://stripe.com/docs/api before go-live — above all the
- * request encoding: Stripe accepts application/x-www-form-urlencoded, while this
- * adapter speaks JSON through the shared transport, so a thin form-encoding shim
- * (or Stripe's own SDK) is the one change needed to point it at the real API.
- * They are isolated here so that correction is a one-line change.
+ * Stripe-Signature scheme) as of 2026-10. The request encoding is handled: the
+ * connector sends its bodies as application/x-www-form-urlencoded (Stripe's only
+ * accepted format) via the shared transport's `form` option, using the bracket
+ * notation Stripe expects (e.g. `metadata[tunakula_intent_id]`). Names and codes
+ * below map Stripe's vocabulary to the normalised catalogue.
  */
 import type { PaymentReasonCode, PaymentState } from "@tunakula/ts-contracts";
 
