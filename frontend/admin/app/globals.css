@@ -631,3 +631,7 @@ tr.sel td { background: rgba(250, 210, 14, 0.12); }
 .payouts .kpi-n { font-size: 20px; font-weight: 750; font-variant-numeric: tabular-nums; }
 .payouts .kpi-l { font-size: 12px; color: var(--muted); }
 .payouts .card-head .kpis .kpi-n { font-size: 16px; }
+
+/* Merchant plans (additive) */
+.mplans { display: grid; gap: 16px; }
+.mplans .filters { flex-wrap: wrap; }

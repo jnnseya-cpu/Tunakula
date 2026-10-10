@@ -135,6 +135,7 @@ export class AdminService {
           kitchen: prep.all || prep.branches.length > 0,
           pos: this.#can(principal, "pos:operate", marketWide, profile) || vis.branches.some((b) => this.#can(principal, "pos:operate", this.#branchResource(country, b), profile)),
           payouts: this.#can(principal, "ledger:read", marketWide, profile) || this.#can(principal, "payout:read", marketWide, profile) || vis.branches.some((b) => this.#can(principal, "payout:read", this.#branchResource(country, b), profile)),
+          merchant_plans: this.#can(principal, "commission:write", marketWide, profile),
           dispatch: this.#can(principal, "dispatch:manage", marketWide, profile) || vis.branches.some((b) => this.#can(principal, "dispatch:manage", this.#branchResource(country, b), profile)),
           riders: this.#can(principal, "rider:manage", marketWide, profile) || vis.branches.some((b) => this.#can(principal, "rider:manage", this.#branchResource(country, b), profile)),
         };

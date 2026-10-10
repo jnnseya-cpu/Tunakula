@@ -25,6 +25,7 @@ import { ChatService } from "../app/chat.ts";
 import { BannerService } from "../app/banners.ts";
 import { SubscriptionService } from "../app/subscriptions.ts";
 import { PosService } from "../app/pos.ts";
+import { MerchantPlanService } from "../app/merchant-plans.ts";
 import { MerchantOnboardingService } from "../app/merchant-onboarding.ts";
 import { GroupOrderService } from "../app/group.ts";
 import { MembershipService } from "../app/membership.ts";
@@ -82,6 +83,7 @@ export async function createApi(deps: ApiDeps): Promise<NestFastifyApplication> 
   const banners = new BannerService(deps.db, deps.registry, now);
   const subscriptions = new SubscriptionService(deps.db, deps.registry, commerce, now);
   const pos = new PosService(deps.db, deps.registry, commerce, now);
+  const merchantPlans = new MerchantPlanService(deps.db, deps.registry, now);
   const merchantOnboarding = new MerchantOnboardingService(deps.db, deps.registry);
   const onboarding = new OnboardingService(deps.db, commerce, now, comms);
 
@@ -120,6 +122,7 @@ export async function createApi(deps: ApiDeps): Promise<NestFastifyApplication> 
           { provide: TOKENS.banners, useValue: banners },
           { provide: TOKENS.subscriptions, useValue: subscriptions },
           { provide: TOKENS.pos, useValue: pos },
+          { provide: TOKENS.merchantPlans, useValue: merchantPlans },
           { provide: TOKENS.onboardingMerchant, useValue: merchantOnboarding },
         ],
       };

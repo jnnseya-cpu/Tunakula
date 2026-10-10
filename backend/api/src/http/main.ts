@@ -42,6 +42,7 @@ import type { ReferralService } from "../app/referrals.ts";
 import type { LoyaltyService } from "../app/loyalty.ts";
 import type { CashbackService } from "../app/cashback.ts";
 import type { SubscriptionService } from "../app/subscriptions.ts";
+import type { MerchantPlanService } from "../app/merchant-plans.ts";
 import { createApi } from "./app.ts";
 import { TOKENS } from "./common.ts";
 
@@ -129,6 +130,7 @@ if (dispatchMs > 0) {
   const loyalty = app.get<LoyaltyService>(TOKENS.loyalty);
   const cashback = app.get<CashbackService>(TOKENS.cashback);
   const subscriptions = app.get<SubscriptionService>(TOKENS.subscriptions);
+  const merchantPlans = app.get<MerchantPlanService>(TOKENS.merchantPlans);
   let running = false;
   const loop = setInterval(async () => {
     if (running) return;
@@ -156,6 +158,9 @@ if (dispatchMs > 0) {
         // Recurring (subscription) orders due now are placed from the wallet.
         const subRuns = await subscriptions.runSweep(c.iso2);
         if (subRuns.placed || subRuns.skipped) log.info("subscriptions", { country: c.iso2, ...subRuns });
+        // Merchants on a paid plan are billed this month's fee (netted from their payout).
+        const planBills = await merchantPlans.billSweep(c.iso2);
+        if (planBills.billed) log.info("merchant plans", { country: c.iso2, ...planBills });
       }
     } catch (error) { log.error("dispatch failed", { error }); } finally { running = false; }
   }, dispatchMs);

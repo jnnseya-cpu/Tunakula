@@ -51,6 +51,8 @@ export interface StorefrontDistance {
   readonly delivery_fee: { readonly amount_minor: string; readonly currency: string };
   /** RESTAURANT (default), GROCERY, CONVENIENCE or PHARMACY — lets the app split restaurants from grocery/essentials. */
   readonly store_type: string;
+  /** The group is on a plan with featured placement — shown with a badge and ranked first. */
+  readonly featured: boolean;
 }
 
 interface Learned {
@@ -60,7 +62,7 @@ interface Learned {
   readonly marketRatio: number | null;
 }
 
-type BranchRow = { id: string; name: string; commune: string | null; status: string; lat: string; lng: string; active: string; store_type?: string; hours?: WeeklyHours; special_hours?: SpecialHours };
+type BranchRow = { id: string; name: string; commune: string | null; status: string; lat: string; lng: string; active: string; store_type?: string; featured?: boolean; hours?: WeeklyHours; special_hours?: SpecialHours };
 
 export { etaRange };
 
@@ -104,7 +106,7 @@ export class EtaService {
         .sort((a, b) => a.straight - b.straight)
         .slice(0, limit);
       const data = await this.#estimate(sql, country, near.map((x) => x.b), at);
-      return { data: data.sort((a, b) => Number(b.open) - Number(a.open) || a.distance_meters - b.distance_meters), routing: this.routing.id };
+      return { data: data.sort((a, b) => Number(b.open) - Number(a.open) || Number(b.featured) - Number(a.featured) || a.distance_meters - b.distance_meters), routing: this.routing.id };
     });
   }
 
@@ -156,6 +158,7 @@ export class EtaService {
         eta: { minutes, ...etaRange(minutes), pickup_minutes: pickup, travel_minutes: travel, basis: r.traffic ? "traffic" : corrected ? "learned" : "estimate" },
         delivery_fee: { amount_minor: fee.minor.toString(), currency: ccy },
         store_type: b.store_type ?? "RESTAURANT",
+        featured: b.featured ?? false,
       };
     });
   }
@@ -225,9 +228,12 @@ function checkPoint(p: GeoPoint) {
 async function branchesWithLoad(sql: Sql, branchId?: string): Promise<BranchRow[]> {
   // Discovery (no branch id) lists only published branches; a direct fetch by id still works (merchant preview).
   return sql.query<BranchRow>(
-    `SELECT b.id, b.name, b.commune, b.status, b.lat::text AS lat, b.lng::text AS lng, b.store_type, b.hours, b.special_hours,
+    `SELECT b.id, b.name, b.commune, b.status, b.lat::text AS lat, b.lng::text AS lng, b.store_type,
+            COALESCE(mp.featured, false) AS featured, b.hours, b.special_hours,
             (SELECT count(*) FROM ordering.order_view o WHERE o.branch_id = b.id AND o.state = ANY($1)) AS active
        FROM catalogue.branch b
+       LEFT JOIN catalogue.restaurant_group g ON g.id = b.restaurant_group_id
+       LEFT JOIN catalogue.merchant_plan mp ON mp.country_iso2 = b.country_iso2 AND mp.code = g.plan_code AND mp.active
       WHERE ($2::uuid IS NULL OR b.id = $2::uuid)
         AND ($2::uuid IS NOT NULL OR b.published_at IS NOT NULL)`,
     [ACTIVE_STATES, branchId ?? null],

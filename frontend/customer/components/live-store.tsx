@@ -346,6 +346,7 @@ function liveCard(s: LiveStoreRow) {
           </div>
         </div>
         <span className="mcard-badges">
+          {s.featured ? <span className="featured-badge">★ Featured</span> : null}
           {grocery ? <span className="store-type-badge">{STORE_TYPE_LABEL[s.storeType] ?? "Store"}</span> : null}
           <span className={`open-badge ${s.open ? "on" : "off"}`}>{s.open ? "Open" : "Closed now"}</span>
         </span>

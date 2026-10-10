@@ -25,6 +25,7 @@ const T = {
   zones: { fr: "Zones de livraison", en: "Delivery zones" },
   promotions: { fr: "Promotions", en: "Promotions" },
   membership: { fr: "Abonnement Plus", en: "Plus membership" },
+  merchantPlans: { fr: "Forfaits commerçants", en: "Merchant plans" },
   scorecards: { fr: "Performance des restaurants", en: "Restaurant performance" },
   coupons: { fr: "Codes promo", en: "Promo codes" },
   loyalty: { fr: "Points de fidélité", en: "Loyalty points" },

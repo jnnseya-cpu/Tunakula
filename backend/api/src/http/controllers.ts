@@ -26,6 +26,7 @@ import type { ChatService } from "../app/chat.ts";
 import type { BannerService } from "../app/banners.ts";
 import type { SubscriptionService } from "../app/subscriptions.ts";
 import type { PosService } from "../app/pos.ts";
+import type { MerchantPlanService } from "../app/merchant-plans.ts";
 import type { MerchantOnboardingService } from "../app/merchant-onboarding.ts";
 import type { NotificationService } from "../app/comms.ts";
 import { serialiseQuote, type CommerceService, type PlaceOrderInput, type QuoteInput } from "../app/commerce.ts";
@@ -655,10 +656,28 @@ export class AdminController {
     @Inject(TOKENS.db) private readonly db: Db,
     @Inject(TOKENS.tokens) private readonly tokens: TokenService,
     @Inject(TOKENS.admin) private readonly admin: AdminService,
+    @Inject(TOKENS.merchantPlans) private readonly merchantPlans: MerchantPlanService,
   ) {}
 
   #principal(req: FastifyRequest) {
     return this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+  }
+
+  @Get("merchant-plans")
+  async merchantPlanOverview(@Req() req: FastifyRequest) {
+    return this.merchantPlans.overview(country(req), await this.#principal(req));
+  }
+
+  @Post("merchant-plans")
+  @HttpCode(200)
+  async saveMerchantPlan(@Req() req: FastifyRequest, @Body() body: Record<string, unknown>) {
+    return this.merchantPlans.savePlan(country(req), await this.#principal(req), body ?? {});
+  }
+
+  @Post("merchant-plans/assign")
+  @HttpCode(200)
+  async assignMerchantPlan(@Req() req: FastifyRequest, @Body() body: { group_id?: string; plan_code?: string }) {
+    return this.merchantPlans.assign(country(req), await this.#principal(req), body ?? {});
   }
 
   @Get("analytics")

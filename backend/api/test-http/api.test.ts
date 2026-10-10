@@ -20,6 +20,7 @@ import type { WalletService } from "../src/app/wallet.ts";
 import type { LoyaltyService } from "../src/app/loyalty.ts";
 import type { CashbackService } from "../src/app/cashback.ts";
 import type { SubscriptionService } from "../src/app/subscriptions.ts";
+import type { MerchantPlanService } from "../src/app/merchant-plans.ts";
 import type { ReferralService } from "../src/app/referrals.ts";
 import type { CommerceService } from "../src/app/commerce.ts";
 import type { PaymentService } from "../src/app/payments.ts";
@@ -3510,5 +3511,50 @@ describe("merchant payouts & earnings statements", () => {
     const again = await call("POST", "/v1/admin/payouts/merchants", { token: fin.token, country: "CD", body: { restaurant_group_id: "rg-chez-maman" } });
     assert.equal(again.status, 422);
     assert.equal(again.body.code, "NOTHING_TO_PAY");
+  });
+});
+
+describe("merchant subscription plans (0% commission preserved)", () => {
+  const plans = () => api.get<MerchantPlanService>(TOKENS.merchantPlans);
+
+  test("admin creates a paid featured plan, assigns it, and billing nets the fee to subscription revenue", async () => {
+    const save = await call("POST", "/v1/admin/merchant-plans", { token: admin.token, country: "CD", body: { code: "GROWTH", name: "Growth", monthly_fee: "20.00", featured: true } });
+    assert.equal(save.status, 200, JSON.stringify(save.body));
+    assert.equal(save.body.monthly_fee.amount_minor, "2000");
+    assert.equal(save.body.featured, true);
+
+    const assign = await call("POST", "/v1/admin/merchant-plans/assign", { token: admin.token, country: "CD", body: { group_id: "rg-chez-maman", plan_code: "GROWTH" } });
+    assert.equal(assign.status, 200, JSON.stringify(assign.body));
+
+    const ov = await call("GET", "/v1/admin/merchant-plans", { token: admin.token, country: "CD" });
+    assert.ok(ov.body.plans.some((p: { code: string }) => p.code === "GROWTH"));
+    assert.equal(ov.body.merchants.find((m: { group_id: string }) => m.group_id === "rg-chez-maman").plan_code, "GROWTH");
+
+    const revBefore = BigInt((await inspect("CD", "SELECT COALESCE(sum(amount_minor),0)::text AS s FROM money.ledger_entry WHERE account = 'subscription_revenue'"))[0]!.s);
+    const r1 = await plans().billSweep("CD");
+    assert.ok(r1.billed >= 1, JSON.stringify(r1));
+    const r2 = await plans().billSweep("CD");
+    assert.equal(r2.billed, 0, "billing is idempotent within the month");
+    const revAfter = BigInt((await inspect("CD", "SELECT COALESCE(sum(amount_minor),0)::text AS s FROM money.ledger_entry WHERE account = 'subscription_revenue'"))[0]!.s);
+    assert.equal(revAfter - revBefore, -2000n, "the plan fee is credited to subscription revenue");
+
+    // The books still balance after billing.
+    const [bal] = await inspect("CD", "SELECT COALESCE(sum(amount_minor),0)::text AS s FROM money.ledger_entry WHERE currency = 'USD'");
+    assert.equal(bal.s, "0", "USD books balance after the plan charge");
+  });
+
+  test("the featured group ranks first in discovery with a flag", async () => {
+    const near = await call("GET", "/v1/branches/nearby?lat=-4.3215&lng=15.2947", { country: "CD" });
+    const mine = near.body.data.find((b: { id: string }) => b.id === branchId);
+    assert.ok(mine, "the group's branch is in discovery");
+    assert.equal(mine.featured, true, "a featured-plan branch is flagged");
+  });
+
+  test("the FREE plan cannot carry a fee, and a non-admin cannot manage plans", async () => {
+    const free = await call("POST", "/v1/admin/merchant-plans", { token: admin.token, country: "CD", body: { code: "FREE", name: "Free", monthly_fee: "5.00" } });
+    assert.equal(free.status, 400);
+    assert.equal(free.body.code, "FREE_IS_FREE");
+    assert.equal((await call("POST", "/v1/admin/merchant-plans", { token: restaurantOwner.token, country: "CD", body: { code: "X2", name: "x" } })).status, 403);
+    assert.equal((await call("POST", "/v1/admin/merchant-plans/assign", { token: restaurantOwner.token, country: "CD", body: { group_id: "rg-chez-maman", plan_code: "FREE" } })).status, 403);
   });
 });

@@ -78,6 +78,7 @@ const NAV: { group: Key; items: NavItem[] }[] = [
     { href: "/scorecards/", key: "scorecards", cap: "overview" },
     { href: "/zones/", key: "zones", cap: "catalogue" },
     { href: "/membership/", key: "membership", cap: "membership" },
+    { href: "/merchant-plans/", key: "merchantPlans", cap: "merchant_plans" },
     { href: "/coupons/", key: "coupons", cap: "markets" },
     { href: "/loyalty/", key: "loyalty", cap: "markets" },
     { href: "/cashback/", key: "cashback", cap: "markets" },
