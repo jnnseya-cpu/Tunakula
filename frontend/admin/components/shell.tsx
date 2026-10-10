@@ -63,6 +63,7 @@ const ICON: Record<string, string> = {
   cashback: "M12 1a11 11 0 1 0 0 22 11 11 0 0 0 0-22Zm0 2a9 9 0 1 1 0 18 9 9 0 0 1 0-18Zm.9 3h-1.6v1.2c-1.4.3-2.3 1.2-2.3 2.5 0 1.6 1.4 2.2 2.7 2.6 1 .3 1.5.6 1.5 1.2 0 .5-.5.9-1.3.9-1 0-1.6-.5-1.7-1.3H8.5c.1 1.4 1 2.3 2.4 2.6V18h1.6v-1.3c1.5-.3 2.4-1.3 2.4-2.6 0-1.7-1.5-2.3-2.8-2.7-.9-.3-1.4-.5-1.4-1.1 0-.5.4-.8 1.2-.8.9 0 1.4.4 1.5 1.2h1.7c-.1-1.3-.9-2.2-2.3-2.5V6Z",
   banners: "M3 5h18a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1Zm1 2v7h16V7H4Zm2 2h8v1.5H6V9Zm0 3h6v1.5H6V12Zm5 7h2v2h-2v-2Z",
   cms: "M4 3h16a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Zm1 2v3h14V5H5Zm0 5v9h5v-9H5Zm7 0v4h7v-4h-7Zm0 6v3h7v-3h-7Z",
+  chefs: "M12 2a5 5 0 0 0-4.9 4.1A4 4 0 0 0 6 14v1h12v-1a4 4 0 0 0-1.1-7.9A5 5 0 0 0 12 2ZM6 17h12v2a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2v-2Z",
 };
 const Icon = ({ k }: { k: string }) => <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden className="nav-ico"><path fill="currentColor" d={ICON[k] ?? ""} /></svg>;
 
@@ -91,6 +92,7 @@ const NAV: { group: Key; items: NavItem[] }[] = [
     { href: "/promotions/", key: "promotions", cap: "catalogue" },
     { href: "/customers/", key: "customers", soon: true },
     { href: "/riders/", key: "riders", cap: "riders" },
+    { href: "/chefs/", key: "chefs", cap: "markets" },
   ] },
   { group: "g_money", items: [
     { href: "/finance/", key: "finance", cap: "finance" },

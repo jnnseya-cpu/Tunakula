@@ -327,7 +327,20 @@ footer .legal { margin-top: 64px; padding-top: 22px; border-top: 1px solid var(-
 .chef-offer { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
 .chef-offer .chef-form { width: 100%; }
 .chef-offer-text { max-width: 48ch; }
-@media (max-width: 560px) { .chef-grid { grid-template-columns: 1fr; } }
+.chef-dash { display: grid; gap: 16px; }
+.chef-dash-head { display: grid; gap: 6px; }
+.chef-dash-head > div { display: flex; align-items: center; gap: 12px; }
+.card-head-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.chef-dash-services { list-style: none; display: grid; gap: 8px; }
+.chef-dash-services li { padding: 8px 0; border-top: 1px solid var(--rule); }
+.chef-dash-services li:first-child { border-top: 0; }
+.chef-inbox-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.chef-inbox-actions { display: flex; gap: 10px; align-items: center; flex: none; }
+.chef-add { margin: 4px 0 14px; }
+.chef-form select { font: inherit; padding: 11px 12px; border: 1px solid var(--rule); border-radius: 10px; background: var(--card, #fff); color: var(--ink); width: 100%; }
+.chef-remote { flex-direction: row !important; align-items: center; }
+.chef-remote input { width: auto; }
+@media (max-width: 560px) { .chef-grid { grid-template-columns: 1fr; } .chef-inbox-row { flex-direction: column; align-items: flex-start; } }
 
 /* QR payment modal (scan-to-pay). */
 .qr-backdrop { position: fixed; inset: 0; z-index: 80; background: rgba(10, 14, 30, 0.6); display: grid; place-items: center; padding: 20px; }

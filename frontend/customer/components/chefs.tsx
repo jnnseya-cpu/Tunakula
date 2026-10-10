@@ -21,9 +21,11 @@ export function Chefs() {
   const [chefs, setChefs] = useState<Chef[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [booking, setBooking] = useState<{ chef: Chef; service: Service } | null>(null);
-  const [tab, setTab] = useState<"browse" | "mine">("browse");
+  const [tab, setTab] = useState<"browse" | "mine" | "chef">("browse");
+  const [isChef, setIsChef] = useState(false);
 
   useEffect(() => { api<{ chefs: Chef[] }>("/v1/chefs", { auth: false }).then((r) => setChefs(r.chefs)).catch((e: Error) => setError(e.message)); }, []);
+  useEffect(() => { if (getSession()) api<{ profile: unknown }>("/v1/chef/me").then((r) => setIsChef(!!r.profile)).catch(() => undefined); }, []);
 
   return (
     <div className="chefs">
@@ -34,7 +36,8 @@ export function Chefs() {
         <div className="chefs-tabs" role="tablist">
           <button type="button" role="tab" aria-selected={tab === "browse"} className={tab === "browse" ? "on" : ""} onClick={() => setTab("browse")}>Browse chefs</button>
           <button type="button" role="tab" aria-selected={tab === "mine"} className={tab === "mine" ? "on" : ""} onClick={() => setTab("mine")}>My bookings</button>
-          <a className="chefs-offer" href="#offer">Offer your cooking →</a>
+          {isChef ? <button type="button" role="tab" aria-selected={tab === "chef"} className={tab === "chef" ? "on" : ""} onClick={() => setTab("chef")}>Chef dashboard</button> : null}
+          {!isChef ? <a className="chefs-offer" href="#offer">Offer your cooking →</a> : null}
         </div>
       </section>
 
@@ -44,9 +47,9 @@ export function Chefs() {
         !chefs ? <p className="muted">Loading chefs…</p>
         : chefs.length === 0 ? <p className="muted">No chefs yet in your market. Check back soon — or offer your own cooking below.</p>
         : <div className="chef-grid">{chefs.map((c) => <ChefCard key={c.id} chef={c} onBook={(service) => setBooking({ chef: c, service })} />)}</div>
-      ) : <MyBookings />}
+      ) : tab === "mine" ? <MyBookings /> : <ChefDashboard />}
 
-      <OfferCta />
+      {!isChef ? <OfferCta /> : null}
 
       {booking ? <BookingModal chef={booking.chef} service={booking.service} onClose={() => setBooking(null)} /> : null}
     </div>
@@ -163,6 +166,95 @@ function MyBookings() {
         </li>
       ))}
     </ul>
+  );
+}
+
+function ChefDashboard() {
+  interface MeResp { profile: { display_name: string; status: string } | null; services: Service[] }
+  interface InboxBooking extends Booking { party_size: number; fee: MoneyWire; service_charge: MoneyWire }
+  const [me, setMe] = useState<MeResp | null>(null);
+  const [inbox, setInbox] = useState<InboxBooking[] | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    api<MeResp>("/v1/chef/me").then(setMe).catch(() => undefined);
+    api<{ bookings: InboxBooking[] }>("/v1/chef/bookings").then((r) => setInbox(r.bookings)).catch(() => undefined);
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const act = async (id: string, path: string, body?: unknown) => {
+    setMsg(null);
+    try { await api(`/v1/chef/bookings/${id}/${path}`, { method: "POST", ...(body ? { body } : {}) }); load(); }
+    catch (e) { setMsg((e as ApiError).message); }
+  };
+
+  if (!me) return <p className="muted">Loading your dashboard…</p>;
+  if (!me.profile) return <p className="muted">You don’t have a chef profile yet.</p>;
+  const pending = me.profile.status !== "APPROVED";
+  return (
+    <div className="chef-dash">
+      <div className="app-card chef-dash-head">
+        <div><h2 className="app-title">{me.profile.display_name}</h2><span className={`chef-status s-${me.profile.status.toLowerCase()}`}>{me.profile.status.toLowerCase()}</span></div>
+        {pending ? <p className="muted small">Your profile is in review. You can add services now; they go live once ops approve you.</p> : null}
+      </div>
+
+      <section className="app-card">
+        <div className="card-head-row"><h3>Your services</h3><button type="button" className="btn accent sm" onClick={() => setAdding((v) => !v)}>{adding ? "Close" : "Add a service"}</button></div>
+        {adding ? <AddService onSaved={() => { setAdding(false); load(); }} /> : null}
+        {me.services.length === 0 ? <p className="muted small">No services yet. Add one so customers can book you.</p> : (
+          <ul className="chef-dash-services">
+            {me.services.map((s) => <li key={s.id}><span><b>{s.title}</b><span className="muted small"> · {KIND_LABEL[s.kind] ?? s.kind} · {priceLabel(s)}</span></span></li>)}
+          </ul>
+        )}
+      </section>
+
+      <section className="app-card">
+        <h3>Booking requests</h3>
+        {msg ? <p className="form-error small">{msg}</p> : null}
+        {!inbox ? <p className="muted small">Loading…</p> : inbox.length === 0 ? <p className="muted small">No bookings yet.</p> : (
+          <ul className="chef-bookings">
+            {inbox.map((b) => (
+              <li key={b.id} className="chef-inbox-row">
+                <div><b className={`chef-status s-${b.status.toLowerCase()}`}>{b.status.toLowerCase()}</b><span className="muted small"> · {new Date(b.scheduled_for).toLocaleString()} · {b.party_size} guest(s) · you earn {money(b.fee)}</span></div>
+                <div className="chef-inbox-actions">
+                  {b.status === "REQUESTED" ? <>
+                    <button type="button" className="btn accent sm" onClick={() => act(b.id, "respond", { accept: true })}>Confirm</button>
+                    <button type="button" className="link-btn" onClick={() => act(b.id, "respond", { accept: false, reason: "Not available then" })}>Decline</button>
+                  </> : b.status === "CONFIRMED" ? <button type="button" className="btn accent sm" onClick={() => act(b.id, "complete")}>Mark done</button> : null}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+    </div>
+  );
+}
+
+function AddService({ onSaved }: { onSaved: () => void }) {
+  const [kind, setKind] = useState("PRIVATE_DINING");
+  const [title, setTitle] = useState("");
+  const [model, setModel] = useState("PER_HEAD");
+  const [rate, setRate] = useState("30.00");
+  const [remote, setRemote] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const save = async () => {
+    setBusy(true); setErr(null);
+    try { await api("/v1/chef/services", { method: "POST", body: { kind, title: title.trim(), pricing_model: model, rate, currency: "USD", remote } }); onSaved(); }
+    catch (e) { setErr((e as ApiError).message); } finally { setBusy(false); }
+  };
+  return (
+    <div className="chef-form chef-add">
+      <label className="field"><span>Kind</span><select value={kind} onChange={(e) => setKind(e.target.value)}>{Object.entries(KIND_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
+      <label className="field"><span>Title</span><input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Private dinner at your home" /></label>
+      <label className="field"><span>How you charge</span><select value={model} onChange={(e) => setModel(e.target.value)}><option value="FIXED">Flat fee</option><option value="PER_HEAD">Per guest</option><option value="HOURLY">Per hour</option></select></label>
+      <label className="field"><span>Price (USD)</span><input inputMode="decimal" value={rate} onChange={(e) => setRate(e.target.value)} /></label>
+      <label className="field chef-remote"><input type="checkbox" checked={remote} onChange={(e) => setRemote(e.target.checked)} /> <span>Remote (advice by call)</span></label>
+      {err ? <p className="form-error small">{err}</p> : null}
+      <button type="button" className="btn accent wide" disabled={busy || !title.trim()} onClick={save}>{busy ? "Saving…" : "Save service"}</button>
+    </div>
   );
 }
 

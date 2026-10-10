@@ -25,6 +25,7 @@ const T = {
   soon: { fr: "bientôt", en: "soon" },
   pos: { fr: "Point de vente", en: "Point of sale" },
   kiosk: { fr: "Borne self-service", en: "Self-service kiosk" },
+  chefs: { fr: "Chefs (validation)", en: "Chef review" },
   zones: { fr: "Zones de livraison", en: "Delivery zones" },
   promotions: { fr: "Promotions", en: "Promotions" },
   membership: { fr: "Abonnement Plus", en: "Plus membership" },
