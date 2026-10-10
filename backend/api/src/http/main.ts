@@ -11,7 +11,8 @@
  *                           TUNAKULA_TWILIO_WHATSAPP_FROM (E.164 sender numbers).
  *   TUNAKULA_DEV_OTP=1      log sign-in codes instead of sending them (development only; used when no
  *                           messaging provider is configured, else the API refuses to start)
- *   BITRIPAY_SECRET_KEY / BITRIPAY_WEBHOOK_SECRET, KODA_SECRET_KEY / KODA_WEBHOOK_SECRET
+ *   BITRIPAY_SECRET_KEY / BITRIPAY_WEBHOOK_SECRET, KODA_SECRET_KEY / KODA_WEBHOOK_SECRET,
+ *                           STRIPE_SECRET_KEY / STRIPE_WEBHOOK_SECRET (card payments)
  *   TUNAKULA_CONSOLE_ORIGINS  comma-separated browser origins allowed to call the API (the admin console, the website)
  *   TUNAKULA_GOOGLE_ROUTES_KEY  Google Routes API key: road distance and live-traffic travel times
  *   TUNAKULA_OSRM_URL       or a self-hosted OSRM server (road distance; congestion profile for time)
@@ -21,6 +22,7 @@
  */
 import { BitriPayConnector } from "@tunakula/payment-connector-bitripay";
 import { KodaConnector } from "@tunakula/payment-connector-koda";
+import { StripeConnector } from "@tunakula/payment-connector-stripe";
 import { SandboxConnector } from "@tunakula/payment-connector-sandbox";
 import type { ConnectorCapability, PaymentConnector } from "@tunakula/ts-contracts";
 import type { OtpSender } from "../app/auth.ts";
@@ -55,6 +57,10 @@ const CD_MOBILE_MONEY: ConnectorCapability = {
   methodType: "MOBILE_MONEY_PUSH", countries: ["CD"], currencies: ["USD", "CDF"], limits: [], flow: "ASYNC",
   refund: "PARTIAL", payout: true, settlement: { currency: "USD", delayDays: 1 }, fees: { percentBps: 150 },
 };
+const CD_CARD: ConnectorCapability = {
+  methodType: "CARD", countries: ["CD"], currencies: ["USD"], limits: [], flow: "ASYNC",
+  refund: "PARTIAL", payout: false, settlement: { currency: "USD", delayDays: 2 }, fees: { percentBps: 290, fixed: { currency: "USD", minor: "30" } },
+};
 
 const connectors: PaymentConnector[] = [];
 if (env("BITRIPAY_SECRET_KEY")) {
@@ -62,6 +68,9 @@ if (env("BITRIPAY_SECRET_KEY")) {
 }
 if (env("KODA_SECRET_KEY")) {
   connectors.push(new KodaConnector({ apiKey: required("KODA_SECRET_KEY"), webhookSecret: required("KODA_WEBHOOK_SECRET"), capabilities: [{ ...CD_MOBILE_MONEY, methodType: "MOBILE_MONEY_REDIRECT", refund: "NONE", payout: false }] }));
+}
+if (env("STRIPE_SECRET_KEY")) {
+  connectors.push(new StripeConnector({ apiKey: required("STRIPE_SECRET_KEY"), webhookSecret: required("STRIPE_WEBHOOK_SECRET"), capabilities: [CD_CARD] }));
 }
 if (env("TUNAKULA_SANDBOX_PAYMENTS") === "1") connectors.push(new SandboxConnector({ capabilities: [CD_MOBILE_MONEY] }));
 
