@@ -6,12 +6,15 @@ import { dateTime } from "../../lib/format";
 
 interface Binding { id: string; user: { id: string; display_name: string; phone: string | null }; role: string; scope: Scope; since: string }
 interface Team { data: Binding[]; roles: { role: string; scopes: string[] }[] }
+interface BranchLite { id: string; name: string; commune: string | null }
 
 const ROLE_FR: Record<string, string> = {
   SUPER_ADMIN: "Super administrateur", GROUP_FINANCE: "Finance groupe", COMPLIANCE_OFFICER: "Conformité", COUNTRY_ADMIN: "Administrateur pays",
   CITY_OPS: "Opérations ville", COUNTRY_FINANCE: "Finance pays", SUPPORT_AGENT: "Agent support", RESTAURANT_OWNER: "Propriétaire",
-  BRANCH_MANAGER: "Gérant d'établissement", KITCHEN_STAFF: "Cuisine", FLEET_PARTNER: "Partenaire flotte", RIDER: "Livreur",
+  FRANCHISEE: "Franchisé", BRANCH_MANAGER: "Gérant d'établissement", KITCHEN_STAFF: "Cuisine", FLEET_PARTNER: "Partenaire flotte", RIDER: "Livreur",
 };
+/** The 24 communes of Kinshasa, the slugs a ZONE binding (rider / city-ops area) uses. */
+const KINSHASA_ZONES = ["bandalungwa", "barumbu", "bumbu", "gombe", "kalamu", "kasa-vubu", "kimbanseke", "kinshasa", "kintambo", "kisenso", "lemba", "limete", "lingwala", "makala", "maluku", "masina", "matete", "mont-ngafula", "ndjili", "ngaba", "ngaliema", "ngiri-ngiri", "nsele", "selembao"];
 
 export default function TeamPage() {
   return <Shell title="team"><Gate cap="team"><TeamView /></Gate></Shell>;
@@ -20,6 +23,7 @@ export default function TeamPage() {
 function TeamView() {
   const { country, lang } = useConsole();
   const [team, setTeam] = useState<Team | null>(null);
+  const [branches, setBranches] = useState<BranchLite[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [form, setForm] = useState({ phone: "+243", display_name: "", role: "RIDER", scope_type: "ZONE", scope_id: "" });
@@ -27,7 +31,10 @@ function TeamView() {
   const roleName = (r: string) => (lang === "fr" ? ROLE_FR[r] ?? r : r.replace(/_/g, " ").toLowerCase().replace(/^./, (c) => c.toUpperCase()));
 
   const load = () => api<Team>("/v1/admin/team", { country }).then((t) => { setTeam(t); setError(null); }).catch((e: Error) => setError(e.message));
-  useEffect(() => { void load(); }, [country]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    void load();
+    api<{ data: BranchLite[] }>("/v1/admin/branches", { country }).then((r) => setBranches(r.data)).catch(() => setBranches([]));
+  }, [country]); // eslint-disable-line react-hooks/exhaustive-deps
   const scopes = team?.roles.find((r) => r.role === form.role)?.scopes ?? [];
 
   const grant = async (e: React.FormEvent) => {
@@ -59,13 +66,25 @@ function TeamView() {
         <form className="filters" onSubmit={grant}>
           <input className="input" required inputMode="tel" placeholder="+243…" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} style={{ width: 160 }} />
           <input className="input" placeholder={L("Nom affiché", "Display name")} value={form.display_name} onChange={(e) => setForm({ ...form, display_name: e.target.value })} />
-          <select className="select" value={form.role} onChange={(e) => { const role = e.target.value; setForm({ ...form, role, scope_type: team.roles.find((r) => r.role === role)?.scopes.at(0) ?? "COUNTRY" }); }}>
+          <select className="select" value={form.role} onChange={(e) => { const role = e.target.value; setForm({ ...form, role, scope_type: team.roles.find((r) => r.role === role)?.scopes.at(0) ?? "COUNTRY", scope_id: "" }); }}>
             {team.roles.map((r) => <option key={r.role} value={r.role}>{roleName(r.role)}</option>)}
           </select>
-          <select className="select" value={form.scope_type} onChange={(e) => setForm({ ...form, scope_type: e.target.value })}>
+          <select className="select" value={form.scope_type} onChange={(e) => setForm({ ...form, scope_type: e.target.value, scope_id: "" })}>
             {scopes.map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
-          {!["GROUP", "COUNTRY"].includes(form.scope_type) ? <input className="input" required placeholder={form.scope_type === "BRANCH" ? L("Identifiant de l'établissement", "Branch id") : form.scope_type === "ZONE" ? L("Zone (ex. gombe)", "Zone (e.g. gombe)") : L("Identifiant", "Id")} value={form.scope_id} onChange={(e) => setForm({ ...form, scope_id: e.target.value })} /> : null}
+          {form.scope_type === "BRANCH" ? (
+            <select className="select" required value={form.scope_id} onChange={(e) => setForm({ ...form, scope_id: e.target.value })}>
+              <option value="">{L("Choisir l'établissement…", "Choose a branch…")}</option>
+              {branches.map((b) => <option key={b.id} value={b.id}>{b.name}{b.commune ? ` · ${b.commune}` : ""}</option>)}
+            </select>
+          ) : form.scope_type === "ZONE" ? (
+            <>
+              <input className="input" required list="zones" placeholder={L("Zone (ex. gombe)", "Zone (e.g. gombe)")} value={form.scope_id} onChange={(e) => setForm({ ...form, scope_id: e.target.value.toLowerCase() })} />
+              <datalist id="zones">{KINSHASA_ZONES.map((z) => <option key={z} value={z} />)}</datalist>
+            </>
+          ) : !["GROUP", "COUNTRY"].includes(form.scope_type) ? (
+            <input className="input" required placeholder={L("Identifiant", "Id")} value={form.scope_id} onChange={(e) => setForm({ ...form, scope_id: e.target.value })} />
+          ) : null}
           <button className="btn primary" type="submit">{L("Accorder", "Grant")}</button>
         </form>
         {notice ? <div className="banner" style={{ marginTop: 10 }}>{notice}</div> : null}
@@ -80,7 +99,7 @@ function TeamView() {
                   <td><b>{g.user.display_name}</b></td><td className="num">{g.user.phone ?? "—"}</td><td>{roleName(g.role)}</td>
                   <td><div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>{g.bindings.map((b) => (
                     <span key={b.id} className="pill" title={`${L("Depuis", "Since")} ${dateTime(lang, b.since)}`}>
-                      {b.scope.type}{b.scope.id ? ` · ${b.scope.id.length > 20 ? `${b.scope.id.slice(0, 8)}…` : b.scope.id}` : ""}
+                      {b.scope.type}{b.scope.id ? ` · ${b.scope.type === "BRANCH" ? (branches.find((x) => x.id === b.scope.id)?.name ?? `${b.scope.id.slice(0, 8)}…`) : b.scope.id.length > 20 ? `${b.scope.id.slice(0, 8)}…` : b.scope.id}` : ""}
                       <button className="link-btn" type="button" aria-label={L("Retirer", "Remove")} onClick={() => revoke(b)} style={{ marginLeft: 4 }}>×</button>
                     </span>
                   ))}</div></td>
