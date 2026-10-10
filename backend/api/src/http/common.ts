@@ -37,6 +37,7 @@ export const TOKENS = {
   siteContent: "SITE_CONTENT_SERVICE",
   subscriptions: "SUBSCRIPTION_SERVICE",
   pos: "POS_SERVICE",
+  kiosk: "KIOSK_SERVICE",
   merchantPlans: "MERCHANT_PLAN_SERVICE",
   push: "PUSH_SERVICE",
   onboardingMerchant: "MERCHANT_ONBOARDING_SERVICE",

@@ -342,12 +342,14 @@ export class CommerceService {
 
   /** Places an order: re-prices, checks the accepted total, creates the event stream (§11.2). */
   /**
-   * Places an order. `pos` turns this into a counter sale taken by branch staff: the order is attributed to the
-   * supplied walk-in/known customer and stamped with the cashier (`staffId`) and the POS channel; the on-delivery
-   * cash policy is skipped because counter cash is paid up front. Authorisation for POS happens in PosService.
+   * Places an order. `inStore` turns this into an on-premise sale: a counter order taken by branch staff (channel
+   * POS, stamped with the cashier `staffId`) or a self-service kiosk order the customer places themselves (channel
+   * HUB, no staff). Either way it is attributed to the supplied walk-in/known customer and the on-delivery cash
+   * policy is skipped because the money is handled on the spot. Authorisation happens in PosService / KioskService.
    */
-  async place(country: string, principal: Principal, input: PlaceOrderInput, idempotencyKey: string, pos?: { customerId: string; staffId: string; deviceId: string; tableId?: string }): Promise<{ orderId: string; state: string; recipientCode: string; quote: Quote }> {
+  async place(country: string, principal: Principal, input: PlaceOrderInput, idempotencyKey: string, inStore?: { customerId: string; channel: "POS" | "HUB"; staffId?: string; deviceId: string; tableId?: string }): Promise<{ orderId: string; state: string; recipientCode: string; quote: Quote }> {
     const profile = this.profile(country);
+    const pos = inStore; // on-premise context (POS counter or HUB kiosk); shares the counter pricing/cash path
     const customerId = pos?.customerId ?? principal.userId;
     let placedRestaurant: string | undefined;
     const out = await this.db.tx({ country }, async (sql) => {
@@ -399,12 +401,13 @@ export class CommerceService {
       const snapshot: OrderSnapshot = {
         orderId,
         type: input.orderType,
-        channel: pos ? "POS" : "ONLINE",
+        channel: pos ? pos.channel : "ONLINE",
         country,
         brandId: branch.brand_id,
         branchId: branch.id,
         customerId,
-        ...(pos ? { staffId: pos.staffId, deviceId: pos.deviceId } : {}),
+        ...(pos ? { deviceId: pos.deviceId } : {}),
+        ...(pos?.staffId ? { staffId: pos.staffId } : {}),
         ...(pos?.tableId ? { tableId: pos.tableId } : {}),
         ...(input.recipient ? { recipient: input.recipient } : {}),
         gifted: input.gifted === true || input.orderType === "XBO",

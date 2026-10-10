@@ -3634,3 +3634,68 @@ describe("storefront CMS (editable landing content)", () => {
     assert.equal(got.body.home.hero.subtitle, "Livré par la route");
   });
 });
+
+describe("self-service kiosk (HUB channel, customer orders in-store)", () => {
+  const kCart = (type = "TAKEAWAY", extra: Record<string, unknown> = {}) => ({ branch_id: branchId, items: [{ item_id: itemId, quantity: 1 }], order_type: type, ...extra });
+
+  test("a customer places a pay-at-counter kiosk order; it lands on the kitchen board, stamped HUB with no cashier", async () => {
+    const q = await call("POST", "/v1/kiosk/quote", { token: restaurantOwner.token, country: "CD", body: kCart() });
+    assert.equal(q.status, 200, JSON.stringify(q.body));
+    assert.ok(q.body.total.amount_minor, "the kiosk quote has a total");
+
+    const placed = await call("POST", "/v1/kiosk/orders", { token: restaurantOwner.token, country: "CD", body: { ...kCart(), pay_method: "COUNTER", expected_total: q.body.total } });
+    assert.equal(placed.status, 201, JSON.stringify(placed.body));
+    assert.equal(placed.body.state, "PLACED", "a pay-at-counter kiosk order is PLACED at once");
+    assert.equal(placed.body.pay_method, "COUNTER");
+    assert.ok(placed.body.recipient_code);
+
+    // Stamped with the HUB (kiosk) channel, NO staff, attributed to a kiosk walk-in — never the device operator.
+    const [row] = await inspect("CD",
+      `SELECT o.customer_id::text AS customer_id,
+              d.payload->'snapshot'->>'channel' AS channel,
+              d.payload->'snapshot'->>'staffId' AS staff
+         FROM ordering.order_view o
+         JOIN ordering.order_event d ON d.order_id = o.order_id AND d.type = 'ORDER_DRAFTED'
+        WHERE o.order_id = $1`, [placed.body.order_id]);
+    assert.equal(row.channel, "HUB", "kiosk orders are stamped on the HUB channel");
+    assert.equal(row.staff, null, "a self-service kiosk order has no cashier");
+    assert.notEqual(row.customer_id, restaurantOwner.userId, "attributed to a kiosk walk-in, not the device operator");
+
+    // Same board as every other order.
+    const board = await call("GET", "/v1/kitchen/orders", { token: restaurantOwner.token, country: "CD" });
+    assert.ok(board.body.orders.some((o: { order_id: string }) => o.order_id === placed.body.order_id), "the kiosk order is on the kitchen board");
+  });
+
+  test("a mobile-money kiosk order needs the payer's number and is attributed to that customer", async () => {
+    const q = await call("POST", "/v1/kiosk/quote", { token: restaurantOwner.token, country: "CD", body: kCart("DINE_IN") });
+    // Without a number, mobile money is refused.
+    assert.equal((await call("POST", "/v1/kiosk/orders", { token: restaurantOwner.token, country: "CD", body: { ...kCart("DINE_IN"), pay_method: "MOBILE_MONEY", expected_total: q.body.total } })).body.code, "PHONE_REQUIRED");
+
+    const placed = await call("POST", "/v1/kiosk/orders", { token: restaurantOwner.token, country: "CD", body: { ...kCart("DINE_IN"), table_id: "7", pay_method: "MOBILE_MONEY", customer_phone: "+243810000888", customer_name: "Didier", expected_total: q.body.total } });
+    assert.equal(placed.status, 201, JSON.stringify(placed.body));
+    assert.equal(placed.body.pay_method, "MOBILE_MONEY");
+
+    const [u] = await inspect("CD", "SELECT id::text AS id FROM identity.app_user WHERE phone_e164 = $1", ["+243810000888"]);
+    assert.ok(u, "a customer account was created from the number entered at the kiosk");
+    const [row] = await inspect("CD",
+      `SELECT o.customer_id::text AS customer_id, d.payload->'snapshot'->>'channel' AS channel, d.payload->'snapshot'->>'tableId' AS table_id
+         FROM ordering.order_view o
+         JOIN ordering.order_event d ON d.order_id = o.order_id AND d.type = 'ORDER_DRAFTED'
+        WHERE o.order_id = $1`, [placed.body.order_id]);
+    assert.equal(row.channel, "HUB");
+    assert.equal(row.customer_id, u.id, "attributed to the paying customer");
+    assert.equal(row.table_id, "7");
+  });
+
+  test("a plain customer cannot drive the kiosk device", async () => {
+    assert.equal((await call("POST", "/v1/kiosk/quote", { token: customer.token, country: "CD", body: kCart() })).status, 403);
+    assert.equal((await call("POST", "/v1/kiosk/orders", { token: customer.token, country: "CD", body: { ...kCart(), expected_total: { amount_minor: "1", currency: "USD" } } })).status, 403);
+  });
+
+  test("kiosk pricing follows the same principle — 0% commission, merchant keeps 100%", async () => {
+    const q = await call("POST", "/v1/kiosk/quote", { token: restaurantOwner.token, country: "CD", body: kCart() });
+    assert.equal(q.status, 200);
+    // The merchant receives the full goods price; the platform is funded by the customer service charge, not a cut.
+    assert.equal(q.body.commission.amount_minor, "0", "kiosk orders carry 0% commission");
+  });
+});

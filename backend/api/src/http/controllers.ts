@@ -27,6 +27,7 @@ import type { BannerService } from "../app/banners.ts";
 import type { SiteContentService } from "../app/site-content.ts";
 import type { SubscriptionService } from "../app/subscriptions.ts";
 import type { PosService } from "../app/pos.ts";
+import type { KioskService } from "../app/kiosk.ts";
 import type { MerchantPlanService } from "../app/merchant-plans.ts";
 import type { PushService } from "../app/push.ts";
 import type { MerchantOnboardingService } from "../app/merchant-onboarding.ts";
@@ -1446,6 +1447,36 @@ export class PosController {
     const key = req.headers["idempotency-key"] as string;
     const r = await this.pos.place(country(req), await this.#p(req), toPosInput(body), key);
     return { order_id: r.orderId, state: r.state, recipient_code: r.recipientCode, order_type: r.orderType, ...(r.customerPhone ? { customer_phone: r.customerPhone } : {}), quote: serialiseQuote(r.quote) };
+  }
+}
+
+type KioskBody = PosBody & { pay_method?: string };
+const toKioskInput = (b: KioskBody) => ({ ...toPosInput(b), ...(b?.pay_method ? { payMethod: String(b.pay_method) } : {}) });
+
+/** Self-service kiosk (HUB channel): a customer orders for themselves on an in-store screen. */
+@Controller("v1")
+export class KioskController {
+  constructor(
+    @Inject(TOKENS.db) private readonly db: Db,
+    @Inject(TOKENS.tokens) private readonly tokens: TokenService,
+    @Inject(TOKENS.kiosk) private readonly kiosk: KioskService,
+  ) {}
+
+  #p(req: FastifyRequest) {
+    return this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+  }
+
+  @Post("kiosk/quote")
+  @HttpCode(200)
+  async quote(@Req() req: FastifyRequest, @Body() body: KioskBody) {
+    return serialiseQuote(await this.kiosk.quote(country(req), await this.#p(req), toKioskInput(body)));
+  }
+
+  @Post("kiosk/orders")
+  async place(@Req() req: FastifyRequest, @Body() body: KioskBody) {
+    const key = req.headers["idempotency-key"] as string;
+    const r = await this.kiosk.place(country(req), await this.#p(req), toKioskInput(body), key);
+    return { order_id: r.orderId, state: r.state, recipient_code: r.recipientCode, order_type: r.orderType, pay_method: r.payMethod, ...(r.customerPhone ? { customer_phone: r.customerPhone } : {}), quote: serialiseQuote(r.quote) };
   }
 }
 

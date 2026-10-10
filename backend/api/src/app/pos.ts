@@ -96,6 +96,7 @@ export class PosService {
       ...(input.kitchenNote?.trim() ? { kitchenNote: input.kitchenNote } : {}),
     }, idempotencyKey, {
       customerId,
+      channel: "POS",
       staffId: principal.userId,
       // In-store orders record the till they were taken on; a web terminal defaults to one per cashier.
       deviceId: (input.deviceId?.trim() || `pos-web:${principal.userId}`).slice(0, 64),
