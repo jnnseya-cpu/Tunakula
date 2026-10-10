@@ -62,9 +62,13 @@ const CD_CARD: ConnectorCapability = {
   refund: "PARTIAL", payout: false, settlement: { currency: "USD", delayDays: 2 }, fees: { percentBps: 290, fixed: { currency: "USD", minor: "30" } },
 };
 
+// BitriPay carries three method types on the same rail: mobile-money push, a scannable QR, and hosted-checkout card.
+const CD_QR: ConnectorCapability = { ...CD_MOBILE_MONEY, methodType: "QR" };
+const CD_CARD_BITRIPAY: ConnectorCapability = { ...CD_CARD, payout: false };
+
 const connectors: PaymentConnector[] = [];
 if (env("BITRIPAY_SECRET_KEY")) {
-  connectors.push(new BitriPayConnector({ apiKey: required("BITRIPAY_SECRET_KEY"), webhookSecret: required("BITRIPAY_WEBHOOK_SECRET"), capabilities: [CD_MOBILE_MONEY] }));
+  connectors.push(new BitriPayConnector({ apiKey: required("BITRIPAY_SECRET_KEY"), webhookSecret: required("BITRIPAY_WEBHOOK_SECRET"), capabilities: [CD_MOBILE_MONEY, CD_QR, CD_CARD_BITRIPAY] }));
 }
 if (env("KODA_SECRET_KEY")) {
   connectors.push(new KodaConnector({ apiKey: required("KODA_SECRET_KEY"), webhookSecret: required("KODA_WEBHOOK_SECRET"), capabilities: [{ ...CD_MOBILE_MONEY, methodType: "MOBILE_MONEY_REDIRECT", refund: "NONE", payout: false }] }));

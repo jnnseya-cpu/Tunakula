@@ -94,3 +94,19 @@ test("refuses publishable keys and amounts JSON cannot carry exactly", async () 
   const { connector } = setup();
   await assert.rejects(connector.initiate(intent("+243000000501", { amount: { currency: "CDF", minor: "9007199254740993" } })), /exactly/);
 });
+
+test("a QR intent returns a scannable QR payload (BitriPay QR rail)", async () => {
+  const { connector } = setup();
+  const r = await connector.initiate(intent("", { methodType: "QR", payer: {} }));
+  assert.equal(r.state, "PENDING_CUSTOMER_ACTION");
+  assert.equal(r.nextAction.type, "QR");
+  assert.ok(r.nextAction.type === "QR" && r.nextAction.payload.length > 0, "the QR payload is present");
+});
+
+test("a card intent returns a hosted checkout redirect (BitriPay card rail)", async () => {
+  const { connector } = setup();
+  const r = await connector.initiate(intent("", { methodType: "CARD", payer: {} }));
+  assert.equal(r.state, "PENDING_CUSTOMER_ACTION");
+  assert.equal(r.nextAction.type, "REDIRECT");
+  assert.ok(r.nextAction.type === "REDIRECT" && /^https:\/\//.test(r.nextAction.url), "a hosted card checkout URL");
+});
