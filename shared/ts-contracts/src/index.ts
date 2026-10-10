@@ -12,3 +12,4 @@ export * from "./comms.ts";
 export * from "./assistant.ts";
 export * from "./growth.ts";
 export * from "./merchant-copilot.ts";
+export * from "./rider-copilot.ts";
