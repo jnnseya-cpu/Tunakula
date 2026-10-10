@@ -134,7 +134,7 @@ export class AdminService {
           customers: vis.all,
           kitchen: prep.all || prep.branches.length > 0,
           pos: this.#can(principal, "pos:operate", marketWide, profile) || vis.branches.some((b) => this.#can(principal, "pos:operate", this.#branchResource(country, b), profile)),
-          payouts: this.#can(principal, "ledger:read", marketWide, profile) || vis.branches.some((b) => this.#can(principal, "restaurant:manage", this.#branchResource(country, b), profile)),
+          payouts: this.#can(principal, "ledger:read", marketWide, profile) || this.#can(principal, "payout:read", marketWide, profile) || vis.branches.some((b) => this.#can(principal, "payout:read", this.#branchResource(country, b), profile)),
           dispatch: this.#can(principal, "dispatch:manage", marketWide, profile) || vis.branches.some((b) => this.#can(principal, "dispatch:manage", this.#branchResource(country, b), profile)),
           riders: this.#can(principal, "rider:manage", marketWide, profile) || vis.branches.some((b) => this.#can(principal, "rider:manage", this.#branchResource(country, b), profile)),
         };
@@ -448,6 +448,9 @@ export class AdminService {
     return this.db.tx({ country }, async (sql) => {
       const vis = await this.#visibility(sql, principal, country, profile);
       const canSeeAll = this.#can(principal, "ledger:read", { type: "scope", country }, profile);
+      // A merchant may read their own payouts (payout:read); finance reads the whole market (ledger:read).
+      const mayRead = canSeeAll || this.#can(principal, "payout:read", { type: "scope", country }, profile) || vis.branches.some((b) => this.#can(principal, "payout:read", this.#branchResource(country, b), profile));
+      if (!mayRead) throw forbidden("Payouts need payout:read or ledger:read");
       const branchIds = vis.branches.map((b) => b.id);
       // Merchant earnings per group, scoped to what the caller can see (all branches for finance; own group for an owner).
       const merchants = await sql.query<{ group_id: string; name: string; orders_period: string; earned_period: string; earned_lifetime: string }>(
