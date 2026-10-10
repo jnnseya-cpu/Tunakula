@@ -22,7 +22,7 @@ interface Item {
   tags: string[]; allergens: string[]; available: boolean; recommended: boolean;
   variations: ApiVariation[]; addons: ApiOption[];
   dietary?: string[]; nutrition?: Record<string, number>; age_restricted?: boolean; image_id?: string | null;
-  availability_hours?: Record<string, [string, string][]>; available_now?: boolean;
+  availability_hours?: Record<string, [string, string][]>; available_now?: boolean; unit_label?: string | null;
 }
 interface Config { money: { currencies: { settlement: string; accepted: { code: string }[] } } }
 
@@ -77,7 +77,7 @@ function Menu() {
 
   const edit = (it: Item) => setForm({
     id: it.id, name_fr: it.names.fr ?? "", name_en: it.names.en ?? "", desc_fr: it.description?.fr ?? "",
-    category: it.category ?? "", price: it.prices[settlement] ? decimal(it.prices[settlement]!.amount_minor, settlement) : "",
+    category: it.category ?? "", price: it.prices[settlement] ? decimal(it.prices[settlement]!.amount_minor, settlement) : "", unit_label: it.unit_label ?? "",
     veg: it.veg === true ? "veg" : it.veg === false ? "non" : "", recommended: it.recommended, age_restricted: it.age_restricted ?? false, tags: it.tags.join(", "), allergens: it.allergens.join(", "),
     dietary: [...(it.dietary ?? [])],
     kcal: it.nutrition?.kcal !== undefined ? String(it.nutrition.kcal) : "", protein_g: it.nutrition?.protein_g !== undefined ? String(it.nutrition.protein_g) : "",

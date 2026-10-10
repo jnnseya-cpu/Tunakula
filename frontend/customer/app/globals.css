@@ -1394,3 +1394,13 @@ section.tight { padding: 44px 0; }
 .sub-next { margin: 0; }
 .sub-actions { display: flex; gap: 8px; }
 .sub-actions .btn { min-height: 40px; padding: 8px 16px; }
+
+/* Grocery / convenience vertical (additive) */
+.aisle { margin-bottom: 8px; }
+.aisle-head { font-size: 15px; font-weight: 750; color: var(--ink); margin: 18px 0 10px; padding-bottom: 6px; border-bottom: 1px solid var(--rule); letter-spacing: 0.01em; }
+.aisle:first-of-type .aisle-head { margin-top: 0; }
+.li-unit { margin: 2px 0 0; }
+.store-type-badge { display: inline-block; background: #1f7a4d; color: #fff; font-size: 11px; font-weight: 700; border-radius: 999px; padding: 3px 9px; letter-spacing: 0.02em; }
+.shops-section { margin-top: 30px; }
+.shops-head { font-size: 20px; font-weight: 800; margin: 0 0 2px; }
+.shops-sub { margin: 0 0 16px; }

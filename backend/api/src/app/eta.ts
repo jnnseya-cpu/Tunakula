@@ -49,6 +49,8 @@ export interface StorefrontDistance {
   readonly distance_km: string;
   readonly eta: Eta;
   readonly delivery_fee: { readonly amount_minor: string; readonly currency: string };
+  /** RESTAURANT (default), GROCERY, CONVENIENCE or PHARMACY — lets the app split restaurants from grocery/essentials. */
+  readonly store_type: string;
 }
 
 interface Learned {
@@ -58,7 +60,7 @@ interface Learned {
   readonly marketRatio: number | null;
 }
 
-type BranchRow = { id: string; name: string; commune: string | null; status: string; lat: string; lng: string; active: string; hours?: WeeklyHours; special_hours?: SpecialHours };
+type BranchRow = { id: string; name: string; commune: string | null; status: string; lat: string; lng: string; active: string; store_type?: string; hours?: WeeklyHours; special_hours?: SpecialHours };
 
 export { etaRange };
 
@@ -153,6 +155,7 @@ export class EtaService {
         distance_km: (Math.round(r.meters / 100) / 10).toFixed(1),
         eta: { minutes, ...etaRange(minutes), pickup_minutes: pickup, travel_minutes: travel, basis: r.traffic ? "traffic" : corrected ? "learned" : "estimate" },
         delivery_fee: { amount_minor: fee.minor.toString(), currency: ccy },
+        store_type: b.store_type ?? "RESTAURANT",
       };
     });
   }
@@ -222,7 +225,7 @@ function checkPoint(p: GeoPoint) {
 async function branchesWithLoad(sql: Sql, branchId?: string): Promise<BranchRow[]> {
   // Discovery (no branch id) lists only published branches; a direct fetch by id still works (merchant preview).
   return sql.query<BranchRow>(
-    `SELECT b.id, b.name, b.commune, b.status, b.lat::text AS lat, b.lng::text AS lng, b.hours, b.special_hours,
+    `SELECT b.id, b.name, b.commune, b.status, b.lat::text AS lat, b.lng::text AS lng, b.store_type, b.hours, b.special_hours,
             (SELECT count(*) FROM ordering.order_view o WHERE o.branch_id = b.id AND o.state = ANY($1)) AS active
        FROM catalogue.branch b
       WHERE ($2::uuid IS NULL OR b.id = $2::uuid)

@@ -3417,3 +3417,47 @@ describe("built-in POS (counter orders)", () => {
     assert.equal(placed.status, 201, JSON.stringify(placed.body));
   });
 });
+
+describe("grocery / convenience vertical", () => {
+  let groceryId: string;
+
+  test("a branch can be a grocery; discovery and the storefront report its type", async () => {
+    const made = await call("POST", "/v1/branches", { token: admin.token, country: "CD", body: { name: "Kin Market", restaurant_group_id: "rg-chez-maman", city: "kinshasa", commune: "gombe", lat: -4.3125, lng: 15.2847, store_type: "grocery" } });
+    assert.equal(made.status, 201, JSON.stringify(made.body));
+    assert.equal(made.body.store_type, "GROCERY");
+    groceryId = made.body.id;
+    const menu = await call("GET", `/v1/branches/${groceryId}/menu`, { country: "CD" });
+    assert.equal(menu.body.branch.store_type, "GROCERY");
+    const near = await call("GET", "/v1/branches/nearby?lat=-4.3215&lng=15.2947", { country: "CD" });
+    const row = near.body.data.find((b: { id: string }) => b.id === groceryId);
+    assert.ok(row, "the grocery shows in discovery");
+    assert.equal(row.store_type, "GROCERY");
+  });
+
+  test("a grocery item carries a unit label; every item exposes the field", async () => {
+    const it = await call("POST", `/v1/branches/${groceryId}/items`, { token: restaurantOwner.token, country: "CD", body: { names: { fr: "Riz parfumé 5 kg" }, prices: { USD: "8.00" }, category: "Épiceries", unit_label: "5 kg" } });
+    assert.equal(it.status, 201, JSON.stringify(it.body));
+    assert.equal(it.body.unit_label, "5 kg");
+    const menu = await call("GET", `/v1/branches/${groceryId}/menu`, { country: "CD" });
+    const row = menu.body.items.find((m: { id: string }) => m.id === it.body.id);
+    assert.equal(row.unit_label, "5 kg");
+    // A restaurant dish reports a null unit label (the key is always present).
+    const rmenu = await call("GET", `/v1/branches/${branchId}/menu`, { country: "CD" });
+    assert.ok(rmenu.body.items.length > 0 && "unit_label" in rmenu.body.items[0], "unit_label is present on every item");
+    assert.equal(rmenu.body.items[0].unit_label, null);
+  });
+
+  test("the default store type is RESTAURANT and an unknown type is refused", async () => {
+    const menu = await call("GET", `/v1/branches/${branchId}/menu`, { country: "CD" });
+    assert.equal(menu.body.branch.store_type, "RESTAURANT");
+    const bad = await call("POST", "/v1/branches", { token: admin.token, country: "CD", body: { name: "X", restaurant_group_id: "rg-chez-maman", lat: -4.31, lng: 15.28, store_type: "CASINO" } });
+    assert.equal(bad.status, 400);
+    assert.equal(bad.body.code, "STORE_TYPE_INVALID");
+  });
+
+  test("a merchant can switch a branch's type via its profile", async () => {
+    const up = await call("POST", `/v1/branches/${groceryId}/profile`, { token: restaurantOwner.token, country: "CD", body: { store_type: "CONVENIENCE" } });
+    assert.equal(up.status, 200, JSON.stringify(up.body));
+    assert.equal(up.body.store_type, "CONVENIENCE");
+  });
+});

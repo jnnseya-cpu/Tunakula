@@ -24,6 +24,7 @@ export interface BranchInfo {
   city: string | null;
   commune: string | null;
   status: string;
+  store_type?: string;
 }
 
 /** Which slice of a market a person may see. `all` means the whole market (no branch filter). */
@@ -78,7 +79,7 @@ export class AdminService {
 
   async #branches(sql: Sql): Promise<BranchInfo[]> {
     return sql.query<BranchInfo & Record<string, unknown>>(
-      "SELECT id, name, restaurant_group_id, brand_id, city, commune, status FROM catalogue.branch ORDER BY name",
+      "SELECT id, name, restaurant_group_id, brand_id, city, commune, status, store_type FROM catalogue.branch ORDER BY name",
     );
   }
 

@@ -11,7 +11,7 @@ import { estimateDelivery, etaRange, kmText } from "@tunakula/ts-contracts/eta-m
 import { API_URL, COMMUNES, DEFAULT_PLACE, type Place } from "../lib/geo";
 
 export interface StoreGeo { readonly slug: string; readonly name: string; readonly lat: number; readonly lng: number; readonly prep: number; readonly hours: string; readonly rating: number }
-export interface LiveStoreRow { readonly id: string; readonly name: string; readonly commune: string | null; readonly open: boolean; readonly km: string; readonly low: number; readonly high: number; readonly meters: number; readonly minutes: number; readonly fee: { amount_minor: string; currency: string } }
+export interface LiveStoreRow { readonly id: string; readonly name: string; readonly commune: string | null; readonly open: boolean; readonly km: string; readonly low: number; readonly high: number; readonly meters: number; readonly minutes: number; readonly fee: { amount_minor: string; currency: string }; readonly storeType: string }
 export interface StoreEta { readonly km: string; readonly meters: number; readonly low: number; readonly high: number; readonly minutes: number; readonly live: boolean; readonly open: boolean }
 
 interface Ctx {
@@ -81,11 +81,11 @@ export function LocationProvider({ stores, children }: { stores: readonly StoreG
     const ctl = new AbortController();
     fetch(`${API_URL}/v1/branches/nearby?lat=${place.lat}&lng=${place.lng}&limit=100&radius_km=50`, { headers: { "x-country": "CD" }, signal: ctl.signal })
       .then((r) => (r.ok ? r.json() : null))
-      .then((body: { data: { id: string; name: string; commune: string | null; open: boolean; distance_meters: number; eta: { minutes: number }; delivery_fee: { amount_minor: string; currency: string } }[] } | null) => {
+      .then((body: { data: { id: string; name: string; commune: string | null; open: boolean; distance_meters: number; eta: { minutes: number }; delivery_fee: { amount_minor: string; currency: string }; store_type?: string }[] } | null) => {
         if (!body) return;
         const next = { ...local };
         const ids: Record<string, string> = {};
-        setLiveStores(body.data.map((b) => ({ id: b.id, name: b.name, commune: b.commune, open: b.open, km: kmText(b.distance_meters), meters: b.distance_meters, minutes: b.eta.minutes, ...etaRange(b.eta.minutes), fee: b.delivery_fee })));
+        setLiveStores(body.data.map((b) => ({ id: b.id, name: b.name, commune: b.commune, open: b.open, km: kmText(b.distance_meters), meters: b.distance_meters, minutes: b.eta.minutes, ...etaRange(b.eta.minutes), fee: b.delivery_fee, storeType: b.store_type ?? "RESTAURANT" })));
         for (const s of stores) {
           const b = body.data.find((x) => x.name === s.name);
           if (b) ids[s.slug] = b.id;

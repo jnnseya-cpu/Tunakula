@@ -6,14 +6,14 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { api, ApiError, foodPhotoUrl, getSession, listFavourites, loadCart, lineSig, money, mulMinor, addMinor, saveCart, toggleFavourite, type Cart, type CartLine, type CartLineOption, type MoneyWire } from "../lib/api";
-import { ClockIcon, PinIcon, useLocationCtx } from "./location";
+import { ClockIcon, PinIcon, useLocationCtx, type LiveStoreRow } from "./location";
 import { PlateArt, recipeFor } from "./plate-art";
 import { BookTable } from "./book-table";
 
 interface VOption { id: string; name: string; price: string }
 interface Variation { id: string; name: string; type: "SINGLE" | "MULTI"; required: boolean; min: number; max: number; options: VOption[] }
 interface Promo { name: string; percent: number; was: MoneyWire; now: MoneyWire }
-interface MenuItem { id: string; names: Record<string, string>; prices: Record<string, MoneyWire>; tags: string[]; allergens: string[]; available: boolean; variations?: Variation[]; addons?: VOption[]; veg?: boolean | null; dietary?: string[]; nutrition?: Record<string, number>; age_restricted?: boolean; image_id?: string | null; availability_hours?: Record<string, [string, string][]>; available_now?: boolean; promo?: Promo }
+interface MenuItem { id: string; names: Record<string, string>; prices: Record<string, MoneyWire>; tags: string[]; allergens: string[]; available: boolean; variations?: Variation[]; addons?: VOption[]; veg?: boolean | null; dietary?: string[]; nutrition?: Record<string, number>; age_restricted?: boolean; image_id?: string | null; availability_hours?: Record<string, [string, string][]>; available_now?: boolean; promo?: Promo; unit_label?: string | null; category?: string | null }
 
 /** Dayparting: whether the dish has a schedule, and a short label of today's window (for the storefront badge). */
 const isScheduled = (i: MenuItem) => Object.keys(i.availability_hours ?? {}).length > 0;
@@ -29,7 +29,10 @@ const DIETARY_LABEL: Record<string, string> = { VEGETARIAN: "Vegetarian", VEGAN:
 const DIETARY_FILTERS = ["VEGETARIAN", "VEGAN", "HALAL", "GLUTEN_FREE", "DAIRY_FREE", "NUT_FREE"] as const;
 /** A dish's effective dietary tags, treating the legacy `veg` flag as VEGETARIAN. */
 const dietaryOf = (i: MenuItem): string[] => [...new Set([...(i.dietary ?? []), ...(i.veg === true ? ["VEGETARIAN"] : [])])];
-interface Branch { id: string; name: string; commune: string | null; status: string; address?: string | null; phone?: string | null; description?: Record<string, string>; cuisines?: string[]; logo_id?: string | null; cover_id?: string | null }
+interface Branch { id: string; name: string; commune: string | null; status: string; address?: string | null; phone?: string | null; description?: Record<string, string>; cuisines?: string[]; logo_id?: string | null; cover_id?: string | null; store_type?: string }
+/** A non-restaurant store (grocery/convenience/pharmacy) is browsed by aisle (category) and shows unit labels. */
+const isShop = (b: Branch | undefined) => !!b && b.store_type !== undefined && b.store_type !== "RESTAURANT";
+const STORE_TYPE_LABEL: Record<string, string> = { GROCERY: "Grocery", CONVENIENCE: "Convenience", PHARMACY: "Pharmacy" };
 interface Menu { branch: Branch; items: MenuItem[] }
 const hasOptions = (i: MenuItem) => (i.variations?.length ?? 0) > 0 || (i.addons?.length ?? 0) > 0;
 interface Eta { distance_km: string; eta: { low: number; high: number; basis: string }; delivery_fee: MoneyWire; open: boolean }
@@ -119,6 +122,52 @@ export function LiveStore() {
   );
   const open = menu.branch.status === "OPEN" && (eta?.open ?? true);
   const dishes = menu.items.slice(0, 3).map((i) => recipeFor(nameOf(i.names)));
+  // A grocery/convenience/pharmacy is browsed by aisle (the dish category); a restaurant keeps one flat menu.
+  const shop = isShop(menu.branch);
+  const aisles: [string, MenuItem[]][] = shop
+    ? [...visible.reduce((map, i) => { const c = i.category?.trim() || "Other"; const arr = map.get(c) ?? (map.set(c, []), map.get(c)!); arr.push(i); return map; }, new Map<string, MenuItem[]>()).entries()]
+    : [];
+
+  const renderItem = (i: MenuItem) => {
+    const name = nameOf(i.names);
+    const price = i.prices[ccy] ?? Object.values(i.prices)[0];
+    const plainLine = cart.lines.find((l) => l.item_id === i.id && !l.options && !l.addons);
+    const inCart = cart.lines.filter((l) => l.item_id === i.id).reduce((n, l) => n + l.qty, 0);
+    const optioned = hasOptions(i);
+    const canOrder = orderable(i);
+    const window = todaysWindow(i);
+    return (
+      <article key={i.id} className={`live-item ${canOrder ? "" : "off"}`} data-reveal>
+        <div className="li-text">
+          <h3>{name}{i.promo ? <span className="promo-tag">−{i.promo.percent}%</span> : null}</h3>
+          {nameOf(i.names, "en") !== name ? <p className="muted">{nameOf(i.names, "en")}</p> : null}
+          {i.unit_label ? <p className="li-unit muted small">{i.unit_label}</p> : null}
+          {i.promo ? <p className="promo-name">🏷️ {i.promo.name}</p> : null}
+          {optioned ? <p className="muted small">{(i.variations?.length ?? 0) > 0 ? "Choices" : "Add-ons"} available</p> : null}
+          {isScheduled(i) ? <p className="li-hours">🕒 {i.available_now === false ? (window ? `Available ${window}` : "Not available today") : (window ? `Available ${window}` : "Available at set times")}</p> : null}
+          {dietaryOf(i).length || i.nutrition?.kcal !== undefined || i.age_restricted ? (
+            <p className="diet-badges">
+              {i.age_restricted ? <span className="diet-tag age">18+</span> : null}
+              {dietaryOf(i).map((d) => <span key={d} className="diet-tag">{DIETARY_LABEL[d] ?? d}</span>)}
+              {i.nutrition?.kcal !== undefined ? <span className="kcal">{i.nutrition.kcal} kcal</span> : null}
+            </p>
+          ) : null}
+          {i.allergens.length ? <p className="allergen">Contains {i.allergens.join(", ")}</p> : null}
+          {i.promo
+            ? <p className="li-price num"><span className="price-was">{money(i.promo.was)}</span> <b className="price-now">{money(i.promo.now)}</b>{optioned ? "+" : ""}</p>
+            : <p className="li-price num">{price ? money(price) : "—"}{optioned ? "+" : ""}</p>}
+        </div>
+        <div className="li-pic" style={{ background: bg }}>
+          {i.image_id ? <img className="pic li-photo" src={foodPhotoUrl(i.image_id)} alt="" loading="lazy" /> : <PlateArt className="pic" recipe={recipeFor(name)} seed={i.id} />}
+          {canOrder ? (
+            !optioned && plainLine ? (
+              <span className="qty-pill"><button type="button" onClick={() => change(plainLine.key, -1)} aria-label={`One less ${name}`}>−</button><b>{inCart}</b><button type="button" onClick={() => add(i)} aria-label={`One more ${name}`}>+</button></span>
+            ) : <button type="button" className="add-btn" onClick={() => add(i)} aria-label={optioned ? `Choose ${name}` : `Add ${name}`} disabled={!open}>{inCart > 0 ? inCart : "+"}</button>
+          ) : <span className="sold-out">{i.available === false ? "Sold out" : window ? window : "Off hours"}</span>}
+        </div>
+      </article>
+    );
+  };
 
   return (
     <>
@@ -165,48 +214,19 @@ export function LiveStore() {
               {diet.length ? <button type="button" className="diet-chip clear" onClick={() => setDiet([])}>Clear</button> : null}
             </div>
           ) : null}
-          <div className="live-items">
-            {visible.map((i) => {
-              const name = nameOf(i.names);
-              const price = i.prices[ccy] ?? Object.values(i.prices)[0];
-              const plainLine = cart.lines.find((l) => l.item_id === i.id && !l.options && !l.addons);
-              const inCart = cart.lines.filter((l) => l.item_id === i.id).reduce((n, l) => n + l.qty, 0);
-              const optioned = hasOptions(i);
-              const canOrder = orderable(i);
-              const window = todaysWindow(i);
-              return (
-                <article key={i.id} className={`live-item ${canOrder ? "" : "off"}`} data-reveal>
-                  <div className="li-text">
-                    <h3>{name}{i.promo ? <span className="promo-tag">−{i.promo.percent}%</span> : null}</h3>
-                    {nameOf(i.names, "en") !== name ? <p className="muted">{nameOf(i.names, "en")}</p> : null}
-                    {i.promo ? <p className="promo-name">🏷️ {i.promo.name}</p> : null}
-                    {optioned ? <p className="muted small">{(i.variations?.length ?? 0) > 0 ? "Choices" : "Add-ons"} available</p> : null}
-                    {isScheduled(i) ? <p className="li-hours">🕒 {i.available_now === false ? (window ? `Available ${window}` : "Not available today") : (window ? `Available ${window}` : "Available at set times")}</p> : null}
-                    {dietaryOf(i).length || i.nutrition?.kcal !== undefined || i.age_restricted ? (
-                      <p className="diet-badges">
-                        {i.age_restricted ? <span className="diet-tag age">18+</span> : null}
-                        {dietaryOf(i).map((d) => <span key={d} className="diet-tag">{DIETARY_LABEL[d] ?? d}</span>)}
-                        {i.nutrition?.kcal !== undefined ? <span className="kcal">{i.nutrition.kcal} kcal</span> : null}
-                      </p>
-                    ) : null}
-                    {i.allergens.length ? <p className="allergen">Contains {i.allergens.join(", ")}</p> : null}
-                    {i.promo
-                      ? <p className="li-price num"><span className="price-was">{money(i.promo.was)}</span> <b className="price-now">{money(i.promo.now)}</b>{optioned ? "+" : ""}</p>
-                      : <p className="li-price num">{price ? money(price) : "—"}{optioned ? "+" : ""}</p>}
-                  </div>
-                  <div className="li-pic" style={{ background: bg }}>
-                    {i.image_id ? <img className="pic li-photo" src={foodPhotoUrl(i.image_id)} alt="" loading="lazy" /> : <PlateArt className="pic" recipe={recipeFor(name)} seed={i.id} />}
-                    {canOrder ? (
-                      !optioned && plainLine ? (
-                        <span className="qty-pill"><button type="button" onClick={() => change(plainLine.key, -1)} aria-label={`One less ${name}`}>−</button><b>{inCart}</b><button type="button" onClick={() => add(i)} aria-label={`One more ${name}`}>+</button></span>
-                      ) : <button type="button" className="add-btn" onClick={() => add(i)} aria-label={optioned ? `Choose ${name}` : `Add ${name}`} disabled={!open}>{inCart > 0 ? inCart : "+"}</button>
-                    ) : <span className="sold-out">{i.available === false ? "Sold out" : window ? window : "Off hours"}</span>}
-                  </div>
-                </article>
-              );
-            })}
-            {visible.length === 0 ? <p className="muted">Nothing on this menu matches “{q}”.</p> : null}
-          </div>
+          {shop && aisles.length ? (
+            aisles.map(([aisle, list]) => (
+              <section key={aisle} className="aisle">
+                <h2 className="aisle-head">{aisle}</h2>
+                <div className="live-items">{list.map(renderItem)}</div>
+              </section>
+            ))
+          ) : (
+            <div className="live-items">
+              {visible.map(renderItem)}
+              {visible.length === 0 ? <p className="muted">Nothing on this menu matches “{q}”.</p> : null}
+            </div>
+          )}
         </div>
         <aside className="cart-panel">
           <h2>Your order</h2>
@@ -314,35 +334,50 @@ function OptionPicker({ item, ccy, onClose, onAdd }: { item: MenuItem; ccy: stri
 }
 
 /** Every live storefront nearby that the sample grid does not already show (when the API is connected). */
+function liveCard(s: LiveStoreRow) {
+  const [bg, accent] = toneFor(s.id);
+  const grocery = s.storeType !== "RESTAURANT";
+  return (
+    <Link key={s.id} className="mcard" href={`/store/?id=${s.id}`} data-reveal>
+      <div className="mcard-media">
+        <div className="cover sm" style={{ background: bg }}>
+          <div className="cover-plates" aria-hidden>
+            {(["moambe", "brochettes", "pondu"] as const).map((r, k) => <PlateArt key={k} className={`cp cp${k}`} recipe={r} seed={`${s.id}-${k}`} />)}
+          </div>
+        </div>
+        <span className="mcard-badges">
+          {grocery ? <span className="store-type-badge">{STORE_TYPE_LABEL[s.storeType] ?? "Store"}</span> : null}
+          <span className={`open-badge ${s.open ? "on" : "off"}`}>{s.open ? "Open" : "Closed now"}</span>
+        </span>
+      </div>
+      <div className="mcard-body">
+        <span className="mlogo" style={{ width: 52, height: 52, background: bg, color: accent, fontSize: 18 }}>{initials(s.name)}</span>
+        <div className="mcard-text"><h3>{s.name}</h3><p className="muted">{s.commune ?? "Kinshasa"}</p></div>
+      </div>
+      <div className="mcard-foot">
+        <span className="eta-chip"><span className="eta-km"><PinIcon /> <b className="num">{s.km}</b> km</span><span className="eta-time"><ClockIcon /> <b className="num">{s.low}–{s.high}</b> min</span></span>
+        <span className="fee">{money(s.fee)}</span>
+      </div>
+    </Link>
+  );
+}
+
 export function LiveStoreGrid({ exclude }: { exclude: readonly string[] }) {
   const { liveStores } = useLocationCtx();
   const rows = liveStores.filter((s) => !exclude.includes(s.name));
   if (!rows.length) return null;
+  const restaurants = rows.filter((s) => s.storeType === "RESTAURANT");
+  const shops = rows.filter((s) => s.storeType !== "RESTAURANT");
   return (
-    <div className="mgrid live-grid">
-      {rows.map((s) => {
-        const [bg, accent] = toneFor(s.id);
-        return (
-          <Link key={s.id} className="mcard" href={`/store/?id=${s.id}`} data-reveal>
-            <div className="mcard-media">
-              <div className="cover sm" style={{ background: bg }}>
-                <div className="cover-plates" aria-hidden>
-                  {(["moambe", "brochettes", "pondu"] as const).map((r, k) => <PlateArt key={k} className={`cp cp${k}`} recipe={r} seed={`${s.id}-${k}`} />)}
-                </div>
-              </div>
-              <span className="mcard-badges"><span className={`open-badge ${s.open ? "on" : "off"}`}>{s.open ? "Open" : "Closed now"}</span></span>
-            </div>
-            <div className="mcard-body">
-              <span className="mlogo" style={{ width: 52, height: 52, background: bg, color: accent, fontSize: 18 }}>{initials(s.name)}</span>
-              <div className="mcard-text"><h3>{s.name}</h3><p className="muted">{s.commune ?? "Kinshasa"}</p></div>
-            </div>
-            <div className="mcard-foot">
-              <span className="eta-chip"><span className="eta-km"><PinIcon /> <b className="num">{s.km}</b> km</span><span className="eta-time"><ClockIcon /> <b className="num">{s.low}–{s.high}</b> min</span></span>
-              <span className="fee">{money(s.fee)}</span>
-            </div>
-          </Link>
-        );
-      })}
-    </div>
+    <>
+      {restaurants.length ? <div className="mgrid live-grid">{restaurants.map(liveCard)}</div> : null}
+      {shops.length ? (
+        <section className="shops-section">
+          <h2 className="shops-head">🛒 Groceries &amp; essentials</h2>
+          <p className="muted shops-sub">Supermarkets, convenience stores and pharmacies delivering near you.</p>
+          <div className="mgrid live-grid">{shops.map(liveCard)}</div>
+        </section>
+      ) : null}
+    </>
   );
 }

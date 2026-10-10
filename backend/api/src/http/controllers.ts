@@ -144,10 +144,10 @@ export class CatalogueController {
   }
 
   @Post("branches")
-  async createBranch(@Req() req: FastifyRequest, @Body() body: { name: string; restaurant_group_id: string; city?: string; commune?: string; lat: number; lng: number }) {
+  async createBranch(@Req() req: FastifyRequest, @Body() body: { name: string; restaurant_group_id: string; city?: string; commune?: string; lat: number; lng: number; store_type?: string }) {
     const principal = await this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
-    const b = await this.catalogue.createBranch(country(req), principal, { name: body?.name, restaurantGroupId: body?.restaurant_group_id, ...(body?.city ? { city: body.city } : {}), ...(body?.commune ? { commune: body.commune } : {}), lat: body?.lat, lng: body?.lng });
-    return { id: b.id, name: b.name, city: b.city, commune: b.commune, status: b.status };
+    const b = await this.catalogue.createBranch(country(req), principal, { name: body?.name, restaurantGroupId: body?.restaurant_group_id, ...(body?.city ? { city: body.city } : {}), ...(body?.commune ? { commune: body.commune } : {}), lat: body?.lat, lng: body?.lng, ...(body?.store_type ? { storeType: String(body.store_type) } : {}) });
+    return { id: b.id, name: b.name, city: b.city, commune: b.commune, status: b.status, store_type: b.store_type ?? "RESTAURANT" };
   }
 
   @Post("branches/:id/items")
@@ -256,8 +256,8 @@ export class CatalogueController {
   }
 }
 
-type ItemBody = { names: Record<string, string>; description?: Record<string, string>; prices: Record<string, string>; category?: string | null; veg?: boolean | null; tags?: string[]; allergens?: string[]; recommended?: boolean; variations?: unknown; addons?: unknown; image_id?: string | null };
-type ProfileBody = { address?: string | null; phone?: string | null; email?: string | null; description?: Record<string, string>; cuisines?: string[]; min_order?: string | null; logo_id?: string | null; cover_id?: string | null };
+type ItemBody = { names: Record<string, string>; description?: Record<string, string>; prices: Record<string, string>; category?: string | null; veg?: boolean | null; tags?: string[]; allergens?: string[]; recommended?: boolean; variations?: unknown; addons?: unknown; image_id?: string | null; unit_label?: string | null };
+type ProfileBody = { address?: string | null; phone?: string | null; email?: string | null; description?: Record<string, string>; cuisines?: string[]; min_order?: string | null; logo_id?: string | null; cover_id?: string | null; store_type?: string };
 type ZoneBody = { name?: string; centre_lat?: number | string; centre_lng?: number | string; radius_m?: number | string; flat_fee?: string | number | null; min_order?: string | number | null; active?: boolean };
 type PromotionBody = { name?: string; scope?: "ITEM" | "CATEGORY" | "BRANCH"; target_item_id?: string | null; target_category?: string | null; percent?: number | string; hours?: unknown; active?: boolean };
 type QuoteItemBody = { item_id: string; quantity: number; options?: { group: string; choices: string[] }[]; addons?: string[]; note?: string };

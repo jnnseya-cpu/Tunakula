@@ -22,7 +22,7 @@ export const DIETARY_LABEL: Record<string, [string, string]> = {
 };
 export const CATEGORIES = ["Restaurant", "Cuisine Locale", "Fast Food", "Boisson", "Dessert", "Végétarienne", "Accompagnements", "Fruits et Légumes", "Viande et Poisson", "Boulangeries", "Pizzérias", "Taco", "Menu Enfant", "Supermarché", "Épiceries", "Essentiel", "Promo"];
 
-export const blankDish = () => ({ id: "", name_fr: "", name_en: "", desc_fr: "", category: "", price: "", veg: "" as "" | "veg" | "non", recommended: false, age_restricted: false, tags: "", allergens: "", dietary: [] as string[], kcal: "", protein_g: "", carbs_g: "", fat_g: "", image_id: "", variations: [] as FormVariation[], addons: [] as FormAddon[], availability_hours: {} as Record<string, [string, string][]> });
+export const blankDish = () => ({ id: "", name_fr: "", name_en: "", desc_fr: "", category: "", price: "", unit_label: "", veg: "" as "" | "veg" | "non", recommended: false, age_restricted: false, tags: "", allergens: "", dietary: [] as string[], kcal: "", protein_g: "", carbs_g: "", fat_g: "", image_id: "", variations: [] as FormVariation[], addons: [] as FormAddon[], availability_hours: {} as Record<string, [string, string][]> });
 export type DishFormValue = ReturnType<typeof blankDish>;
 
 /** Weekday rows for the availability editor, Monday first; the number is the schedule key (0=Sunday). */
@@ -38,6 +38,7 @@ export function dishPayload(form: DishFormValue, settlement: string) {
     ...(form.desc_fr.trim() ? { description: { fr: form.desc_fr.trim() } } : { description: {} }),
     prices: { [settlement]: form.price.trim() },
     category: form.category.trim() || null,
+    unit_label: form.unit_label.trim() || null,
     veg: form.veg === "veg" ? true : form.veg === "non" ? false : null,
     recommended: form.recommended,
     age_restricted: form.age_restricted,
@@ -109,6 +110,7 @@ export function DishFields({ form, setForm, settlement, lang, country, L }: Prop
       <label className="wide">{L("Description (FR)", "Description (FR)")}<textarea className="input" rows={2} value={form.desc_fr} onChange={(e) => setForm({ ...form, desc_fr: e.target.value })} /></label>
       <label>{L("Catégorie", "Category")}<input className="input" list="cats" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} /><datalist id="cats">{CATEGORIES.map((c) => <option key={c} value={c} />)}</datalist></label>
       <label>{L("Prix", "Price")} ({settlement})<input className="input" inputMode="decimal" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} /></label>
+      <label>{L("Unité (épicerie)", "Unit (grocery)")}<input className="input" value={form.unit_label} onChange={(e) => setForm({ ...form, unit_label: e.target.value })} placeholder={L("ex. 1 kg, 500 ml, pack de 6", "e.g. 1 kg, 500 ml, 6-pack")} maxLength={40} /></label>
       <label>{L("Type", "Type")}<select className="select" value={form.veg} onChange={(e) => setForm({ ...form, veg: e.target.value as DishFormValue["veg"] })}><option value="">—</option><option value="veg">{L("Végétarien", "Veg")}</option><option value="non">{L("Non végétarien", "Non-veg")}</option></select></label>
       <label className="chk"><input type="checkbox" checked={form.recommended} onChange={(e) => setForm({ ...form, recommended: e.target.checked })} /> {L("Recommandé", "Recommended")}</label>
       <label className="chk"><input type="checkbox" checked={form.age_restricted} onChange={(e) => setForm({ ...form, age_restricted: e.target.checked })} /> {L("Réservé aux 18+ (alcool)", "Age-restricted (18+)")}</label>
