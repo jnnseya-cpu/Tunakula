@@ -3999,3 +3999,20 @@ describe("merchant copilot (grounded per-branch insights)", () => {
     assert.equal((await call("GET", `/v1/admin/branches/${randomUUID()}/copilot`, { token: admin.token, country: "CD" })).status, 404);
   });
 });
+
+describe("rider copilot (earnings, zones, cash-out — no pressure to accept)", () => {
+  test("a rider gets grounded coaching tips and a summary", async () => {
+    const r = await call("GET", "/v1/rider/coach?lang=en", { token: rider.token, country: "CD" });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.ok(Array.isArray(r.body.tips));
+    assert.ok(r.body.summary.available, "the summary carries the rider's available balance");
+    assert.ok(r.body.tips.every((t: { category: string }) => ["ZONES", "EARNINGS", "PAYOUT"].includes(t.category)));
+    // The copilot never tells a rider to accept more jobs.
+    const text = r.body.tips.map((t: { title: string; detail: string }) => `${t.title} ${t.detail}`).join(" ").toLowerCase();
+    assert.ok(!/accept more|should accept/.test(text));
+  });
+
+  test("a non-rider cannot read the rider copilot", async () => {
+    assert.equal((await call("GET", "/v1/rider/coach", { token: customer.token, country: "CD" })).status, 403);
+  });
+});

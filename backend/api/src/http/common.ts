@@ -39,6 +39,7 @@ export const TOKENS = {
   assistant: "ASSISTANT_SERVICE",
   growth: "GROWTH_SERVICE",
   merchantCopilot: "MERCHANT_COPILOT_SERVICE",
+  riderCopilot: "RIDER_COPILOT_SERVICE",
   integrations: "INTEGRATIONS_SERVICE",
   subscriptions: "SUBSCRIPTION_SERVICE",
   pos: "POS_SERVICE",

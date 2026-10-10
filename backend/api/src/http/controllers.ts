@@ -29,6 +29,7 @@ import type { ChefService } from "../app/chef.ts";
 import type { AssistantService } from "../app/assistant.ts";
 import type { GrowthService } from "../app/growth.ts";
 import type { MerchantCopilotService } from "../app/merchant-copilot.ts";
+import type { RiderCopilotService } from "../app/rider-copilot.ts";
 import type { IntegrationsService } from "../app/integrations.ts";
 import type { SubscriptionService } from "../app/subscriptions.ts";
 import type { PosService } from "../app/pos.ts";
@@ -427,7 +428,14 @@ export class RiderController {
     @Inject(TOKENS.db) private readonly db: Db,
     @Inject(TOKENS.tokens) private readonly tokens: TokenService,
     @Inject(TOKENS.dispatch) private readonly dispatch: DispatchService,
+    @Inject(TOKENS.riderCopilot) private readonly copilot: RiderCopilotService,
   ) {}
+
+  @Get("coach")
+  async coach(@Req() req: FastifyRequest, @Query("lang") lang?: string) {
+    const principal = await this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+    return this.copilot.coach(country(req), principal, lang === "en" ? "en" : "fr");
+  }
 
   @Post("presence")
   @HttpCode(200)

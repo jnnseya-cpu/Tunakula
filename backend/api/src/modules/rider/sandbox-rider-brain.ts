@@ -53,12 +53,12 @@ export class SandboxRiderBrain implements RiderBrain {
       add("earn-hours", "EARNINGS", "INFO", T("Vos meilleures heures", "Your best hours"), T(`Vous gagnez le plus vers ${hrs}. Planifiez vos tournées autour de ces heures.`, `You earn the most around ${hrs}. Plan your shifts around those times.`));
     }
 
-    // When you'll be paid — clarity on the question riders ask most.
+    // When/why you're paid — on Tunakula a rider cashes out instantly, any time, to an account in their name.
     const p = facts.payout;
     if (!isZero(p.pending)) {
-      add("payout-pending", "PAYOUT", "INFO", T("Votre paie", "Your pay"), T(`${fmt(p.pending)} en attente de versement${p.nextPayoutLabel ? `, prévu ${p.nextPayoutLabel}` : ""}. Versé sur un compte à votre nom.`, `${fmt(p.pending)} pending payout${p.nextPayoutLabel ? `, due ${p.nextPayoutLabel}` : ""}. Paid to an account in your name.`), fmt(p.pending));
+      add("payout-ready", "PAYOUT", "INFO", T("Prêt à encaisser", "Ready to cash out"), T(`Vous avez ${fmt(p.pending)} disponibles. Encaissez quand vous voulez — directement sur votre mobile money ou compte bancaire, à votre nom.`, `You have ${fmt(p.pending)} available. Cash out whenever you like — straight to your mobile money or bank account, in your name.`), fmt(p.pending));
     } else if (p.lastPayout) {
-      add("payout-last", "PAYOUT", "INFO", T("Dernier versement", "Last payout"), T(`Votre dernier versement était de ${fmt(p.lastPayout)}${p.lastPayoutAt ? ` le ${p.lastPayoutAt}` : ""}. Tout est à jour.`, `Your last payout was ${fmt(p.lastPayout)}${p.lastPayoutAt ? ` on ${p.lastPayoutAt}` : ""}. You're all settled up.`));
+      add("payout-last", "PAYOUT", "INFO", T("Dernier encaissement", "Last cash-out"), T(`Votre dernier encaissement était de ${fmt(p.lastPayout)}${p.lastPayoutAt ? ` le ${p.lastPayoutAt}` : ""}. Vous êtes à jour — vos prochaines courses s'ajouteront ici.`, `Your last cash-out was ${fmt(p.lastPayout)}${p.lastPayoutAt ? ` on ${p.lastPayoutAt}` : ""}. You're all settled — your next jobs will add up here.`));
     }
 
     return out;

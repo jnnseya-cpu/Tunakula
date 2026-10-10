@@ -31,7 +31,9 @@ import { GrowthService } from "../app/growth.ts";
 import { SandboxGrowthBrain } from "../modules/growth/sandbox-growth-brain.ts";
 import { MerchantCopilotService } from "../app/merchant-copilot.ts";
 import { SandboxMerchantBrain } from "../modules/merchant/sandbox-merchant-brain.ts";
-import type { AssistantBrain, GrowthBrain, MerchantBrain } from "@tunakula/ts-contracts";
+import { RiderCopilotService } from "../app/rider-copilot.ts";
+import { SandboxRiderBrain } from "../modules/rider/sandbox-rider-brain.ts";
+import type { AssistantBrain, GrowthBrain, MerchantBrain, RiderBrain } from "@tunakula/ts-contracts";
 import { IntegrationsService } from "../app/integrations.ts";
 import { SubscriptionService } from "../app/subscriptions.ts";
 import { PosService } from "../app/pos.ts";
@@ -72,6 +74,8 @@ export interface ApiDeps {
   readonly growthBrain?: GrowthBrain;
   /** The merchant copilot brain. Defaults to the in-house deterministic SandboxMerchantBrain. */
   readonly merchantBrain?: MerchantBrain;
+  /** The rider copilot brain. Defaults to the in-house deterministic SandboxRiderBrain. */
+  readonly riderBrain?: RiderBrain;
 }
 
 export async function createApi(deps: ApiDeps): Promise<NestFastifyApplication> {
@@ -108,6 +112,7 @@ export async function createApi(deps: ApiDeps): Promise<NestFastifyApplication> 
   const catalogue = new CatalogueService(deps.db, deps.registry);
   const admin = new AdminService(deps.db, deps.registry, now);
   const merchantCopilot = new MerchantCopilotService(deps.db, deps.registry, deps.merchantBrain ?? new SandboxMerchantBrain(), catalogue, admin);
+  const riderCopilot = new RiderCopilotService(deps.registry, deps.riderBrain ?? new SandboxRiderBrain(), dispatch, now);
   const integrations = new IntegrationsService(deps.db, deps.registry);
   const subscriptions = new SubscriptionService(deps.db, deps.registry, commerce, now);
   const pos = new PosService(deps.db, deps.registry, commerce, now);
@@ -155,6 +160,7 @@ export async function createApi(deps: ApiDeps): Promise<NestFastifyApplication> 
           { provide: TOKENS.assistant, useValue: assistant },
           { provide: TOKENS.growth, useValue: growth },
           { provide: TOKENS.merchantCopilot, useValue: merchantCopilot },
+          { provide: TOKENS.riderCopilot, useValue: riderCopilot },
           { provide: TOKENS.integrations, useValue: integrations },
           { provide: TOKENS.subscriptions, useValue: subscriptions },
           { provide: TOKENS.pos, useValue: pos },

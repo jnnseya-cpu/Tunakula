@@ -70,6 +70,7 @@ export function RiderApp() {
   const [showEarn, setShowEarn] = useState(false);
   const [showShifts, setShowShifts] = useState(false);
   const [showBusy, setShowBusy] = useState(false);
+  const [showCoach, setShowCoach] = useState(false);
   const watch = useRef<number | null>(null);
   const lastSent = useRef<{ at: number; pos: Pos } | null>(null);
   const lastOffer = useRef<string | null>(null);
@@ -200,9 +201,11 @@ export function RiderApp() {
         <div><small>Today</small><b>{money(jobs.today.earnings)}</b><span>{jobs.today.deliveries} deliver{jobs.today.deliveries === 1 ? "y" : "ies"}</span></div>
         <div><small>Cash in hand</small><b>{money(jobs.cash_in_hand)}</b><span>hand in at the hub</span></div>
       </div>
+      <button type="button" className="r-earn-link r-coach-link" onClick={() => setShowCoach(true)}>Your copilot — tips for right now →</button>
       <button type="button" className="r-earn-link" onClick={() => setShowEarn(true)}>Earnings &amp; instant cash-out →</button>
       <button type="button" className="r-earn-link" onClick={() => setShowShifts(true)}>My shifts — book when you&apos;ll ride →</button>
       <button type="button" className="r-earn-link" onClick={() => setShowBusy(true)}>Busy areas — where the jobs are →</button>
+      {showCoach ? <CoachPanel onClose={() => setShowCoach(false)} /> : null}
       {showEarn ? <EarningsPanel onClose={() => setShowEarn(false)} /> : null}
       {showShifts ? <ShiftsPanel onClose={() => setShowShifts(false)} /> : null}
       {showBusy ? <BusyAreasPanel pos={pos} onClose={() => setShowBusy(false)} /> : null}
@@ -346,6 +349,49 @@ interface Earnings {
 }
 interface Quest { id: string; name: string; target: number; progress: number; bonus: MoneyWire; ends_at: string; claimed: boolean; claimable: boolean }
 const TIER_COLOR: Record<string, string> = { BRONZE: "#a9713b", SILVER: "#8a93a6", GOLD: "#d4a017", PLATINUM: "#5a7d9a" };
+
+interface Coach {
+  tips: { id: string; category: "ZONES" | "EARNINGS" | "PAYOUT"; tone: "ACTION" | "INFO" | "CHEER"; title: string; detail: string; metric?: string }[];
+  summary: { today: MoneyWire; week: MoneyWire; jobs_today: number; jobs_week: number; available: MoneyWire; tier: { tier: string } };
+}
+
+function CoachPanel({ onClose }: { onClose: () => void }) {
+  const [c, setC] = useState<Coach | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    const load = () => api<Coach>("/v1/rider/coach?lang=en").then(setC).catch((e: ApiError) => setError(e.message));
+    void load();
+    const t = setInterval(load, 30_000);
+    return () => clearInterval(t);
+  }, []);
+  return (
+    <div className="r-sheet" role="dialog" aria-modal="true" aria-label="Your copilot" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="r-sheet-card">
+        <div className="r-sheet-head"><h2>Your copilot</h2><button type="button" className="picker-x" onClick={onClose} aria-label="Close">✕</button></div>
+        <p className="muted">Tips from your own earnings and live demand. Advice only — you ride when and where you choose.</p>
+        {error ? <p className="r-error" role="alert">{error}</p> : null}
+        {c ? (
+          <>
+            <div className="r-coach-summary">
+              <div><small>Today</small><b>{money(c.summary.today)}</b><span>{c.summary.jobs_today} job{c.summary.jobs_today === 1 ? "" : "s"}</span></div>
+              <div><small>This week</small><b>{money(c.summary.week)}</b><span>{c.summary.jobs_week} job{c.summary.jobs_week === 1 ? "" : "s"}</span></div>
+              <div><small>Ready to cash out</small><b>{money(c.summary.available)}</b><span>{c.summary.tier.tier.toLowerCase()} rider</span></div>
+            </div>
+            <div className="r-coach-list">
+              {c.tips.length === 0 ? <p className="muted">All quiet — nothing to flag right now. Ride safe.</p> : c.tips.map((t) => (
+                <div key={t.id} className={`r-coach-card tone-${t.tone.toLowerCase()} cat-${t.category.toLowerCase()}`}>
+                  <div className="r-coach-top"><span className="r-coach-cat">{t.category === "ZONES" ? "Where to go" : t.category === "EARNINGS" ? "Your earnings" : "Your pay"}</span>{t.metric ? <span className="r-coach-metric">{t.metric}</span> : null}</div>
+                  <h3>{t.title}</h3>
+                  <p>{t.detail}</p>
+                </div>
+              ))}
+            </div>
+          </>
+        ) : !error ? <p className="muted">…</p> : null}
+      </div>
+    </div>
+  );
+}
 
 function EarningsPanel({ onClose }: { onClose: () => void }) {
   const [e, setE] = useState<Earnings | null>(null);
