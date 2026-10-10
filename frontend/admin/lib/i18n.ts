@@ -27,6 +27,7 @@ const T = {
   kiosk: { fr: "Borne self-service", en: "Self-service kiosk" },
   chefs: { fr: "Chefs (validation)", en: "Chef review" },
   integrations: { fr: "Intégrations / API", en: "Integrations / API" },
+  growth: { fr: "Croissance", en: "Growth" },
   zones: { fr: "Zones de livraison", en: "Delivery zones" },
   promotions: { fr: "Promotions", en: "Promotions" },
   membership: { fr: "Abonnement Plus", en: "Plus membership" },

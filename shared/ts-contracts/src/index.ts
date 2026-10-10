@@ -10,3 +10,4 @@ export {
 
 export * from "./comms.ts";
 export * from "./assistant.ts";
+export * from "./growth.ts";

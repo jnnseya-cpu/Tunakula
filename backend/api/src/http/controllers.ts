@@ -27,6 +27,7 @@ import type { BannerService } from "../app/banners.ts";
 import type { SiteContentService } from "../app/site-content.ts";
 import type { ChefService } from "../app/chef.ts";
 import type { AssistantService } from "../app/assistant.ts";
+import type { GrowthService } from "../app/growth.ts";
 import type { IntegrationsService } from "../app/integrations.ts";
 import type { SubscriptionService } from "../app/subscriptions.ts";
 import type { PosService } from "../app/pos.ts";
@@ -1617,6 +1618,41 @@ export class SupportController {
   @HttpCode(200)
   async reply(@Req() req: FastifyRequest, @Param("id") id: string, @Body() body: { text?: string; resolve?: boolean }) {
     return this.assistant.respond(country(req), await this.#p(req), id, body?.text ?? "", body?.resolve ?? false);
+  }
+}
+
+/** Growth agent: a customer's "for you" picks, and the ops re-engagement console. */
+@Controller("v1")
+export class GrowthController {
+  constructor(
+    @Inject(TOKENS.db) private readonly db: Db,
+    @Inject(TOKENS.tokens) private readonly tokens: TokenService,
+    @Inject(TOKENS.growth) private readonly growth: GrowthService,
+  ) {}
+
+  #p(req: FastifyRequest) {
+    return this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+  }
+
+  @Get("me/recommendations")
+  async recommendations(@Req() req: FastifyRequest, @Query("lang") lang?: string) {
+    return this.growth.recommendations(country(req), await this.#p(req), lang ?? "fr");
+  }
+
+  @Get("me/standing")
+  async standing(@Req() req: FastifyRequest) {
+    return this.growth.myStanding(country(req), await this.#p(req));
+  }
+
+  @Get("ops/growth/audience")
+  async audience(@Req() req: FastifyRequest, @Query("segment") segment?: string) {
+    return this.growth.audience(country(req), await this.#p(req), segment);
+  }
+
+  @Post("ops/growth/win-back")
+  @HttpCode(200)
+  async winBack(@Req() req: FastifyRequest, @Body() body: { customer_id?: string; credit_minor?: string; currency?: string }) {
+    return this.growth.winBack(country(req), await this.#p(req), { customerId: body?.customer_id ?? "", ...(body?.credit_minor ? { creditMinor: body.credit_minor } : {}), ...(body?.currency ? { currency: body.currency } : {}) });
   }
 }
 

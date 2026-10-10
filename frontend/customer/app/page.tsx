@@ -6,6 +6,7 @@ import { EtaChip, StoreSorter } from "../components/location";
 import { PayScreen, TrackingScreen } from "../components/screens";
 import { JoinCard } from "../components/merchant";
 import { LiveMerchantGrid } from "../components/live";
+import { Recommendations } from "../components/recommendations";
 import { FoodImage, PlateArt, type Recipe } from "../components/plate";
 import { fc, favourites, MERCHANTS } from "../lib/catalogue";
 import fees from "@tunakula/ts-contracts/published/fee-comparison.json";
@@ -134,6 +135,8 @@ export default function Home() {
           </div>
         </div>
       </section>
+
+      <Recommendations />
 
       <section className="tight">
         <div className="wrap">

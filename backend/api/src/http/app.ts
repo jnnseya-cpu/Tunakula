@@ -27,7 +27,9 @@ import { SiteContentService } from "../app/site-content.ts";
 import { ChefService } from "../app/chef.ts";
 import { AssistantService } from "../app/assistant.ts";
 import { SandboxBrain } from "../modules/assistant/sandbox-brain.ts";
-import type { AssistantBrain } from "@tunakula/ts-contracts";
+import { GrowthService } from "../app/growth.ts";
+import { SandboxGrowthBrain } from "../modules/growth/sandbox-growth-brain.ts";
+import type { AssistantBrain, GrowthBrain } from "@tunakula/ts-contracts";
 import { IntegrationsService } from "../app/integrations.ts";
 import { SubscriptionService } from "../app/subscriptions.ts";
 import { PosService } from "../app/pos.ts";
@@ -45,7 +47,7 @@ import type { Db } from "../db/db.ts";
 import type { CountryConfigRegistry } from "../modules/config/config-registry.ts";
 import { PaymentRouter } from "../modules/payments/payment-router.ts";
 import { IdempotencyInterceptor, ProblemFilter, TOKENS } from "./common.ts";
-import { AdminConfigController, AdminController, AuthController, AddressController, FavouriteController, CommsController, CouponController, GroupController, KitchenController, MeController, MembershipController, NotificationsController, OnboardingController, OpsController, RefundController, ReferralController, LoyaltyController, CashbackController, ChatController, BannerController, SiteContentController, ChefController, SupportController, IntegrationsController, SubscriptionController, PosController, KioskController, PushController, ReservationController, ReviewController, RiderController, WalletController, MerchantOnboardingController, CatalogueController, OrdersController, PaymentsController, PlatformController, WebhooksController } from "./controllers.ts";
+import { AdminConfigController, AdminController, AuthController, AddressController, FavouriteController, CommsController, CouponController, GroupController, KitchenController, MeController, MembershipController, NotificationsController, OnboardingController, OpsController, RefundController, ReferralController, LoyaltyController, CashbackController, ChatController, BannerController, SiteContentController, ChefController, SupportController, GrowthController, IntegrationsController, SubscriptionController, PosController, KioskController, PushController, ReservationController, ReviewController, RiderController, WalletController, MerchantOnboardingController, CatalogueController, OrdersController, PaymentsController, PlatformController, WebhooksController } from "./controllers.ts";
 
 export interface ApiDeps {
   readonly db: Db;
@@ -64,6 +66,8 @@ export interface ApiDeps {
   readonly vapid?: VapidConfig;
   /** The AI support assistant brain. Defaults to the in-house deterministic SandboxBrain (no external call). */
   readonly assistantBrain?: AssistantBrain;
+  /** The growth agent brain. Defaults to the in-house deterministic SandboxGrowthBrain. */
+  readonly growthBrain?: GrowthBrain;
 }
 
 export async function createApi(deps: ApiDeps): Promise<NestFastifyApplication> {
@@ -96,6 +100,7 @@ export async function createApi(deps: ApiDeps): Promise<NestFastifyApplication> 
   const siteContent = new SiteContentService(deps.db, deps.registry);
   const chef = new ChefService(deps.db, deps.registry, now);
   const assistant = new AssistantService(deps.db, deps.registry, deps.assistantBrain ?? new SandboxBrain(), now);
+  const growth = new GrowthService(deps.db, deps.registry, deps.growthBrain ?? new SandboxGrowthBrain(), wallet, comms, now);
   const integrations = new IntegrationsService(deps.db, deps.registry);
   const subscriptions = new SubscriptionService(deps.db, deps.registry, commerce, now);
   const pos = new PosService(deps.db, deps.registry, commerce, now);
@@ -110,7 +115,7 @@ export async function createApi(deps: ApiDeps): Promise<NestFastifyApplication> 
     static register(): DynamicModule {
       return {
         module: ApiModule,
-        controllers: [AddressController, FavouriteController, AdminConfigController, AdminController, KitchenController, OpsController, OnboardingController, RiderController, MeController, MembershipController, GroupController, CouponController, ReviewController, ReservationController, RefundController, WalletController, ReferralController, LoyaltyController, CashbackController, ChatController, BannerController, SiteContentController, ChefController, SupportController, IntegrationsController, SubscriptionController, PosController, KioskController, PushController, MerchantOnboardingController, PlatformController, AuthController, CatalogueController, OrdersController, PaymentsController, WebhooksController, NotificationsController, CommsController],
+        controllers: [AddressController, FavouriteController, AdminConfigController, AdminController, KitchenController, OpsController, OnboardingController, RiderController, MeController, MembershipController, GroupController, CouponController, ReviewController, ReservationController, RefundController, WalletController, ReferralController, LoyaltyController, CashbackController, ChatController, BannerController, SiteContentController, ChefController, SupportController, GrowthController, IntegrationsController, SubscriptionController, PosController, KioskController, PushController, MerchantOnboardingController, PlatformController, AuthController, CatalogueController, OrdersController, PaymentsController, WebhooksController, NotificationsController, CommsController],
         providers: [
           { provide: TOKENS.db, useValue: deps.db },
           { provide: TOKENS.registry, useValue: deps.registry },
@@ -141,6 +146,7 @@ export async function createApi(deps: ApiDeps): Promise<NestFastifyApplication> 
           { provide: TOKENS.siteContent, useValue: siteContent },
           { provide: TOKENS.chef, useValue: chef },
           { provide: TOKENS.assistant, useValue: assistant },
+          { provide: TOKENS.growth, useValue: growth },
           { provide: TOKENS.integrations, useValue: integrations },
           { provide: TOKENS.subscriptions, useValue: subscriptions },
           { provide: TOKENS.pos, useValue: pos },

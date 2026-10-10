@@ -250,6 +250,17 @@ section.tight { padding: 72px 0; }
 .contact-card p { color: var(--ink-2); line-height: 1.5; margin: 0; }
 @media (max-width: 720px) { .contact-grid { grid-template-columns: 1fr; } }
 
+/* "For you" recommendations (growth agent) */
+.rec-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 16px; }
+.rec-card { display: flex; flex-direction: column; gap: 6px; border: 1px solid var(--rule); border-radius: 16px; padding: 16px; background: var(--card, #fff); color: var(--ink); min-height: 128px; }
+.rec-card:hover { border-color: var(--navy); box-shadow: 0 14px 30px rgba(20, 20, 40, 0.08); }
+.rec-card h3 { margin: 2px 0 0; font-size: 16px; line-height: 1.25; }
+.rec-reason { align-self: flex-start; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; padding: 4px 8px; border-radius: 999px; }
+.rec-reason.r-order_again { color: #1f6d3a; background: #e3f4e8; }
+.rec-reason.r-kitchen_pick { color: #7a5600; background: #fcefc9; }
+.rec-reason.r-popular { color: #1f4f7a; background: #e2eef8; }
+.rec-price { margin-top: auto; }
+
 /* AI support assistant (/help) */
 .asst-wrap { max-width: 760px; }
 .asst { display: flex; flex-direction: column; gap: 16px; }

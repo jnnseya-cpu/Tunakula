@@ -37,6 +37,7 @@ export const TOKENS = {
   siteContent: "SITE_CONTENT_SERVICE",
   chef: "CHEF_SERVICE",
   assistant: "ASSISTANT_SERVICE",
+  growth: "GROWTH_SERVICE",
   integrations: "INTEGRATIONS_SERVICE",
   subscriptions: "SUBSCRIPTION_SERVICE",
   pos: "POS_SERVICE",

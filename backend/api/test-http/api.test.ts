@@ -3902,3 +3902,77 @@ describe("AI customer-service assistant (grounded, escalates to a human)", () =>
     assert.ok(r.body.reply.action.type === "SHOW_ORDER" || r.body.reply.escalated, JSON.stringify(r.body.reply));
   });
 });
+
+describe("growth agent (recommendations + win-back)", () => {
+  let gcust: { token: string; userId: string };
+
+  const placePaid = async (token: string) => {
+    const q = await call("POST", "/v1/carts/quote", { country: "CD", body: cart() });
+    const r = await call("POST", "/v1/orders", { token, country: "CD", body: { ...cart(), payment_mode: "PREPAID", expected_total: q.body.total } });
+    assert.equal(r.status, 201, JSON.stringify(r.body));
+    const pay = await call("POST", "/v1/payments/intents", { token, country: "CD", body: { order_id: r.body.order_id, method_type: "MOBILE_MONEY_PUSH", payer: { msisdn: "+243810000001" } } });
+    assert.equal(pay.body.status, "SUCCEEDED", JSON.stringify(pay.body));
+    return r.body.order_id as string;
+  };
+
+  test("recommends the customer's own dish back to them, grounded in a real order", async () => {
+    gcust = await signIn("+243810000800");
+    await placePaid(gcust.token);
+    await placePaid(gcust.token); // two orders → an ACTIVE, repeat customer
+    const r = await call("GET", "/v1/me/recommendations", { token: gcust.token, country: "CD" });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.ok(Array.isArray(r.body.recommendations));
+    const again = r.body.recommendations.find((x: { reason: string }) => x.reason === "ORDER_AGAIN");
+    assert.ok(again, "the item they just ordered is offered to order again");
+    assert.ok(again.price?.amount_minor, "each pick carries a real catalogue price");
+    assert.equal(again.rank, 1, "order-again outranks popular/kitchen picks");
+  });
+
+  test("a fresh customer reads as ACTIVE and is not a win-back target", async () => {
+    const s = await call("GET", "/v1/me/standing", { token: gcust.token, country: "CD" });
+    assert.equal(s.status, 200);
+    assert.equal(s.body.segment, "ACTIVE");
+    // Win-back refuses an active customer.
+    assert.equal((await call("POST", "/v1/ops/growth/win-back", { token: admin.token, country: "CD", body: { customer_id: gcust.userId } })).body.code, "NOT_RE_ENGAGEABLE");
+  });
+
+  test("ops see lifecycle segments; a plain customer cannot", async () => {
+    assert.equal((await call("GET", "/v1/ops/growth/audience", { token: gcust.token, country: "CD" })).status, 403);
+    const a = await call("GET", "/v1/ops/growth/audience", { token: admin.token, country: "CD" });
+    assert.equal(a.status, 200, JSON.stringify(a.body));
+    assert.ok(a.body.counts.ACTIVE >= 1, "the fresh customer is counted active");
+    assert.ok(Array.isArray(a.body.customers));
+  });
+
+  test("a lapsed customer can be won back once, with a capped goodwill wallet credit, idempotent per month", async () => {
+    // Backdate their order so they read as LAPSED (no order in 60 days).
+    await inspect("CD", "UPDATE ordering.order_view SET created_at = now() - interval '60 days' WHERE customer_id = $1", [gcust.userId]);
+
+    assert.equal((await call("GET", "/v1/me/standing", { token: gcust.token, country: "CD" })).body.segment, "LAPSED");
+    // A plain customer cannot run a win-back.
+    assert.equal((await call("POST", "/v1/ops/growth/win-back", { token: gcust.token, country: "CD", body: { customer_id: gcust.userId } })).status, 403);
+
+    const w = await call("POST", "/v1/ops/growth/win-back", { token: admin.token, country: "CD", body: { customer_id: gcust.userId, credit_minor: "500", currency: "USD" } });
+    assert.equal(w.status, 200, JSON.stringify(w.body));
+    assert.equal(w.body.segment, "LAPSED");
+    assert.equal(w.body.credited.amount_minor, "500");
+
+    // The credit really landed in the wallet, funded by promotion_expense.
+    const tx = await inspect("CD", "SELECT amount_minor::text AS amount FROM wallet.transaction WHERE user_id = $1 AND kind = 'WINBACK'", [gcust.userId]);
+    assert.equal(tx.length, 1);
+
+    // A second win-back this month is refused (idempotent / no double-crediting).
+    assert.equal((await call("POST", "/v1/ops/growth/win-back", { token: admin.token, country: "CD", body: { customer_id: gcust.userId, credit_minor: "500", currency: "USD" } })).body.code, "ALREADY_NUDGED");
+    const tx2 = await inspect("CD", "SELECT id FROM wallet.transaction WHERE user_id = $1 AND kind = 'WINBACK'", [gcust.userId]);
+    assert.equal(tx2.length, 1, "no second credit");
+  });
+
+  test("a win-back over the cap is clamped", async () => {
+    const other = await signIn("+243810000801");
+    await placePaid(other.token);
+    await inspect("CD", "UPDATE ordering.order_view SET created_at = now() - interval '120 days' WHERE customer_id = $1", [other.userId]);
+    const w = await call("POST", "/v1/ops/growth/win-back", { token: admin.token, country: "CD", body: { customer_id: other.userId, credit_minor: "999999", currency: "USD" } });
+    assert.equal(w.status, 200, JSON.stringify(w.body));
+    assert.equal(w.body.credited.amount_minor, "10000", "clamped to the cap");
+  });
+});
