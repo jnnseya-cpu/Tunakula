@@ -16,7 +16,7 @@ import type { NotificationService } from "./comms.ts";
 import type { WalletService } from "./wallet.ts";
 import { authorize, type Principal } from "../modules/identity/policy.ts";
 import type { Action } from "../modules/identity/roles.ts";
-import { audit } from "../persistence/identity.ts";
+import { audit, langOf } from "../persistence/identity.ts";
 import { badRequest, forbidden } from "./errors.ts";
 
 /** States that count as a real order for history/popularity (exclude drafts, failures, cancellations). */
@@ -171,13 +171,14 @@ export class GrowthService {
 
   /** Resolve the grounded facts a win-back message is written from: the customer's name, a real favourite dish,
    *  and how long they've been away. The credit is set by the service; the writer only phrases it. */
-  async #winBackContext(sql: Sql, customerId: string, credit: Money | null, lang: "fr" | "en" = "fr"): Promise<WinBackContext> {
-    const u = (await sql.query<{ display_name: string; days: number | null } & Record<string, unknown>>(
-      `SELECT u.display_name,
+  async #winBackContext(sql: Sql, customerId: string, credit: Money | null): Promise<WinBackContext> {
+    const u = (await sql.query<{ display_name: string; days: number | null; locale: string | null } & Record<string, unknown>>(
+      `SELECT u.display_name, u.locale,
               (SELECT EXTRACT(DAY FROM now() - MAX(o.created_at))::int FROM ordering.order_view o WHERE o.customer_id = u.id AND o.state IN ${COUNTED_STATES}) AS days
          FROM identity.app_user u WHERE u.id = $1`,
       [customerId],
     ))[0];
+    const lang = langOf(u?.locale);
     const dishes = await sql.query<{ nm: string } & Record<string, unknown>>(
       `SELECT COALESCE(m.names->>$2, m.names->>'fr', m.names->>'en') AS nm, SUM((line->>'quantity')::int) AS q
          FROM ordering.order_view o

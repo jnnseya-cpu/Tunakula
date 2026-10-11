@@ -91,10 +91,11 @@ export class AuthController {
 
   @Post("verify")
   @HttpCode(200)
-  async verify(@Body() body: { phone?: string; code?: string; display_name?: string; home_country?: string }) {
+  async verify(@Body() body: { phone?: string; code?: string; display_name?: string; home_country?: string; locale?: string }) {
     const r = await this.auth.verifyCode(body?.phone ?? "", body?.code ?? "", {
       ...(body?.display_name ? { displayName: body.display_name } : {}),
       ...(body?.home_country ? { homeCountry: body.home_country } : {}),
+      ...(body?.locale ? { locale: body.locale } : {}),
     });
     return { token: r.token, expires_at: r.expiresAt.toISOString(), user_id: r.userId, new_account: r.created };
   }
@@ -412,6 +413,7 @@ export class MeController {
     @Inject(TOKENS.db) private readonly db: Db,
     @Inject(TOKENS.tokens) private readonly tokens: TokenService,
     @Inject(TOKENS.admin) private readonly admin: AdminService,
+    @Inject(TOKENS.auth) private readonly auth: AuthService,
   ) {}
 
   @Get()
@@ -419,6 +421,13 @@ export class MeController {
     const principal = await this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
     const c = req.headers["x-country"];
     return this.admin.me(principal, typeof c === "string" && /^[A-Z]{2}$/.test(c) ? c : undefined);
+  }
+
+  /** Remember the language the signed-in person uses the app in, so the AI agents write to them in it. */
+  @Post("locale")
+  @HttpCode(200)
+  async setLocale(@Req() req: FastifyRequest, @Body() body: { locale?: string }) {
+    return this.auth.setLocale(userId(req, this.tokens), body?.locale ?? "");
   }
 }
 
@@ -1148,7 +1157,8 @@ export class ReviewController {
   @Post("admin/reviews/:id/draft-reply")
   @HttpCode(200)
   async draftReply(@Req() req: FastifyRequest, @Param("id") id: string, @Body() body: { lang?: string }) {
-    return this.reviews.draftReply(country(req), await this.#p(req), id, body?.lang === "en" ? "en" : "fr");
+    // No explicit lang → the service writes in the reviewer's own language.
+    return this.reviews.draftReply(country(req), await this.#p(req), id, body?.lang === "en" ? "en" : body?.lang === "fr" ? "fr" : undefined);
   }
 }
 

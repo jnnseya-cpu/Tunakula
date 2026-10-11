@@ -201,7 +201,8 @@ function Reviews({ branchId, country, lang, L }: { branchId: string; country: st
   const draftWithAi = async (id: string) => {
     setDrafting(id); setNotice(null);
     try {
-      const r = await api<{ draft: string; source: string }>(`/v1/admin/reviews/${id}/draft-reply`, { method: "POST", country, body: { lang } });
+      // No lang sent → the reply is drafted in the reviewer's own language.
+      const r = await api<{ draft: string; source: string }>(`/v1/admin/reviews/${id}/draft-reply`, { method: "POST", country, body: {} });
       setDrafts((d) => ({ ...d, [id]: r.draft })); setBadges((b) => ({ ...b, [id]: r.source }));
     } catch (e) { setNotice((e as Error).message); } finally { setDrafting(""); }
   };

@@ -1870,6 +1870,14 @@ describe("reviews and ratings", () => {
     assert.equal((await call("POST", "/v1/admin/reviews/00000000-0000-7000-8000-000000000000/draft-reply", { token: restaurantOwner.token, country: "CD", body: {} })).status, 404);
   });
 
+  test("with no explicit language, a review reply is drafted in the reviewer's own language", async () => {
+    // The reviewer remembers English as their app language.
+    assert.equal((await call("POST", "/v1/me/locale", { token: customer.token, country: "CD", body: { locale: "en" } })).status, 200);
+    const d = await call("POST", `/v1/admin/reviews/${reviewId}/draft-reply`, { token: restaurantOwner.token, country: "CD", body: {} });
+    assert.equal(d.status, 200, JSON.stringify(d.body));
+    assert.match(d.body.draft, /thank you/i, "English reviewer → English reply, no explicit lang needed");
+  });
+
   test("an undelivered order cannot be reviewed", async () => {
     const q = await call("POST", "/v1/carts/quote", { token: customer.token, country: "CD", body: cart() });
     const placed = await call("POST", "/v1/orders", { token: customer.token, country: "CD", body: { ...cart(), payment_mode: "PREPAID", expected_total: q.body.total } });
@@ -3994,6 +4002,18 @@ describe("growth agent (recommendations + win-back)", () => {
     const w = await call("POST", "/v1/ops/growth/win-back", { token: admin.token, country: "CD", body: { customer_id: other.userId, credit_minor: "999999", currency: "USD" } });
     assert.equal(w.status, 200, JSON.stringify(w.body));
     assert.equal(w.body.credited.amount_minor, "10000", "clamped to the cap");
+  });
+
+  test("the win-back message is written in the customer's own language", async () => {
+    const en = await signIn("+243810000830");
+    // Remember English as this customer's app language.
+    assert.equal((await call("POST", "/v1/me/locale", { token: en.token, country: "CD", body: { locale: "en" } })).status, 200);
+    await placePaid(en.token);
+    await inspect("CD", "UPDATE ordering.order_view SET created_at = now() - interval '60 days' WHERE customer_id = $1", [en.userId]);
+    const w = await call("POST", "/v1/ops/growth/win-back", { token: admin.token, country: "CD", body: { customer_id: en.userId, credit_minor: "300", currency: "USD" } });
+    assert.equal(w.status, 200, JSON.stringify(w.body));
+    assert.match(w.body.message, /missed you/i, "an English-locale customer gets an English win-back");
+    assert.match(w.body.message, /3\.00 USD credit/, "and the real credit, stated in English");
   });
 });
 

@@ -1,7 +1,7 @@
 /** Phone OTP sign-in (§9.5, IDN-001): one global account across countries. */
 import { createHash, randomInt, timingSafeEqual } from "node:crypto";
 import type { Db } from "../db/db.ts";
-import { createUser, userByPhone } from "../persistence/identity.ts";
+import { createUser, setUserLocale, userByPhone } from "../persistence/identity.ts";
 import { badRequest, ApiError } from "./errors.ts";
 import type { TokenService } from "./tokens.ts";
 
@@ -58,7 +58,7 @@ export class AuthService {
     return { expiresAt };
   }
 
-  async verifyCode(phone: string, code: string, profile: { displayName?: string; homeCountry?: string } = {}): Promise<{ token: string; expiresAt: Date; userId: string; created: boolean }> {
+  async verifyCode(phone: string, code: string, profile: { displayName?: string; homeCountry?: string; locale?: string } = {}): Promise<{ token: string; expiresAt: Date; userId: string; created: boolean }> {
     if (!PHONE.test(phone) || !/^\d{6}$/.test(code)) throw badRequest("CODE_INVALID", "Enter the 6-digit code");
     const now = this.now();
     // A wrong code must still count: the attempt is committed, then the error is raised outside the transaction.
@@ -77,12 +77,21 @@ export class AuthService {
       await sql.query("UPDATE identity.otp_challenge SET consumed_at = $2 WHERE id = $1", [challenge.id, now]);
       let user = await userByPhone(sql, phone);
       const created = !user;
-      if (!user) user = await createUser(sql, { phone, displayName: profile.displayName ?? "Tunakula customer", ...(profile.homeCountry ? { homeCountry: profile.homeCountry } : {}) });
+      if (!user) user = await createUser(sql, { phone, displayName: profile.displayName ?? "Tunakula customer", ...(profile.homeCountry ? { homeCountry: profile.homeCountry } : {}), ...(profile.locale ? { locale: profile.locale } : {}) });
+      // Returning users: refresh the remembered language from this sign-in (they may have switched it).
+      else if (profile.locale) await setUserLocale(sql, user.id, profile.locale);
       if (user.status === "DELETED") throw new ApiError(403, "ACCOUNT_DELETED", "This account has been deleted");
       const { token, expiresAt } = this.tokens.issue(user.id);
       return { token, expiresAt, userId: user.id, created };
     });
     if (!result) throw badRequest("CODE_WRONG", "That code is not right");
     return result;
+  }
+
+  /** Remember the signed-in person's app language, so the AI agents write to them in it. */
+  async setLocale(userId: string, locale: string): Promise<{ locale: string | null }> {
+    const value = String(locale ?? "").trim().slice(0, 8) || null;
+    await this.db.tx({}, (sql) => setUserLocale(sql, userId, value));
+    return { locale: value };
   }
 }
