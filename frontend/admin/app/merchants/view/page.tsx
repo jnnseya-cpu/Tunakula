@@ -189,12 +189,21 @@ interface Review { id: string; restaurant_rating: number; rider_rating: number |
 function Reviews({ branchId, country, lang, L }: { branchId: string; country: string; lang: string; L: (fr: string, en: string) => string }) {
   const [rows, setRows] = useState<Review[] | null>(null);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [badges, setBadges] = useState<Record<string, string>>({});
+  const [drafting, setDrafting] = useState<string>("");
   const [notice, setNotice] = useState<string | null>(null);
   const load = () => api<{ reviews: Review[] }>(`/v1/admin/branches/${branchId}/reviews`, { country }).then((r) => setRows(r.reviews)).catch(() => setRows([]));
   useEffect(() => { void load(); }, [branchId, country]); // eslint-disable-line react-hooks/exhaustive-deps
   const reply = async (id: string) => {
     try { await api(`/v1/admin/reviews/${id}/reply`, { method: "POST", country, body: { reply: drafts[id] ?? "" } }); setNotice(L("Réponse publiée.", "Reply posted.")); void load(); }
     catch (e) { setNotice((e as Error).message); }
+  };
+  const draftWithAi = async (id: string) => {
+    setDrafting(id); setNotice(null);
+    try {
+      const r = await api<{ draft: string; source: string }>(`/v1/admin/reviews/${id}/draft-reply`, { method: "POST", country, body: { lang } });
+      setDrafts((d) => ({ ...d, [id]: r.draft })); setBadges((b) => ({ ...b, [id]: r.source }));
+    } catch (e) { setNotice((e as Error).message); } finally { setDrafting(""); }
   };
   const stars = (n: number) => "★".repeat(n) + "☆".repeat(5 - n);
   return (
@@ -208,8 +217,10 @@ function Reviews({ branchId, country, lang, L }: { branchId: string; country: st
           {r.comment ? <p className="review-comment">{r.comment}</p> : null}
           {r.reply ? <p className="review-reply"><b>{L("Votre réponse :", "Your reply:")}</b> {r.reply}</p> : (
             <div className="review-reply-form">
-              <input className="input" placeholder={L("Répondre…", "Reply…")} value={drafts[r.id] ?? ""} onChange={(e) => setDrafts({ ...drafts, [r.id]: e.target.value })} />
+              <input className="input" placeholder={L("Répondre…", "Reply…")} value={drafts[r.id] ?? ""} onChange={(e) => { setDrafts({ ...drafts, [r.id]: e.target.value }); }} />
+              <button type="button" className="btn ghost" disabled={!!drafting} onClick={() => draftWithAi(r.id)}>{drafting === r.id ? "…" : L("✨ Rédiger (IA)", "✨ Draft with AI")}</button>
               <button type="button" className="btn" disabled={!(drafts[r.id] ?? "").trim()} onClick={() => reply(r.id)}>{L("Répondre", "Reply")}</button>
+              {badges[r.id] ? <span className={`pill ${badges[r.id] === "ai" ? "good" : ""}`}>{badges[r.id] === "ai" ? L("IA", "AI") : L("Modèle", "Template")}</span> : null}
             </div>
           )}
         </div>

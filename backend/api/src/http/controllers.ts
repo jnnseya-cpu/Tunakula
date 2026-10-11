@@ -1144,6 +1144,12 @@ export class ReviewController {
   async reply(@Req() req: FastifyRequest, @Param("id") id: string, @Body() body: { reply?: string }) {
     return this.reviews.reply(country(req), await this.#p(req), id, body?.reply ?? "");
   }
+
+  @Post("admin/reviews/:id/draft-reply")
+  @HttpCode(200)
+  async draftReply(@Req() req: FastifyRequest, @Param("id") id: string, @Body() body: { lang?: string }) {
+    return this.reviews.draftReply(country(req), await this.#p(req), id, body?.lang === "en" ? "en" : "fr");
+  }
 }
 
 /** Table bookings (dine-in reservations). Customers book a table for 1+ people; restaurants confirm, seat and complete. */

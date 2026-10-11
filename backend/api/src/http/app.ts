@@ -30,13 +30,14 @@ import { SandboxBrain } from "../modules/assistant/sandbox-brain.ts";
 import { GrowthService } from "../app/growth.ts";
 import { SandboxGrowthBrain } from "../modules/growth/sandbox-growth-brain.ts";
 import { TemplateWinBackWriter } from "../modules/growth/template-win-back-writer.ts";
+import { TemplateReviewReplyWriter } from "../modules/merchant/template-review-reply-writer.ts";
 import { MerchantCopilotService } from "../app/merchant-copilot.ts";
 import { SandboxMerchantBrain } from "../modules/merchant/sandbox-merchant-brain.ts";
 import { MenuWriterService } from "../app/menu-writer.ts";
 import { TemplateMenuWriter } from "../modules/merchant/template-menu-writer.ts";
 import { RiderCopilotService } from "../app/rider-copilot.ts";
 import { SandboxRiderBrain } from "../modules/rider/sandbox-rider-brain.ts";
-import type { AssistantBrain, GrowthBrain, MerchantBrain, RiderBrain, MenuWriterBrain, WinBackWriter } from "@tunakula/ts-contracts";
+import type { AssistantBrain, GrowthBrain, MerchantBrain, RiderBrain, MenuWriterBrain, WinBackWriter, ReviewReplyWriter } from "@tunakula/ts-contracts";
 import { IntegrationsService } from "../app/integrations.ts";
 import { SubscriptionService } from "../app/subscriptions.ts";
 import { PosService } from "../app/pos.ts";
@@ -77,6 +78,8 @@ export interface ApiDeps {
   readonly growthBrain?: GrowthBrain;
   /** The win-back copywriter. Defaults to the offline TemplateWinBackWriter; a hosted model personalises the copy. */
   readonly winBackWriter?: WinBackWriter;
+  /** The review-reply drafter. Defaults to the offline TemplateReviewReplyWriter; a hosted model personalises it. */
+  readonly reviewReplyWriter?: ReviewReplyWriter;
   /** The merchant copilot brain. Defaults to the in-house deterministic SandboxMerchantBrain. */
   readonly merchantBrain?: MerchantBrain;
   /** The rider copilot brain. Defaults to the in-house deterministic SandboxRiderBrain. */
@@ -95,7 +98,7 @@ export async function createApi(deps: ApiDeps): Promise<NestFastifyApplication> 
   commerce.useMembership(membership);
   const coupons = new CouponService(deps.db, deps.registry, now);
   commerce.useCoupons(coupons);
-  const reviews = new ReviewService(deps.db, deps.registry, now);
+  const reviews = new ReviewService(deps.db, deps.registry, deps.reviewReplyWriter ?? new TemplateReviewReplyWriter(), now);
   const addresses = new AddressService(deps.db);
   const reservations = new ReservationService(deps.db, deps.registry, now);
   const group = new GroupOrderService(deps.db, deps.registry, commerce, now);

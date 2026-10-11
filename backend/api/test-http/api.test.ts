@@ -1854,6 +1854,22 @@ describe("reviews and ratings", () => {
     assert.equal(after.body.reviews.find((r: { id: string }) => r.id === reviewId).reply, "Merci beaucoup! See you soon.");
   });
 
+  test("the merchant drafts an AI reply — grounded, offline (template); a non-owner cannot, unknown 404", async () => {
+    // A plain customer cannot draft a reply for a branch they don't manage.
+    assert.equal((await call("POST", `/v1/admin/reviews/${reviewId}/draft-reply`, { token: customer.token, country: "CD", body: {} })).status, 403);
+    // The owner drafts one. Offline, the deterministic writer produces it; the 5-star review gets a warm thank-you.
+    const d = await call("POST", `/v1/admin/reviews/${reviewId}/draft-reply`, { token: restaurantOwner.token, country: "CD", body: { lang: "en" } });
+    assert.equal(d.status, 200, JSON.stringify(d.body));
+    assert.equal(d.body.source, "template");
+    assert.ok(typeof d.body.draft === "string" && d.body.draft.length > 0, "a draft came back");
+    assert.match(d.body.draft, /thank/i, "a 5-star review earns a thank-you");
+    // Drafting changes nothing — the posted reply is untouched.
+    const unchanged = await call("GET", `/v1/branches/${branchId}/reviews`, { country: "CD" });
+    assert.equal(unchanged.body.reviews.find((r: { id: string }) => r.id === reviewId).reply, "Merci beaucoup! See you soon.");
+    // An unknown review is a 404.
+    assert.equal((await call("POST", "/v1/admin/reviews/00000000-0000-7000-8000-000000000000/draft-reply", { token: restaurantOwner.token, country: "CD", body: {} })).status, 404);
+  });
+
   test("an undelivered order cannot be reviewed", async () => {
     const q = await call("POST", "/v1/carts/quote", { token: customer.token, country: "CD", body: cart() });
     const placed = await call("POST", "/v1/orders", { token: customer.token, country: "CD", body: { ...cart(), payment_mode: "PREPAID", expected_total: q.body.total } });
