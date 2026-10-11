@@ -58,6 +58,8 @@ function Growth() {
       )}</div>
       {notice ? <div className="banner">{notice}</div> : null}
 
+      <Autonomy country={country} L={L} onRan={() => void load()} />
+
       <div className="growth-tiles">
         {SEGS.map((s) => (
           <button key={s} type="button" className={`growth-tile seg-${s.toLowerCase()} ${filter === s ? "on" : ""}`} onClick={() => setFilter(filter === s ? "" : s)}>
@@ -80,6 +82,149 @@ function Growth() {
         </div>
       </section>
     </>
+  );
+}
+
+interface Money { amount_minor: string; currency: string }
+interface Policy { enabled: boolean; segments: string[]; per_customer_cap: Money; daily_budget: Money; max_customers_per_run: number; currency: string }
+interface Run { id: string; dry_run: boolean; reached: number; planned: number; credited: Money; would_spend: Money; capped_by: string | null; ran_at: string }
+interface SweepResult { dry_run: boolean; planned: number; reached: number; would_spend: Money; credited: Money; capped_by: string | null; eligible: number; preview: { display_name: string; phone: string; segment: string; credit: Money | null }[] }
+const AUTO_SEGS = ["LAPSED", "DORMANT"] as const;
+const major = (m: Money) => (Number(m.amount_minor) / 100).toFixed(2);
+const CAP_REASON: Record<string, { fr: string; en: string }> = {
+  BUDGET: { fr: "plafond budgétaire atteint", en: "daily budget reached" },
+  COUNT: { fr: "nombre maximal atteint", en: "max customers reached" },
+};
+
+/** The autonomy console: the growth agent can run win-back sweeps on its own, strictly within the caps set here,
+ *  and every run is logged. Preview first (changes nothing), then run for real. Needs the agent_autonomy:set cap. */
+function Autonomy({ country, L, onRan }: { country: string; L: (fr: string, en: string) => string; onRan: () => void }) {
+  const [data, setData] = useState<{ policy: Policy; can_manage: boolean; cap_minor: string; eligible_segments: string[]; runs: Run[] } | null>(null);
+  const [form, setForm] = useState<{ enabled: boolean; segments: string[]; cap: string; budget: string; max: string } | null>(null);
+  const [result, setResult] = useState<SweepResult | null>(null);
+  const [busy, setBusy] = useState<string>("");
+  const [msg, setMsg] = useState<string | null>(null);
+
+  const load = () => api<{ policy: Policy; can_manage: boolean; cap_minor: string; eligible_segments: string[]; runs: Run[] }>("/v1/ops/growth/autonomy", { country })
+    .then((r) => { setData(r); setForm({ enabled: r.policy.enabled, segments: r.policy.segments, cap: major(r.policy.per_customer_cap), budget: major(r.policy.daily_budget), max: String(r.policy.max_customers_per_run) }); })
+    .catch(() => setData(null));
+  useEffect(() => { void load(); }, [country]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (!data || !form) return null;
+  const ccy = data.policy.currency;
+  const capCeiling = (Number(data.cap_minor) / 100).toFixed(0);
+  const ro = !data.can_manage;
+
+  const save = async () => {
+    setBusy("save"); setMsg(null);
+    try {
+      await api("/v1/ops/growth/autonomy", { method: "POST", country, body: {
+        enabled: form.enabled, segments: form.segments,
+        per_customer_cap_minor: String(Math.round(Number(form.cap || "0") * 100)),
+        daily_budget_minor: String(Math.round(Number(form.budget || "0") * 100)),
+        max_customers_per_run: Math.round(Number(form.max || "0")), currency: ccy,
+      } });
+      setMsg(L("Règles enregistrées.", "Policy saved.")); await load();
+    } catch (e) { setMsg((e as Error).message); } finally { setBusy(""); }
+  };
+
+  const sweep = async (dry: boolean) => {
+    setBusy(dry ? "preview" : "run"); setMsg(null); setResult(null);
+    try {
+      const r = await api<SweepResult>("/v1/ops/growth/sweep", { method: "POST", country, body: { dry_run: dry } });
+      setResult(r); await load(); if (!dry) onRan();
+    } catch (e) { setMsg((e as Error).message); } finally { setBusy(""); }
+  };
+
+  const toggleSeg = (s: string) => setForm((f) => f ? { ...f, segments: f.segments.includes(s) ? f.segments.filter((x) => x !== s) : [...f.segments, s] } : f);
+
+  return (
+    <section className="card auto-card">
+      <div className="card-head">
+        <div><h2>{L("Reconquêtes autonomes", "Autonomous win-backs")}</h2><p>{L(
+          "L’agent peut lancer des campagnes de reconquête tout seul — uniquement dans les limites ci-dessous, et chaque passage est journalisé.",
+          "The agent can run win-back sweeps on its own — only within the caps below, and every run is logged.",
+        )}</p></div>
+        <span className={`pill ${form.enabled ? "good" : ""}`}>{form.enabled ? L("Activé", "On") : L("Désactivé", "Off")}</span>
+      </div>
+
+      <div className="auto-grid">
+        <label className="auto-switch">
+          <input type="checkbox" checked={form.enabled} disabled={ro} onChange={(e) => setForm({ ...form, enabled: e.target.checked })} />
+          <span>{L("Autoriser l’agent à lancer des reconquêtes", "Let the agent run sweeps")}</span>
+        </label>
+        <div className="auto-field">
+          <span>{L("Crédit max / client", "Max credit / customer")} <small className="muted">({L("plafond", "ceiling")} {capCeiling} {ccy})</small></span>
+          <input type="number" min="0" step="0.5" value={form.cap} disabled={ro} onChange={(e) => setForm({ ...form, cap: e.target.value })} /> <em>{ccy}</em>
+        </div>
+        <div className="auto-field">
+          <span>{L("Budget max / passage", "Max budget / run")}</span>
+          <input type="number" min="0" step="1" value={form.budget} disabled={ro} onChange={(e) => setForm({ ...form, budget: e.target.value })} /> <em>{ccy}</em>
+        </div>
+        <div className="auto-field">
+          <span>{L("Clients max / passage", "Max customers / run")}</span>
+          <input type="number" min="0" step="1" value={form.max} disabled={ro} onChange={(e) => setForm({ ...form, max: e.target.value })} />
+        </div>
+        <div className="auto-field">
+          <span>{L("Segments ciblés", "Target segments")}</span>
+          <div className="auto-segs">
+            {AUTO_SEGS.map((s) => (
+              <label key={s} className={form.segments.includes(s) ? "on" : ""}>
+                <input type="checkbox" checked={form.segments.includes(s)} disabled={ro} onChange={() => toggleSeg(s)} />
+                {L(SEG_LABEL[s]!.fr, SEG_LABEL[s]!.en)}
+              </label>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="auto-actions">
+        {!ro ? <button type="button" className="btn primary sm" disabled={!!busy} onClick={save}>{busy === "save" ? "…" : L("Enregistrer les règles", "Save policy")}</button> : null}
+        <button type="button" className="btn sm" disabled={!!busy} onClick={() => sweep(true)}>{busy === "preview" ? "…" : L("Simuler un passage", "Preview sweep")}</button>
+        {!ro ? <button type="button" className="btn sm" disabled={!!busy || !form.enabled} onClick={() => sweep(false)}>{busy === "run" ? "…" : L("Lancer maintenant", "Run now")}</button> : null}
+      </div>
+      {msg ? <div className="banner" style={{ marginTop: 10 }}>{msg}</div> : null}
+
+      {result ? (
+        <div className="auto-result">
+          <div className="auto-result-head">
+            <span className="pill">{result.dry_run ? L("Simulation", "Preview") : L("Passage réel", "Live run")}</span>
+            <span>{result.dry_run
+              ? L(`${result.planned} client(s) seraient contactés · ${fmt(result.would_spend.amount_minor, result.would_spend.currency)} de crédits`, `${result.planned} customer(s) would be reached · ${fmt(result.would_spend.amount_minor, result.would_spend.currency)} in credits`)
+              : L(`${result.reached} client(s) contactés · ${fmt(result.credited.amount_minor, result.credited.currency)} versés`, `${result.reached} customer(s) reached · ${fmt(result.credited.amount_minor, result.credited.currency)} issued`)}
+            </span>
+            {result.capped_by ? <span className="pill warn">{L("Plafonné : ", "Capped: ")}{L(CAP_REASON[result.capped_by]?.fr ?? result.capped_by, CAP_REASON[result.capped_by]?.en ?? result.capped_by)}</span> : null}
+          </div>
+          {result.dry_run && result.preview.length > 0 ? (
+            <ul className="auto-preview">
+              {result.preview.slice(0, 8).map((p, i) => (
+                <li key={i}><b>{p.display_name}</b> <small className="muted">{p.phone}</small> <span className={`pill seg-${p.segment.toLowerCase()}`}>{L(SEG_LABEL[p.segment]!.fr, SEG_LABEL[p.segment]!.en)}</span> {p.credit ? <em>{fmt(p.credit.amount_minor, p.credit.currency)}</em> : <small className="muted">{L("message seul", "message only")}</small>}</li>
+              ))}
+              {result.preview.length > 8 ? <li className="muted">+{result.preview.length - 8} {L("autres", "more")}</li> : null}
+            </ul>
+          ) : null}
+        </div>
+      ) : null}
+
+      {data.runs.length > 0 ? (
+        <div className="auto-runs">
+          <h3>{L("Passages récents", "Recent runs")}</h3>
+          <ul>
+            {data.runs.slice(0, 6).map((r) => (
+              <li key={r.id}>
+                <span className={`pill ${r.dry_run ? "" : "good"}`}>{r.dry_run ? L("Simulation", "Preview") : L("Réel", "Live")}</span>
+                <span className="muted">{new Date(r.ran_at).toLocaleString()}</span>
+                <span>{r.dry_run
+                  ? L(`${r.planned} prévus · ${fmt(r.would_spend.amount_minor, r.would_spend.currency)}`, `${r.planned} planned · ${fmt(r.would_spend.amount_minor, r.would_spend.currency)}`)
+                  : L(`${r.reached} contactés · ${fmt(r.credited.amount_minor, r.credited.currency)}`, `${r.reached} reached · ${fmt(r.credited.amount_minor, r.credited.currency)}`)}
+                </span>
+                {r.capped_by ? <span className="pill warn">{L(CAP_REASON[r.capped_by]?.fr ?? r.capped_by, CAP_REASON[r.capped_by]?.en ?? r.capped_by)}</span> : null}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </section>
   );
 }
 

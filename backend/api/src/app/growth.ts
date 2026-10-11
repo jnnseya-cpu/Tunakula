@@ -21,11 +21,26 @@ import { badRequest, forbidden } from "./errors.ts";
 
 /** States that count as a real order for history/popularity (exclude drafts, failures, cancellations). */
 const COUNTED_STATES = "('PLACED','ACCEPTED','PREPARING','PACKED','READY','PICKED_UP','DELIVERED','REFUND_REQUESTED','REFUNDED')";
-/** A goodwill win-back credit never exceeds this, whatever an operator requests. */
+/** A goodwill win-back credit never exceeds this, whatever an operator (or an autonomous run) requests. */
 const WIN_BACK_CAP_MINOR = 10_000n;
 const AT_RISK_AFTER = 14, LAPSED_AFTER = 30, DORMANT_AFTER = 90;
+/** The only segments an autonomous sweep may credit — a goodwill credit is for lapsed customers, not at-risk ones. */
+const AUTONOMY_SEGMENTS = ["LAPSED", "DORMANT"] as const;
+/** The audit actor for a win-back the agent sent on its own (a scheduled sweep with no operator). */
+const AGENT_ACTOR = "system:growth-agent";
 
 interface MenuRow { id: string; names: Record<string, string>; prices: Record<string, string>; branch_id: string; branch_name: string }
+
+/** The per-country autonomy policy: whether the agent may run win-back sweeps on its own, and the hard caps. */
+interface AutonomyPolicy {
+  enabled: boolean;
+  segments: string[];
+  perCustomerCapMinor: bigint;
+  dailyBudgetMinor: bigint;
+  maxCustomersPerRun: number;
+  currency: string;
+  updatedAt?: Date;
+}
 
 export class GrowthService {
   private readonly db: Db;
@@ -133,20 +148,172 @@ export class GrowthService {
         if (minor > 0n) credit = Money.ofMinor(minor, ccy);
       }
 
-      if (credit) await this.wallet.creditFromPromotion(sql, country, customerId, credit, "WINBACK", reference);
-
-      const offer = credit ? creditPhrase(credit) : "nous aimerions vous revoir";
-      await this.comms.dispatch({ country, eventKey: "promo.winback", recipientUserId: customerId, audience: "customer", data: { offer }, dedupeKey: reference }).catch(() => undefined);
-
-      await sql.query(
-        "INSERT INTO growth.nudge (country_iso2, customer_id, kind, segment, credit_minor, currency, reference, sent_by) VALUES ($1,$2,'WIN_BACK',$3,$4,$5,$6,$7)",
-        [country, customerId, segment, credit ? credit.minor.toString() : null, credit ? credit.currency : null, reference, principal.userId],
-      );
-      await audit(sql, { actor: principal.userId, action: "growth.winback", target: `customer:${customerId}`, country, detail: { segment, credit: credit ? wire(credit) : null } });
-
+      await this.#sendWinBack(sql, country, customerId, segment, credit, reference, principal.userId);
       return { ok: true, segment, credited: credit ? wire(credit) : null };
     });
   }
+
+  /** Issue one win-back: optional capped credit, the opt-out-respecting message, the idempotent record, the audit.
+   *  Shared by the manual win-back and the autonomous sweep, so both move money on exactly the same, audited rail. */
+  async #sendWinBack(sql: Sql, country: string, customerId: string, segment: string, credit: Money | null, reference: string, actorId: string | null) {
+    if (credit) await this.wallet.creditFromPromotion(sql, country, customerId, credit, "WINBACK", reference);
+    const offer = credit ? creditPhrase(credit) : "nous aimerions vous revoir";
+    await this.comms.dispatch({ country, eventKey: "promo.winback", recipientUserId: customerId, audience: "customer", data: { offer }, dedupeKey: reference }).catch(() => undefined);
+    await sql.query(
+      "INSERT INTO growth.nudge (country_iso2, customer_id, kind, segment, credit_minor, currency, reference, sent_by) VALUES ($1,$2,'WIN_BACK',$3,$4,$5,$6,$7)",
+      [country, customerId, segment, credit ? credit.minor.toString() : null, credit ? credit.currency : null, reference, actorId],
+    );
+    await audit(sql, { actor: actorId ?? AGENT_ACTOR, action: "growth.winback", target: `customer:${customerId}`, country, detail: { segment, credit: credit ? wire(credit) : null } });
+  }
+
+  /** Ops: the autonomy policy (caps that bound an autonomous win-back sweep) plus the agent's recent runs. */
+  async autonomy(country: string, principal: Principal) {
+    const v = this.#assertOps(principal, country, "campaign:write");
+    return this.db.tx({ country }, async (sql) => {
+      const policy = await loadPolicy(sql, country, v.profile.money.settlement_currency);
+      const canManage = authorize(principal, "agent_autonomy:set", { type: "order", country }, { activeCountry: country, profile: v.profile }).allowed;
+      const runs = (await sql.query<SweepRunRow & Record<string, unknown>>(
+        "SELECT id, dry_run, reached, credited_minor, planned, would_spend_minor, currency, capped_by, ran_at FROM growth.sweep_run ORDER BY ran_at DESC LIMIT 12",
+      )).map(wireRun);
+      return { policy: wirePolicy(policy), can_manage: canManage, cap_minor: WIN_BACK_CAP_MINOR.toString(), eligible_segments: [...AUTONOMY_SEGMENTS], runs };
+    });
+  }
+
+  /** Ops: set the autonomy policy. Requires the agent_autonomy:set capability. Every cap is validated and clamped. */
+  async setAutonomy(country: string, principal: Principal, input: { enabled?: boolean; segments?: string[]; per_customer_cap_minor?: string; daily_budget_minor?: string; max_customers_per_run?: number; currency?: string }) {
+    const v = this.#assertOps(principal, country, "agent_autonomy:set");
+    const fallbackCcy = v.profile.money.settlement_currency;
+    const segments = Array.isArray(input.segments) ? input.segments.filter((s) => (AUTONOMY_SEGMENTS as readonly string[]).includes(s)) : [...AUTONOMY_SEGMENTS];
+    if (segments.length === 0) throw badRequest("SEGMENTS_REQUIRED", "Choose at least one lapsed segment to re-engage (LAPSED or DORMANT)");
+    const clampMinor = (raw: string | undefined, dflt: bigint) => {
+      let n = raw !== undefined ? BigInt(raw) : dflt;
+      if (n < 0n) n = 0n;
+      return n;
+    };
+    const perCustomer = clampMinor(input.per_customer_cap_minor, 2000n);
+    const policy: AutonomyPolicy = {
+      enabled: Boolean(input.enabled),
+      segments,
+      perCustomerCapMinor: perCustomer > WIN_BACK_CAP_MINOR ? WIN_BACK_CAP_MINOR : perCustomer,
+      dailyBudgetMinor: clampMinor(input.daily_budget_minor, 50_000n),
+      maxCustomersPerRun: Math.max(0, Math.min(Number(input.max_customers_per_run ?? 50), 1000)),
+      currency: (input.currency ?? fallbackCcy).toUpperCase().slice(0, 3),
+    };
+    return this.db.tx({ country }, async (sql) => {
+      await sql.query(
+        `INSERT INTO growth.autonomy (country_iso2, enabled, segments, per_customer_cap_minor, daily_budget_minor, max_customers_per_run, currency, updated_by, updated_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8, now())
+         ON CONFLICT (country_iso2) DO UPDATE SET enabled = EXCLUDED.enabled, segments = EXCLUDED.segments, per_customer_cap_minor = EXCLUDED.per_customer_cap_minor,
+           daily_budget_minor = EXCLUDED.daily_budget_minor, max_customers_per_run = EXCLUDED.max_customers_per_run, currency = EXCLUDED.currency, updated_by = EXCLUDED.updated_by, updated_at = now()`,
+        [country, policy.enabled, policy.segments, policy.perCustomerCapMinor.toString(), policy.dailyBudgetMinor.toString(), policy.maxCustomersPerRun, policy.currency, principal.userId],
+      );
+      await audit(sql, { actor: principal.userId, action: "growth.autonomy_set", target: `country:${country}`, country, detail: { enabled: policy.enabled, segments: policy.segments, per_customer_cap_minor: policy.perCustomerCapMinor.toString(), daily_budget_minor: policy.dailyBudgetMinor.toString(), max_customers_per_run: policy.maxCustomersPerRun, currency: policy.currency } });
+      return { policy: wirePolicy({ ...policy, updatedAt: new Date() }) };
+    });
+  }
+
+  /** Run an autonomous win-back sweep. A dry run previews who would be reached and the spend, changing nothing; a
+   *  live run issues the capped credits and records the run. Live runs require agent_autonomy:set and an enabled
+   *  policy. The sweep never exceeds the per-customer cap, the per-run budget, or the per-run customer count, and
+   *  it reuses the monthly idempotency guard so no customer is ever nudged twice in a window. `principal` is null
+   *  when a scheduler fires the sweep headless. */
+  async runSweep(country: string, principal: Principal | null, opts: { dryRun: boolean }) {
+    const v = this.#market(country);
+    if (principal) {
+      const action: Action = opts.dryRun ? "campaign:write" : "agent_autonomy:set";
+      if (!authorize(principal, action, { type: "order", country }, { activeCountry: country, profile: v.profile }).allowed) {
+        throw forbidden(opts.dryRun ? "Growth tools are managed by a market admin" : "Running the agent needs the autonomy capability");
+      }
+    }
+    const fallbackCcy = v.profile.money.settlement_currency;
+    return this.db.tx({ country }, async (sql) => {
+      const policy = await loadPolicy(sql, country, fallbackCcy);
+      if (!opts.dryRun && !policy.enabled) throw badRequest("AUTONOMY_DISABLED", "Enable autonomous win-backs before running a live sweep");
+      if (!opts.dryRun && !principal) throw forbidden("A live sweep needs an operator or an authorised scheduler");
+
+      const period = monthKey(this.now());
+      const candidates = await sql.query<{ customer_id: string; display_name: string; phone: string; orders: string; spend: string; days: string } & Record<string, unknown>>(
+        `SELECT c.customer_id, u.display_name, u.phone_e164 AS phone, c.orders::text, c.spend::text,
+                EXTRACT(DAY FROM now() - c.last_at)::int::text AS days
+           FROM (SELECT customer_id, MAX(created_at) AS last_at, COUNT(*) AS orders, SUM(total_minor) AS spend,
+                        (array_agg(currency ORDER BY created_at DESC))[1] AS currency
+                   FROM ordering.order_view WHERE state IN ${COUNTED_STATES} GROUP BY customer_id) c
+           JOIN identity.app_user u ON u.id = c.customer_id
+          WHERE c.currency = $1
+            AND EXTRACT(DAY FROM now() - c.last_at) > ${LAPSED_AFTER}
+            AND NOT EXISTS (SELECT 1 FROM growth.nudge n WHERE n.customer_id = c.customer_id AND n.reference = 'winback:' || c.customer_id::text || ':' || $2)
+          ORDER BY EXTRACT(DAY FROM now() - c.last_at) DESC`,
+        [policy.currency, period],
+      );
+
+      // Plan within the caps, most-lapsed first. A credit that would overrun the budget stops the run.
+      const budget = policy.dailyBudgetMinor;
+      let spend = 0n;
+      let cappedBy: "BUDGET" | "COUNT" | null = null;
+      const chosen: { customerId: string; display_name: string; phone: string; segment: string; credit: Money | null }[] = [];
+      for (const c of candidates) {
+        if (chosen.length >= policy.maxCustomersPerRun) { cappedBy = "COUNT"; break; }
+        const days = Number(c.days), orders = Number(c.orders), totalSpend = Number(c.spend);
+        const segment = days <= DORMANT_AFTER ? "LAPSED" : "DORMANT";
+        if (!policy.segments.includes(segment)) continue;
+        const credit = this.#plannedCredit(policy, orders, days, totalSpend);
+        const cost = credit ? credit.minor : 0n;
+        if (spend + cost > budget) { cappedBy = "BUDGET"; break; }
+        spend += cost;
+        chosen.push({ customerId: c.customer_id, display_name: c.display_name, phone: maskPhone(c.phone), segment, credit });
+      }
+
+      let reached = 0, credited = 0n;
+      if (!opts.dryRun) {
+        for (const ch of chosen) {
+          const reference = `winback:${ch.customerId}:${period}`;
+          await this.#sendWinBack(sql, country, ch.customerId, ch.segment, ch.credit, reference, principal?.userId ?? null);
+          reached += 1;
+          credited += ch.credit ? ch.credit.minor : 0n;
+        }
+      }
+
+      const [run] = await sql.query<{ id: string; ran_at: Date }>(
+        `INSERT INTO growth.sweep_run (country_iso2, dry_run, reached, credited_minor, planned, would_spend_minor, currency, capped_by, triggered_by)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id, ran_at`,
+        [country, opts.dryRun, reached, credited.toString(), chosen.length, spend.toString(), policy.currency, cappedBy, principal?.userId ?? null],
+      );
+      await audit(sql, { actor: principal?.userId ?? AGENT_ACTOR, action: opts.dryRun ? "growth.sweep_preview" : "growth.sweep", target: `country:${country}`, country, detail: { planned: chosen.length, reached, credited_minor: credited.toString(), would_spend_minor: spend.toString(), currency: policy.currency, capped_by: cappedBy } });
+
+      return {
+        id: run?.id, dry_run: opts.dryRun, ran_at: run?.ran_at,
+        planned: chosen.length, reached, currency: policy.currency,
+        would_spend: { amount_minor: spend.toString(), currency: policy.currency },
+        credited: { amount_minor: credited.toString(), currency: policy.currency },
+        capped_by: cappedBy, eligible: candidates.length,
+        preview: opts.dryRun ? chosen.map((c) => ({ display_name: c.display_name, phone: c.phone, segment: c.segment, credit: c.credit ? wire(c.credit) : null })) : [],
+      };
+    });
+  }
+
+  /** The capped goodwill credit for one autonomous candidate: the brain's suggestion, clamped to the policy cap. */
+  #plannedCredit(policy: AutonomyPolicy, orders: number, days: number, totalSpend: number): Money | null {
+    const avgBasket = orders > 0 ? Money.ofMinor(BigInt(Math.round(totalSpend / orders)), policy.currency).toJSON() : undefined;
+    const { action } = this.brain.assess({ orderCount: orders, lastOrderDaysAgo: days, distinctItems: 0, ...(avgBasket ? { avgBasket } : {}) });
+    let minor = action.suggestedCredit ? BigInt(action.suggestedCredit.minor) : 0n;
+    if (minor < 0n) minor = 0n;
+    const cap = policy.perCustomerCapMinor < WIN_BACK_CAP_MINOR ? policy.perCustomerCapMinor : WIN_BACK_CAP_MINOR;
+    if (minor > cap) minor = cap;
+    return minor > 0n ? Money.ofMinor(minor, policy.currency) : null;
+  }
+}
+
+interface SweepRunRow { id: string; dry_run: boolean; reached: number; credited_minor: string; planned: number; would_spend_minor: string; currency: string; capped_by: string | null; ran_at: Date }
+const wireRun = (r: SweepRunRow) => ({ id: r.id, dry_run: r.dry_run, reached: r.reached, planned: r.planned, credited: { amount_minor: r.credited_minor, currency: r.currency }, would_spend: { amount_minor: r.would_spend_minor, currency: r.currency }, capped_by: r.capped_by, ran_at: r.ran_at });
+const wirePolicy = (p: AutonomyPolicy) => ({ enabled: p.enabled, segments: p.segments, per_customer_cap: { amount_minor: p.perCustomerCapMinor.toString(), currency: p.currency }, daily_budget: { amount_minor: p.dailyBudgetMinor.toString(), currency: p.currency }, max_customers_per_run: p.maxCustomersPerRun, currency: p.currency, ...(p.updatedAt ? { updated_at: p.updatedAt } : {}) });
+
+async function loadPolicy(sql: Sql, country: string, fallbackCcy: string): Promise<AutonomyPolicy> {
+  const r = (await sql.query<{ enabled: boolean; segments: string[]; per_customer_cap_minor: string; daily_budget_minor: string; max_customers_per_run: number; currency: string; updated_at: Date } & Record<string, unknown>>(
+    "SELECT enabled, segments, per_customer_cap_minor, daily_budget_minor, max_customers_per_run, currency, updated_at FROM growth.autonomy WHERE country_iso2 = $1",
+    [country],
+  ))[0];
+  if (!r) return { enabled: false, segments: [...AUTONOMY_SEGMENTS], perCustomerCapMinor: 2000n, dailyBudgetMinor: 50_000n, maxCustomersPerRun: 50, currency: fallbackCcy };
+  return { enabled: r.enabled, segments: r.segments, perCustomerCapMinor: BigInt(r.per_customer_cap_minor), dailyBudgetMinor: BigInt(r.daily_budget_minor), maxCustomersPerRun: r.max_customers_per_run, currency: r.currency, updatedAt: r.updated_at };
 }
 
 const wire = (m: Money) => ({ amount_minor: m.minor.toString(), currency: m.currency });

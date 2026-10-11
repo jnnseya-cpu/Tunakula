@@ -3977,6 +3977,92 @@ describe("growth agent (recommendations + win-back)", () => {
   });
 });
 
+describe("growth agent — autonomous win-backs under caps", () => {
+  const swept: { token: string; userId: string }[] = [];
+  const seedLapsed = async (phone: string) => {
+    const u = await signIn(phone);
+    const q = await call("POST", "/v1/carts/quote", { country: "CD", body: cart() });
+    const r = await call("POST", "/v1/orders", { token: u.token, country: "CD", body: { ...cart(), payment_mode: "PREPAID", expected_total: q.body.total } });
+    assert.equal(r.status, 201, JSON.stringify(r.body));
+    const pay = await call("POST", "/v1/payments/intents", { token: u.token, country: "CD", body: { order_id: r.body.order_id, method_type: "MOBILE_MONEY_PUSH", payer: { msisdn: "+243810000001" } } });
+    assert.equal(pay.body.status, "SUCCEEDED", JSON.stringify(pay.body));
+    await inspect("CD", "UPDATE ordering.order_view SET created_at = now() - interval '50 days' WHERE customer_id = $1", [u.userId]);
+    return u;
+  };
+
+  test("the autonomy policy is admin-only, disabled by default, and reports the hard ceiling", async () => {
+    const plain = await signIn("+243810000810");
+    assert.equal((await call("GET", "/v1/ops/growth/autonomy", { token: plain.token, country: "CD" })).status, 403);
+    const a = await call("GET", "/v1/ops/growth/autonomy", { token: admin.token, country: "CD" });
+    assert.equal(a.status, 200, JSON.stringify(a.body));
+    assert.equal(a.body.policy.enabled, false, "autonomy is off until an admin turns it on");
+    assert.ok(a.body.can_manage, "a country admin may manage it");
+    assert.equal(a.body.cap_minor, "10000", "the per-customer credit ceiling is surfaced");
+    assert.deepEqual(a.body.eligible_segments, ["LAPSED", "DORMANT"]);
+  });
+
+  test("a live sweep is refused while autonomy is disabled", async () => {
+    assert.equal((await call("POST", "/v1/ops/growth/sweep", { token: admin.token, country: "CD", body: { dry_run: false } })).body.code, "AUTONOMY_DISABLED");
+  });
+
+  test("setting the policy clamps the per-customer cap to the global ceiling", async () => {
+    const s = await call("POST", "/v1/ops/growth/autonomy", { token: admin.token, country: "CD", body: { enabled: true, segments: ["LAPSED", "DORMANT"], per_customer_cap_minor: "999999", daily_budget_minor: "100000", max_customers_per_run: 50, currency: "USD" } });
+    assert.equal(s.status, 200, JSON.stringify(s.body));
+    assert.equal(s.body.policy.enabled, true);
+    assert.equal(s.body.policy.per_customer_cap.amount_minor, "10000", "clamped to the ceiling");
+    // A plain customer cannot set the policy.
+    const plain = await signIn("+243810000816");
+    assert.equal((await call("POST", "/v1/ops/growth/autonomy", { token: plain.token, country: "CD", body: { enabled: true } })).status, 403);
+  });
+
+  test("a dry run previews who would be reached and the spend, and credits nobody", async () => {
+    for (const p of ["+243810000811", "+243810000812", "+243810000813"]) swept.push(await seedLapsed(p));
+    const d = await call("POST", "/v1/ops/growth/sweep", { token: admin.token, country: "CD", body: { dry_run: true } });
+    assert.equal(d.status, 200, JSON.stringify(d.body));
+    assert.equal(d.body.dry_run, true);
+    assert.ok(d.body.planned >= 3, "our three lapsed customers are planned");
+    assert.ok(BigInt(d.body.would_spend.amount_minor) <= 100000n, "within the budget");
+    assert.equal(d.body.preview.length, d.body.planned, "the preview lists each planned customer");
+    assert.ok(d.body.preview.every((c: { phone: string }) => c.phone.includes("…")), "preview phones are masked");
+    for (const u of swept) {
+      const tx = await inspect("CD", "SELECT id FROM wallet.transaction WHERE user_id = $1 AND kind = 'WINBACK'", [u.userId]);
+      assert.equal(tx.length, 0, "a dry run moves no money");
+    }
+    const runs = (await call("GET", "/v1/ops/growth/autonomy", { token: admin.token, country: "CD" })).body.runs;
+    assert.ok(runs.some((r: { dry_run: boolean }) => r.dry_run === true), "the preview is recorded as a run");
+  });
+
+  test("a live sweep credits lapsed customers within caps, audited and idempotent per month", async () => {
+    const live = await call("POST", "/v1/ops/growth/sweep", { token: admin.token, country: "CD", body: { dry_run: false } });
+    assert.equal(live.status, 200, JSON.stringify(live.body));
+    assert.equal(live.body.dry_run, false);
+    assert.ok(live.body.reached >= 3, "our three lapsed customers were reached");
+    assert.ok(BigInt(live.body.would_spend.amount_minor) <= 100000n, "never over the daily budget");
+    for (const u of swept) {
+      const tx = await inspect("CD", "SELECT amount_minor::text AS amount FROM wallet.transaction WHERE user_id = $1 AND kind = 'WINBACK'", [u.userId]);
+      assert.equal(tx.length, 1, "credited exactly once");
+      assert.ok(BigInt(tx[0].amount) <= 10000n, "within the per-customer cap");
+    }
+    const aud = await inspect("CD", "SELECT id FROM identity.audit_log WHERE action = 'growth.sweep'", []);
+    assert.ok(aud.length >= 1, "the live run is in the audit chain");
+    // Re-running the same month double-credits nobody.
+    await call("POST", "/v1/ops/growth/sweep", { token: admin.token, country: "CD", body: { dry_run: false } });
+    for (const u of swept) {
+      const tx = await inspect("CD", "SELECT id FROM wallet.transaction WHERE user_id = $1 AND kind = 'WINBACK'", [u.userId]);
+      assert.equal(tx.length, 1, "no second credit on a repeat sweep");
+    }
+  });
+
+  test("the per-run customer-count cap bounds a sweep", async () => {
+    await seedLapsed("+243810000814");
+    await seedLapsed("+243810000815"); // two fresh lapsed customers, not yet nudged this month
+    await call("POST", "/v1/ops/growth/autonomy", { token: admin.token, country: "CD", body: { enabled: true, segments: ["LAPSED", "DORMANT"], per_customer_cap_minor: "300", daily_budget_minor: "100000", max_customers_per_run: 1, currency: "USD" } });
+    const d = await call("POST", "/v1/ops/growth/sweep", { token: admin.token, country: "CD", body: { dry_run: true } });
+    assert.equal(d.body.planned, 1, "the count cap bounds the run to one customer");
+    assert.equal(d.body.capped_by, "COUNT");
+  });
+});
+
 describe("merchant copilot (grounded per-branch insights)", () => {
   test("returns ranked insights grounded in the branch's menu and orders", async () => {
     const r = await call("GET", `/v1/admin/branches/${branchId}/copilot?lang=en`, { token: admin.token, country: "CD" });

@@ -123,7 +123,7 @@ export const ROLES = {
   },
   COUNTRY_ADMIN: {
     scopes: ["COUNTRY"],
-    grants: all("country_config:write", "zone:write", "restaurant:manage", "commission:write", "campaign:write", "membership:manage", "order:read", "rider:manage"),
+    grants: all("country_config:write", "zone:write", "restaurant:manage", "commission:write", "campaign:write", "agent_autonomy:set", "membership:manage", "order:read", "rider:manage"),
   },
   CITY_OPS: {
     scopes: ["CITY"],

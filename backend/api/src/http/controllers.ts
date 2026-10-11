@@ -1690,6 +1690,23 @@ export class GrowthController {
   async winBack(@Req() req: FastifyRequest, @Body() body: { customer_id?: string; credit_minor?: string; currency?: string }) {
     return this.growth.winBack(country(req), await this.#p(req), { customerId: body?.customer_id ?? "", ...(body?.credit_minor ? { creditMinor: body.credit_minor } : {}), ...(body?.currency ? { currency: body.currency } : {}) });
   }
+
+  @Get("ops/growth/autonomy")
+  async autonomy(@Req() req: FastifyRequest) {
+    return this.growth.autonomy(country(req), await this.#p(req));
+  }
+
+  @Post("ops/growth/autonomy")
+  @HttpCode(200)
+  async setAutonomy(@Req() req: FastifyRequest, @Body() body: { enabled?: boolean; segments?: string[]; per_customer_cap_minor?: string; daily_budget_minor?: string; max_customers_per_run?: number; currency?: string }) {
+    return this.growth.setAutonomy(country(req), await this.#p(req), body ?? {});
+  }
+
+  @Post("ops/growth/sweep")
+  @HttpCode(200)
+  async sweep(@Req() req: FastifyRequest, @Body() body: { dry_run?: boolean }) {
+    return this.growth.runSweep(country(req), await this.#p(req), { dryRun: body?.dry_run !== false });
+  }
 }
 
 /** Book-a-chef: public discovery, customer bookings, the chef console, and ops review. */

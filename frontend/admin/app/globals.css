@@ -790,3 +790,28 @@ tr.sel td { background: rgba(250, 210, 14, 0.12); }
 .writer-result-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .writer-result-head .link-btn { margin-left: auto; }
 .writer-text { margin: 0; font-size: 15px; line-height: 1.55; color: var(--ink); white-space: pre-wrap; }
+
+/* Autonomous win-backs (growth) — the agent's self-run sweep console, bounded by the caps set here. */
+.auto-card { margin-bottom: 18px; }
+.pill.warn::before { background: var(--warning); }
+.auto-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px 22px; margin: 14px 0 4px; }
+.auto-switch { display: flex; align-items: center; gap: 10px; font-weight: 600; grid-column: 1 / -1; }
+.auto-switch input { width: 18px; height: 18px; }
+.auto-field { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.auto-field > span { color: var(--ink-2); }
+.auto-field input { height: 36px; padding: 0 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--ink); font: inherit; max-width: 160px; }
+.auto-field input:disabled { opacity: .6; }
+.auto-field em { color: var(--muted); font-style: normal; font-size: 12px; margin-left: 6px; }
+.auto-segs { display: flex; gap: 8px; flex-wrap: wrap; }
+.auto-segs label { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; cursor: pointer; }
+.auto-segs label.on { border-color: var(--accent); background: var(--surface-2); }
+.auto-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+.auto-result { margin-top: 14px; padding: 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); }
+.auto-result-head { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; font-size: 14px; }
+.auto-preview { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.auto-preview li { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; font-size: 13px; }
+.auto-preview em { color: var(--good); font-style: normal; font-weight: 600; }
+.auto-runs { margin-top: 16px; }
+.auto-runs h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 8px; }
+.auto-runs ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.auto-runs li { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; font-size: 13px; color: var(--ink-2); }
