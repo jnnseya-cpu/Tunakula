@@ -47,6 +47,9 @@ import type { CashbackService } from "../app/cashback.ts";
 import type { SubscriptionService } from "../app/subscriptions.ts";
 import type { MerchantPlanService } from "../app/merchant-plans.ts";
 import { loadIntegrationConfig } from "../app/integrations.ts";
+import { LlmAssistantBrain } from "../modules/assistant/llm-brain.ts";
+import { SandboxBrain } from "../modules/assistant/sandbox-brain.ts";
+import type { AssistantBrain } from "@tunakula/ts-contracts";
 import { createApi } from "./app.ts";
 import { TOKENS } from "./common.ts";
 
@@ -123,6 +126,18 @@ const registry = new CountryConfigRegistry({
 });
 registry.restore(await db.tx({}, loadVersions));
 
+// AI customer-service assistant: when a hosted-model key is configured (env var or the admin Integrations panel),
+// the LLM brain answers, grounded on the customer's own order and the policies, with the in-house deterministic
+// brain as the automatic fallback on any error. With no key, the deterministic brain runs on its own.
+let assistantBrain: AssistantBrain | undefined;
+const assistantKey = env("TUNAKULA_ASSISTANT_API_KEY");
+const assistantProvider = (env("TUNAKULA_ASSISTANT_PROVIDER") ?? "anthropic").toLowerCase();
+if (assistantKey && assistantProvider === "anthropic") {
+  const model = env("TUNAKULA_ASSISTANT_MODEL") ?? "claude-opus-5-5";
+  assistantBrain = new LlmAssistantBrain({ apiKey: assistantKey, model }, new SandboxBrain());
+  log.info("AI assistant: hosted model enabled", { model });
+}
+
 // Map provider for distances and travel times; any outage falls back to the estimate, never to an error.
 const estimate = straightLineRouting();
 const onRoutingError = (error: unknown) => log.warn("routing provider failed; using estimate", { error });
@@ -140,6 +155,7 @@ const app = await createApi({
   otp,
   ...(senders ? { senders } : {}),
   ...(vapid ? { vapid } : {}),
+  ...(assistantBrain ? { assistantBrain } : {}),
   routing,
   corsOrigins: (env("TUNAKULA_CONSOLE_ORIGINS") ?? "").split(",").map((o) => o.trim()).filter(Boolean),
   onError: (e) => log.error("unhandled", { error: e }),
