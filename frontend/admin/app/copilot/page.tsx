@@ -75,6 +75,64 @@ function Copilot() {
           ))}
         </div>
       )}
+
+      {branchId ? <MenuWriter branchId={branchId} country={country} lang={lang} /> : null}
     </>
+  );
+}
+
+interface Dish { id: string; names: Record<string, string> }
+function MenuWriter({ branchId, country, lang }: { branchId: string; country: string; lang: string }) {
+  const L = (fr: string, en: string) => (lang === "fr" ? fr : en);
+  const [dishes, setDishes] = useState<Dish[] | null>(null);
+  const [itemId, setItemId] = useState("");
+  const [busy, setBusy] = useState("");
+  const [result, setResult] = useState<{ suggestion: string; source: string; task: string } | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+
+  useEffect(() => {
+    setDishes(null); setItemId(""); setResult(null); setNote(null);
+    api<{ items: Dish[] }>(`/v1/branches/${branchId}/menu`, { country }).then((r) => { setDishes(r.items); if (r.items[0]) setItemId(r.items[0].id); }).catch(() => setDishes([]));
+  }, [branchId, country]);
+
+  const run = async (task: "DESCRIBE" | "TRANSLATE", toLang: "fr" | "en") => {
+    if (!itemId) return;
+    setBusy(`${task}:${toLang}`); setResult(null); setNote(null);
+    try {
+      const r = await api<{ suggestion: string; source: string; task: string }>(`/v1/admin/branches/${branchId}/items/${itemId}/draft`, { method: "POST", country, body: { task, to_lang: toLang } });
+      setResult(r);
+    } catch (e) { setNote((e as Error).message); } finally { setBusy(""); }
+  };
+
+  if (!dishes || dishes.length === 0) return null;
+  const dishName = (d: Dish) => d.names[lang] ?? d.names["fr"] ?? d.names["en"] ?? "—";
+
+  return (
+    <section className="card writer-card">
+      <div className="card-head"><div><h2>{L("Rédacteur IA du menu", "AI menu writer")}</h2><p>{L("Rédige une description ou traduit un plat. Relisez, puis enregistrez dans le menu — rien n’est modifié automatiquement.", "Draft a description or translate a dish. Review it, then save it in the menu — nothing changes automatically.")}</p></div></div>
+      <div className="writer-controls">
+        <select className="select" value={itemId} onChange={(e) => { setItemId(e.target.value); setResult(null); setNote(null); }}>
+          {dishes.map((d) => <option key={d.id} value={d.id}>{dishName(d)}</option>)}
+        </select>
+        <div className="writer-actions">
+          <button type="button" className="btn sm" disabled={!!busy} onClick={() => run("DESCRIBE", "en")}>{busy === "DESCRIBE:en" ? "…" : L("Décrire (EN)", "Describe (EN)")}</button>
+          <button type="button" className="btn sm" disabled={!!busy} onClick={() => run("DESCRIBE", "fr")}>{busy === "DESCRIBE:fr" ? "…" : L("Décrire (FR)", "Describe (FR)")}</button>
+          <button type="button" className="btn sm" disabled={!!busy} onClick={() => run("TRANSLATE", "en")}>{busy === "TRANSLATE:en" ? "…" : L("Traduire → EN", "Translate → EN")}</button>
+          <button type="button" className="btn sm" disabled={!!busy} onClick={() => run("TRANSLATE", "fr")}>{busy === "TRANSLATE:fr" ? "…" : L("Traduire → FR", "Translate → FR")}</button>
+        </div>
+      </div>
+      {note ? <div className="banner" style={{ marginTop: 12 }}>{note}</div> : null}
+      {result ? (
+        <div className="writer-result">
+          <div className="writer-result-head">
+            <span className="pill">{result.task === "TRANSLATE" ? L("Traduction", "Translation") : L("Description", "Description")}</span>
+            <span className={`pill ${result.source === "ai" ? "good" : ""}`}>{result.source === "ai" ? L("IA", "AI") : L("Brouillon de base", "Basic draft")}</span>
+            <button type="button" className="link-btn" onClick={() => navigator.clipboard?.writeText(result.suggestion).catch(() => undefined)}>{L("Copier", "Copy")}</button>
+          </div>
+          <p className="writer-text">{result.suggestion}</p>
+          <p className="muted small">{L("Copiez ce texte dans l’éditeur de menu pour l’enregistrer.", "Copy this text into the menu editor to save it.")}</p>
+        </div>
+      ) : null}
+    </section>
   );
 }

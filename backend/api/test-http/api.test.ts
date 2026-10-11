@@ -3998,6 +3998,28 @@ describe("merchant copilot (grounded per-branch insights)", () => {
   test("an unknown branch is a 404", async () => {
     assert.equal((await call("GET", `/v1/admin/branches/${randomUUID()}/copilot`, { token: admin.token, country: "CD" })).status, 404);
   });
+
+  test("the AI dish writer drafts a description offline (template), and gates translation on the AI key", async () => {
+    // Find a dish on the branch.
+    const menu = await call("GET", `/v1/branches/${branchId}/menu`, { country: "CD" });
+    const dish = menu.body.items[0];
+    assert.ok(dish, "the branch has a dish");
+
+    // DESCRIBE works with no model configured — the template writer grounds it in the dish. (Menu editing is the
+    // owner's, not the country admin's.)
+    const d = await call("POST", `/v1/admin/branches/${branchId}/items/${dish.id}/draft`, { token: restaurantOwner.token, country: "CD", body: { task: "DESCRIBE", to_lang: "en" } });
+    assert.equal(d.status, 200, JSON.stringify(d.body));
+    assert.equal(d.body.source, "template");
+    assert.ok(d.body.suggestion.length > 0);
+
+    // TRANSLATE needs a model — without one it returns a clear 422, never a wrong translation.
+    const t = await call("POST", `/v1/admin/branches/${branchId}/items/${dish.id}/draft`, { token: restaurantOwner.token, country: "CD", body: { task: "TRANSLATE", to_lang: "en" } });
+    assert.equal(t.status, 422, JSON.stringify(t.body));
+
+    // A customer can't use the writer; an unknown dish is a 404.
+    assert.equal((await call("POST", `/v1/admin/branches/${branchId}/items/${dish.id}/draft`, { token: customer.token, country: "CD", body: { task: "DESCRIBE" } })).status, 403);
+    assert.equal((await call("POST", `/v1/admin/branches/${branchId}/items/${randomUUID()}/draft`, { token: restaurantOwner.token, country: "CD", body: { task: "DESCRIBE" } })).status, 404);
+  });
 });
 
 describe("rider copilot (earnings, zones, cash-out — no pressure to accept)", () => {

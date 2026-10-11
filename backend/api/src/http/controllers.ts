@@ -29,6 +29,7 @@ import type { ChefService } from "../app/chef.ts";
 import type { AssistantService } from "../app/assistant.ts";
 import type { GrowthService } from "../app/growth.ts";
 import type { MerchantCopilotService } from "../app/merchant-copilot.ts";
+import type { MenuWriterService } from "../app/menu-writer.ts";
 import type { RiderCopilotService } from "../app/rider-copilot.ts";
 import type { IntegrationsService } from "../app/integrations.ts";
 import type { SubscriptionService } from "../app/subscriptions.ts";
@@ -1637,6 +1638,7 @@ export class MerchantCopilotController {
     @Inject(TOKENS.db) private readonly db: Db,
     @Inject(TOKENS.tokens) private readonly tokens: TokenService,
     @Inject(TOKENS.merchantCopilot) private readonly copilot: MerchantCopilotService,
+    @Inject(TOKENS.menuWriter) private readonly menuWriter: MenuWriterService,
   ) {}
 
   #p(req: FastifyRequest) {
@@ -1646,6 +1648,12 @@ export class MerchantCopilotController {
   @Get("admin/branches/:id/copilot")
   async insights(@Req() req: FastifyRequest, @Param("id") id: string, @Query("lang") lang?: string) {
     return this.copilot.insights(country(req), await this.#p(req), id, lang === "en" ? "en" : "fr");
+  }
+
+  @Post("admin/branches/:id/items/:itemId/draft")
+  @HttpCode(200)
+  async draft(@Req() req: FastifyRequest, @Param("id") id: string, @Param("itemId") itemId: string, @Body() body: { task?: string; to_lang?: string }) {
+    return this.menuWriter.suggest(country(req), await this.#p(req), id, itemId, { task: body?.task ?? "DESCRIBE", ...(body?.to_lang ? { toLang: body.to_lang } : {}) });
   }
 }
 

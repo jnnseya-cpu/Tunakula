@@ -780,3 +780,13 @@ tr.sel td { background: rgba(250, 210, 14, 0.12); }
 .copilot-cat { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--ink-2); }
 .copilot-metric { font-family: var(--display, inherit); font-weight: 800; font-size: 18px; font-variant-numeric: tabular-nums; }
 .copilot-card.sev-warning .copilot-metric { color: #c0531a; }
+
+/* Merchant copilot — AI menu writer */
+.writer-card { margin-top: 16px; }
+.writer-controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.writer-controls .select { min-width: 220px; }
+.writer-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.writer-result { margin-top: 14px; border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; background: var(--surface-2); }
+.writer-result-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.writer-result-head .link-btn { margin-left: auto; }
+.writer-text { margin: 0; font-size: 15px; line-height: 1.55; color: var(--ink); white-space: pre-wrap; }

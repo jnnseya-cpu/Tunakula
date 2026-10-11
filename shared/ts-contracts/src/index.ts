@@ -13,3 +13,4 @@ export * from "./assistant.ts";
 export * from "./growth.ts";
 export * from "./merchant-copilot.ts";
 export * from "./rider-copilot.ts";
+export * from "./menu-writer.ts";

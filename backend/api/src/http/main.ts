@@ -49,7 +49,9 @@ import type { MerchantPlanService } from "../app/merchant-plans.ts";
 import { loadIntegrationConfig } from "../app/integrations.ts";
 import { LlmAssistantBrain } from "../modules/assistant/llm-brain.ts";
 import { SandboxBrain } from "../modules/assistant/sandbox-brain.ts";
-import type { AssistantBrain } from "@tunakula/ts-contracts";
+import { LlmMenuWriter } from "../modules/merchant/llm-menu-writer.ts";
+import { TemplateMenuWriter } from "../modules/merchant/template-menu-writer.ts";
+import type { AssistantBrain, MenuWriterBrain } from "@tunakula/ts-contracts";
 import { createApi } from "./app.ts";
 import { TOKENS } from "./common.ts";
 
@@ -130,12 +132,15 @@ registry.restore(await db.tx({}, loadVersions));
 // the LLM brain answers, grounded on the customer's own order and the policies, with the in-house deterministic
 // brain as the automatic fallback on any error. With no key, the deterministic brain runs on its own.
 let assistantBrain: AssistantBrain | undefined;
+let menuWriterBrain: MenuWriterBrain | undefined;
 const assistantKey = env("TUNAKULA_ASSISTANT_API_KEY");
 const assistantProvider = (env("TUNAKULA_ASSISTANT_PROVIDER") ?? "anthropic").toLowerCase();
 if (assistantKey && assistantProvider === "anthropic") {
   const model = env("TUNAKULA_ASSISTANT_MODEL") ?? "claude-opus-5-5";
   assistantBrain = new LlmAssistantBrain({ apiKey: assistantKey, model }, new SandboxBrain());
-  log.info("AI assistant: hosted model enabled", { model });
+  // The same key powers the merchant copilot's AI dish writer (draft / translate), with the template fallback.
+  menuWriterBrain = new LlmMenuWriter({ apiKey: assistantKey, model }, new TemplateMenuWriter());
+  log.info("AI assistant and menu writer: hosted model enabled", { model });
 }
 
 // Map provider for distances and travel times; any outage falls back to the estimate, never to an error.
@@ -156,6 +161,7 @@ const app = await createApi({
   ...(senders ? { senders } : {}),
   ...(vapid ? { vapid } : {}),
   ...(assistantBrain ? { assistantBrain } : {}),
+  ...(menuWriterBrain ? { menuWriterBrain } : {}),
   routing,
   corsOrigins: (env("TUNAKULA_CONSOLE_ORIGINS") ?? "").split(",").map((o) => o.trim()).filter(Boolean),
   onError: (e) => log.error("unhandled", { error: e }),
