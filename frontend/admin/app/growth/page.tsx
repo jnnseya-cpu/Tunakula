@@ -181,7 +181,7 @@ function Autonomy({ country, L, onRan }: { country: string; L: (fr: string, en: 
       <div className="auto-actions">
         {!ro ? <button type="button" className="btn primary sm" disabled={!!busy} onClick={save}>{busy === "save" ? "…" : L("Enregistrer les règles", "Save policy")}</button> : null}
         <button type="button" className="btn sm" disabled={!!busy} onClick={() => sweep(true)}>{busy === "preview" ? "…" : L("Simuler un passage", "Preview sweep")}</button>
-        {!ro ? <button type="button" className="btn sm" disabled={!!busy || !form.enabled} onClick={() => sweep(false)}>{busy === "run" ? "…" : L("Lancer maintenant", "Run now")}</button> : null}
+        {!ro ? <button type="button" className="btn sm" disabled={!!busy || !data.policy.enabled} onClick={() => sweep(false)} title={!data.policy.enabled ? L("Enregistrez d’abord des règles activées", "Save an enabled policy first") : ""}>{busy === "run" ? "…" : L("Lancer maintenant", "Run now")}</button> : null}
       </div>
       {msg ? <div className="banner" style={{ marginTop: 10 }}>{msg}</div> : null}
 

@@ -68,7 +68,6 @@ export class MenuWriterService {
     }
 
     await this.db.tx({ country }, async (sql) => {
-      const { audit } = await import("../persistence/identity.ts");
       await audit(sql, { actor: principal.userId, action: "menu.ai_draft", target: `item:${itemId}`, country, detail: { task, toLang, source: result.source } });
     });
 

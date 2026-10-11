@@ -290,7 +290,9 @@ export class GrowthService {
         if (!policy.segments.includes(segment)) continue;
         const credit = this.#plannedCredit(policy, orders, days, totalSpend);
         const cost = credit ? credit.minor : 0n;
-        if (spend + cost > budget) { cappedBy = "BUDGET"; break; }
+        // Skip a customer whose credit would overrun the budget, but keep reaching cheaper and message-only
+        // (cost 0) customers behind them — don't abandon the whole run on the first expensive one.
+        if (spend + cost > budget) { cappedBy = cappedBy ?? "BUDGET"; continue; }
         spend += cost;
         chosen.push({ customerId: c.customer_id, display_name: c.display_name, phone: maskPhone(c.phone), segment, credit });
       }

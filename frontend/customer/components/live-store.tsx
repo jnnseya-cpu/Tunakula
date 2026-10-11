@@ -115,10 +115,14 @@ export function LiveStore() {
   useEffect(() => {
     if (!id || !cartKey) { setUpsell(null); return; }
     let live = true;
-    api<{ suggestion: typeof upsell }>(`/v1/branches/${id}/upsell`, { method: "POST", auth: false, body: { item_ids: cartKey.split(","), lang: lang() } })
-      .then((r) => { if (live) setUpsell(r.suggestion); })
-      .catch(() => { if (live) setUpsell(null); });
-    return () => { live = false; };
+    // Debounced: while the customer is quickly adding dishes, wait for the cart to settle before asking for a
+    // suggestion, so we make at most one request per pause instead of one per tap.
+    const timer = setTimeout(() => {
+      api<{ suggestion: typeof upsell }>(`/v1/branches/${id}/upsell`, { method: "POST", auth: false, body: { item_ids: cartKey.split(","), lang: lang() } })
+        .then((r) => { if (live) setUpsell(r.suggestion); })
+        .catch(() => { if (live) setUpsell(null); });
+    }, 600);
+    return () => { live = false; clearTimeout(timer); };
   }, [id, cartKey]);
 
   if (!id) return <main className="app-page"><p className="muted">No storefront chosen. <Link className="link-btn" href="/order/">See restaurants</Link></p></main>;

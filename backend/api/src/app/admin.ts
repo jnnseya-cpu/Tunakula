@@ -964,6 +964,8 @@ function majorUnits(minor: string): string {
  *  leading =,+,-,@ is prefixed with a quote so spreadsheets don't treat the value as a formula. */
 function csvCell(value: string): string {
   let s = String(value ?? "");
-  if (/^[=+\-@]/.test(s)) s = `'${s}`;
+  // Neutralise a leading =,+,-,@ so a spreadsheet can't run the cell as a formula — but leave a plain signed
+  // number (e.g. "-12.50") intact, so finance sees a real negative amount, not the text "'-12.50".
+  if (/^[=+\-@]/.test(s) && !/^-?\d+(\.\d+)?$/.test(s)) s = `'${s}`;
   return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
