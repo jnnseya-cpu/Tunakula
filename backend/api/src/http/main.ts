@@ -190,6 +190,7 @@ const app = await createApi({
   corsOrigins: (env("TUNAKULA_CONSOLE_ORIGINS") ?? "").split(",").map((o) => o.trim()).filter(Boolean),
   ...(env("TUNAKULA_TRUST_PROXY") === "1" ? { trustProxy: true } : {}),
   ...(Number(env("TUNAKULA_RATE_LIMIT_RPM") ?? 0) > 0 ? { rateLimit: { rpm: Number(env("TUNAKULA_RATE_LIMIT_RPM")) } } : {}),
+  ...(env("TUNAKULA_METRICS") === "1" ? { metrics: { ...(env("TUNAKULA_METRICS_TOKEN") ? { token: required("TUNAKULA_METRICS_TOKEN") } : {}) } } : {}),
   onError: (e) => log.error("unhandled", { error: e }),
 });
 // Other instances publish too: pick up their changes (CFG-002 rollback must reach every instance within a minute).

@@ -58,6 +58,7 @@ import type { Db } from "../db/db.ts";
 import type { CountryConfigRegistry } from "../modules/config/config-registry.ts";
 import { PaymentRouter } from "../modules/payments/payment-router.ts";
 import { IdempotencyInterceptor, ProblemFilter, TOKENS } from "./common.ts";
+import { createMetrics } from "./metrics.ts";
 import { AdminConfigController, AdminController, AuthController, AddressController, FavouriteController, CommsController, CouponController, GroupController, KitchenController, MeController, MembershipController, NotificationsController, OnboardingController, OpsController, RefundController, ReferralController, LoyaltyController, CashbackController, ChatController, BannerController, SiteContentController, ChefController, SupportController, GrowthController, MerchantCopilotController, IntegrationsController, SubscriptionController, PosController, KioskController, PushController, ReservationController, ReviewController, RiderController, WalletController, MerchantOnboardingController, CatalogueController, OrdersController, PaymentsController, PlatformController, WebhooksController } from "./controllers.ts";
 
 export interface ApiDeps {
@@ -75,6 +76,8 @@ export interface ApiDeps {
   readonly trustProxy?: boolean;
   /** Opt-in per-IP rate limit (requests per minute per instance). Omit or 0 to disable. */
   readonly rateLimit?: { readonly rpm: number };
+  /** Opt-in Prometheus metrics at GET /metrics. Provide a token to require `Authorization: Bearer <token>`. */
+  readonly metrics?: { readonly token?: string };
   /** Channel adapters for notifications. Defaults to the sandbox sender (records, never sends). */
   readonly senders?: ChannelSender;
   /** VAPID keys for Web Push; when set, customers can enable push and the push channel delivers to their devices. */
@@ -230,6 +233,24 @@ export async function createApi(deps: ApiDeps): Promise<NestFastifyApplication> 
       for (const [ip, arr] of hits) { const keep = arr.filter((t) => now - t < windowMs); if (keep.length) hits.set(ip, keep); else hits.delete(ip); }
     }, windowMs);
     prune.unref();
+  }
+
+  // Opt-in Prometheus metrics. An onResponse hook records every request by method + matched route template
+  // (bounded cardinality) and status; GET /metrics renders them for a scraper. Restrict it at the edge, or pass
+  // a token to require a bearer header. Its own requests are not counted.
+  if (deps.metrics) {
+    const metrics = createMetrics();
+    const token = deps.metrics.token;
+    const fastify = app.getHttpAdapter().getInstance();
+    fastify.addHook("onResponse", (req, reply, done) => {
+      const route = req.routeOptions?.url ?? "unmatched";
+      if (route !== "/metrics") metrics.observe(req.method, route, reply.statusCode, reply.elapsedTime / 1000);
+      done();
+    });
+    fastify.get("/metrics", (req, reply) => {
+      if (token && req.headers.authorization !== `Bearer ${token}`) { void reply.code(401).type("text/plain").send("unauthorized\n"); return; }
+      void reply.header("content-type", "text/plain; version=0.0.4; charset=utf-8").send(metrics.scrape());
+    });
   }
 
   if (deps.corsOrigins?.length) {

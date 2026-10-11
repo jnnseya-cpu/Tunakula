@@ -26,8 +26,12 @@ Roles: **Infra** (cloud, DB, DNS, secrets), **Release** (build/deploy), **Ops** 
    website; TLS certs issued; the load balancer / ingress forwards `X-Forwarded-*`.
 5. **Edge** (Infra) — a shared rate limiter + WAF in front of the API fleet (the app's per-instance limiter and
    OTP caps are a second layer, not the first).
-6. **Observability** (Ops) — ship the structured JSON logs to your platform; dashboards for request rate, error
-   rate, p95 latency, DB connections, and the background sweep logs; alerts wired to on-call.
+6. **Observability** (Ops) — ship the structured JSON logs to your platform. Enable `TUNAKULA_METRICS=1` (with a
+   scrape token, restricted at the edge) and point Prometheus at `GET /metrics`: it exposes
+   `http_requests_total` and `http_request_duration_seconds` by route, plus process gauges. Build dashboards for
+   request rate, error rate, p95/p99 latency, DB connections and the background sweep logs; wire alerts to
+   on-call. Rehearse capacity with `node tools/load-test.mjs <url> --path /v1/health --concurrency 50 --duration 60`
+   (and a long `--duration` for a soak) before launch.
 
 ---
 
