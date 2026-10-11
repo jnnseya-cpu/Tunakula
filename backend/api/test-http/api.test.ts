@@ -1892,6 +1892,30 @@ describe("reviews and ratings", () => {
   });
 });
 
+describe("storefront upsell (AI cross-sell copy)", () => {
+  test("suggests one complementary, available dish with a grounded pitch — never one already in the cart", async () => {
+    const menu = await call("GET", `/v1/branches/${branchId}/menu`, { country: "CD" });
+    const available = menu.body.items.filter((i: { available: boolean }) => i.available);
+    assert.ok(available.length >= 2, "the branch has at least two available dishes");
+    const inCart = available[0];
+    const u = await call("POST", `/v1/branches/${branchId}/upsell`, { country: "CD", body: { item_ids: [inCart.id], lang: "en" } });
+    assert.equal(u.status, 200, JSON.stringify(u.body));
+    assert.ok(u.body.suggestion, "a suggestion came back");
+    assert.notEqual(u.body.suggestion.item_id, inCart.id, "never suggests a dish already in the cart");
+    assert.equal(u.body.suggestion.source, "template", "offline, the deterministic writer phrases it");
+    assert.ok(typeof u.body.suggestion.pitch === "string" && u.body.suggestion.pitch.length > 0, "a pitch was written");
+    // The suggested dish is a real, available menu item (not invented).
+    const match = menu.body.items.find((i: { id: string }) => i.id === u.body.suggestion.item_id);
+    assert.ok(match && match.available, "the suggestion is a real, available dish");
+  });
+
+  test("an empty cart gets no suggestion", async () => {
+    const u = await call("POST", `/v1/branches/${branchId}/upsell`, { country: "CD", body: { item_ids: [] } });
+    assert.equal(u.status, 200);
+    assert.equal(u.body.suggestion, null);
+  });
+});
+
 describe("saved addresses", () => {
   test("a customer saves, lists, re-defaults and deletes addresses", async () => {
     const list0 = await call("GET", "/v1/me/addresses", { token: customer.token, country: "CD" });

@@ -57,7 +57,9 @@ import { LlmReviewReplyWriter } from "../modules/merchant/llm-review-reply-write
 import { TemplateReviewReplyWriter } from "../modules/merchant/template-review-reply-writer.ts";
 import { LlmRiderBriefWriter } from "../modules/rider/llm-rider-brief-writer.ts";
 import { TemplateRiderBriefWriter } from "../modules/rider/template-rider-brief-writer.ts";
-import type { AssistantBrain, MenuWriterBrain, WinBackWriter, ReviewReplyWriter, RiderBriefWriter } from "@tunakula/ts-contracts";
+import { LlmUpsellWriter } from "../modules/growth/llm-upsell-writer.ts";
+import { TemplateUpsellWriter } from "../modules/growth/template-upsell-writer.ts";
+import type { AssistantBrain, MenuWriterBrain, WinBackWriter, ReviewReplyWriter, RiderBriefWriter, UpsellWriter } from "@tunakula/ts-contracts";
 import { createApi } from "./app.ts";
 import { TOKENS } from "./common.ts";
 
@@ -142,6 +144,7 @@ let menuWriterBrain: MenuWriterBrain | undefined;
 let winBackWriter: WinBackWriter | undefined;
 let reviewReplyWriter: ReviewReplyWriter | undefined;
 let riderBriefWriter: RiderBriefWriter | undefined;
+let upsellWriter: UpsellWriter | undefined;
 const assistantKey = env("TUNAKULA_ASSISTANT_API_KEY");
 const assistantProvider = (env("TUNAKULA_ASSISTANT_PROVIDER") ?? "anthropic").toLowerCase();
 if (assistantKey && assistantProvider === "anthropic") {
@@ -155,7 +158,9 @@ if (assistantKey && assistantProvider === "anthropic") {
   reviewReplyWriter = new LlmReviewReplyWriter({ apiKey: assistantKey, model }, new TemplateReviewReplyWriter());
   // …and the rider copilot's shift-outlook briefing, phrased from the rider's own grounded facts, template fallback.
   riderBriefWriter = new LlmRiderBriefWriter({ apiKey: assistantKey, model }, new TemplateRiderBriefWriter());
-  log.info("AI assistant, menu, win-back, review-reply and rider-brief writers: hosted model enabled", { model });
+  // …and the storefront upsell line, pitching one complementary dish the service chose, template fallback.
+  upsellWriter = new LlmUpsellWriter({ apiKey: assistantKey, model }, new TemplateUpsellWriter());
+  log.info("AI assistant, menu, win-back, review-reply, rider-brief and upsell writers: hosted model enabled", { model });
 }
 
 // Map provider for distances and travel times; any outage falls back to the estimate, never to an error.
@@ -180,6 +185,7 @@ const app = await createApi({
   ...(winBackWriter ? { winBackWriter } : {}),
   ...(reviewReplyWriter ? { reviewReplyWriter } : {}),
   ...(riderBriefWriter ? { riderBriefWriter } : {}),
+  ...(upsellWriter ? { upsellWriter } : {}),
   routing,
   corsOrigins: (env("TUNAKULA_CONSOLE_ORIGINS") ?? "").split(",").map((o) => o.trim()).filter(Boolean),
   onError: (e) => log.error("unhandled", { error: e }),

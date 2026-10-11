@@ -30,6 +30,7 @@ import type { AssistantService } from "../app/assistant.ts";
 import type { GrowthService } from "../app/growth.ts";
 import type { MerchantCopilotService } from "../app/merchant-copilot.ts";
 import type { MenuWriterService } from "../app/menu-writer.ts";
+import type { UpsellService } from "../app/upsell.ts";
 import type { RiderCopilotService } from "../app/rider-copilot.ts";
 import type { IntegrationsService } from "../app/integrations.ts";
 import type { SubscriptionService } from "../app/subscriptions.ts";
@@ -108,7 +109,16 @@ export class CatalogueController {
     @Inject(TOKENS.tokens) private readonly tokens: TokenService,
     @Inject(TOKENS.catalogue) private readonly catalogue: CatalogueService,
     @Inject(TOKENS.eta) private readonly eta: EtaService,
+    @Inject(TOKENS.upsell) private readonly upsell: UpsellService,
   ) {}
+
+  /** Public: suggest one complementary dish for the current cart, with a short AI pitch. Grounded, read-only. */
+  @Post("branches/:id/upsell")
+  @HttpCode(200)
+  upsellForCart(@Req() req: FastifyRequest, @Param("id") id: string, @Body() body: { item_ids?: string[]; lang?: string }) {
+    const ids = Array.isArray(body?.item_ids) ? body.item_ids.map(String).slice(0, 50) : [];
+    return this.upsell.suggest(country(req), id, ids, body?.lang === "en" ? "en" : "fr");
+  }
 
   /** Storefronts near a point, nearest first, each with road distance in km, delivery time and fee. */
   @Get("branches/nearby")

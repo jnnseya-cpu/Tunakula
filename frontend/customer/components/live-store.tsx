@@ -9,7 +9,7 @@ import { api, ApiError, foodPhotoUrl, getSession, listFavourites, loadCart, line
 import { ClockIcon, PinIcon, useLocationCtx, type LiveStoreRow } from "./location";
 import { PlateArt, recipeFor } from "./plate-art";
 import { BookTable } from "./book-table";
-import { t } from "../lib/i18n";
+import { t, lang } from "../lib/i18n";
 
 interface VOption { id: string; name: string; price: string }
 interface Variation { id: string; name: string; type: "SINGLE" | "MULTI"; required: boolean; min: number; max: number; options: VOption[] }
@@ -108,6 +108,18 @@ export function LiveStore() {
   };
   const count = cart?.lines.reduce((n, l) => n + l.qty, 0) ?? 0;
   const subtotal = useMemo(() => cart?.lines.reduce((s, l) => addMinor(s, mulMinor(l.unit.amount_minor, l.qty)), "0") ?? "0", [cart]);
+
+  // One grounded, AI-pitched cross-sell for the current cart. Re-fetched when the set of cart dishes changes.
+  const [upsell, setUpsell] = useState<{ item_id: string; name: string; price: MoneyWire | null; pitch: string; source: string } | null>(null);
+  const cartKey = useMemo(() => [...new Set((cart?.lines ?? []).map((l) => l.item_id))].sort().join(","), [cart]);
+  useEffect(() => {
+    if (!id || !cartKey) { setUpsell(null); return; }
+    let live = true;
+    api<{ suggestion: typeof upsell }>(`/v1/branches/${id}/upsell`, { method: "POST", auth: false, body: { item_ids: cartKey.split(","), lang: lang() } })
+      .then((r) => { if (live) setUpsell(r.suggestion); })
+      .catch(() => { if (live) setUpsell(null); });
+    return () => { live = false; };
+  }, [id, cartKey]);
 
   if (!id) return <main className="app-page"><p className="muted">No storefront chosen. <Link className="link-btn" href="/order/">See restaurants</Link></p></main>;
   if (error) return <main className="app-page"><div className="app-card"><h1 className="app-title">This storefront is not available</h1><p className="muted">{error}</p><Link className="btn accent" href="/order/">See other restaurants</Link></div></main>;
@@ -243,6 +255,16 @@ export function LiveStore() {
                 ))}
               </ul>
               <div className="cart-sub"><span>Food</span><b className="num">{money({ amount_minor: subtotal, currency: ccy })}</b></div>
+              {upsell && !cart.lines.some((l) => l.item_id === upsell.item_id) ? (
+                <div className="upsell-card">
+                  <div className="upsell-head"><span>{lang() === "fr" ? "Complétez votre commande" : "Complete your order"}</span>{upsell.source === "ai" ? <span className="upsell-ai">AI</span> : null}</div>
+                  <p className="upsell-pitch">{upsell.pitch}</p>
+                  <div className="upsell-row">
+                    <span className="upsell-name">{upsell.name}{upsell.price ? <b className="num">{money(upsell.price)}</b> : null}</span>
+                    <button type="button" className="btn sm accent" onClick={() => { const mi = menu.items.find((i) => i.id === upsell.item_id); if (mi) add(mi); }}>{lang() === "fr" ? "Ajouter" : "Add"}</button>
+                  </div>
+                </div>
+              ) : null}
               <p className="muted small">Service charge (10%) and delivery are added at checkout, each on its own line.</p>
               <Link className="btn accent wide" href={`/checkout/?branch=${menu.branch.id}`}>Checkout</Link>
             </>

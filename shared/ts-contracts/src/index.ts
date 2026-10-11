@@ -17,3 +17,4 @@ export * from "./menu-writer.ts";
 export * from "./win-back-writer.ts";
 export * from "./review-reply-writer.ts";
 export * from "./rider-brief-writer.ts";
+export * from "./upsell-writer.ts";

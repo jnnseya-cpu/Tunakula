@@ -35,10 +35,12 @@ import { MerchantCopilotService } from "../app/merchant-copilot.ts";
 import { SandboxMerchantBrain } from "../modules/merchant/sandbox-merchant-brain.ts";
 import { MenuWriterService } from "../app/menu-writer.ts";
 import { TemplateMenuWriter } from "../modules/merchant/template-menu-writer.ts";
+import { UpsellService } from "../app/upsell.ts";
+import { TemplateUpsellWriter } from "../modules/growth/template-upsell-writer.ts";
 import { RiderCopilotService } from "../app/rider-copilot.ts";
 import { SandboxRiderBrain } from "../modules/rider/sandbox-rider-brain.ts";
 import { TemplateRiderBriefWriter } from "../modules/rider/template-rider-brief-writer.ts";
-import type { AssistantBrain, GrowthBrain, MerchantBrain, RiderBrain, MenuWriterBrain, WinBackWriter, ReviewReplyWriter, RiderBriefWriter } from "@tunakula/ts-contracts";
+import type { AssistantBrain, GrowthBrain, MerchantBrain, RiderBrain, MenuWriterBrain, WinBackWriter, ReviewReplyWriter, RiderBriefWriter, UpsellWriter } from "@tunakula/ts-contracts";
 import { IntegrationsService } from "../app/integrations.ts";
 import { SubscriptionService } from "../app/subscriptions.ts";
 import { PosService } from "../app/pos.ts";
@@ -87,6 +89,8 @@ export interface ApiDeps {
   readonly riderBrain?: RiderBrain;
   /** The rider shift-outlook writer. Defaults to the offline TemplateRiderBriefWriter; a hosted model phrases it. */
   readonly riderBriefWriter?: RiderBriefWriter;
+  /** The storefront upsell writer. Defaults to the offline TemplateUpsellWriter; a hosted model phrases the pitch. */
+  readonly upsellWriter?: UpsellWriter;
   /** The menu writer brain. Defaults to the offline TemplateMenuWriter (describes; can't translate without a model). */
   readonly menuWriterBrain?: MenuWriterBrain;
 }
@@ -126,6 +130,7 @@ export async function createApi(deps: ApiDeps): Promise<NestFastifyApplication> 
   const admin = new AdminService(deps.db, deps.registry, now);
   const merchantCopilot = new MerchantCopilotService(deps.db, deps.registry, deps.merchantBrain ?? new SandboxMerchantBrain(), catalogue, admin);
   const menuWriter = new MenuWriterService(deps.db, deps.registry, catalogue, deps.menuWriterBrain ?? new TemplateMenuWriter());
+  const upsell = new UpsellService(catalogue, deps.upsellWriter ?? new TemplateUpsellWriter());
   const riderCopilot = new RiderCopilotService(deps.registry, deps.riderBrain ?? new SandboxRiderBrain(), deps.riderBriefWriter ?? new TemplateRiderBriefWriter(), dispatch, now);
   const integrations = new IntegrationsService(deps.db, deps.registry);
   const subscriptions = new SubscriptionService(deps.db, deps.registry, commerce, now);
@@ -175,6 +180,7 @@ export async function createApi(deps: ApiDeps): Promise<NestFastifyApplication> 
           { provide: TOKENS.growth, useValue: growth },
           { provide: TOKENS.merchantCopilot, useValue: merchantCopilot },
           { provide: TOKENS.menuWriter, useValue: menuWriter },
+          { provide: TOKENS.upsell, useValue: upsell },
           { provide: TOKENS.riderCopilot, useValue: riderCopilot },
           { provide: TOKENS.integrations, useValue: integrations },
           { provide: TOKENS.subscriptions, useValue: subscriptions },
