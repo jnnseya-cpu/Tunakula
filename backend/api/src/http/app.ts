@@ -71,6 +71,10 @@ export interface ApiDeps {
   readonly onError?: (e: unknown) => void;
   /** Browser origins allowed to call the API (the admin console, the website). None by default. */
   readonly corsOrigins?: readonly string[];
+  /** Trust the X-Forwarded-* headers from a front proxy / load balancer, so req.ip is the real client. */
+  readonly trustProxy?: boolean;
+  /** Opt-in per-IP rate limit (requests per minute per instance). Omit or 0 to disable. */
+  readonly rateLimit?: { readonly rpm: number };
   /** Channel adapters for notifications. Defaults to the sandbox sender (records, never sends). */
   readonly senders?: ChannelSender;
   /** VAPID keys for Web Push; when set, customers can enable push and the push channel delivers to their devices. */
@@ -194,7 +198,40 @@ export async function createApi(deps: ApiDeps): Promise<NestFastifyApplication> 
     }
   }
 
-  const app = await NestFactory.create<NestFastifyApplication>(ApiModule.register(), new FastifyAdapter({ bodyLimit: 1_048_576 }), { logger: false, rawBody: true });
+  const app = await NestFactory.create<NestFastifyApplication>(
+    ApiModule.register(),
+    new FastifyAdapter({ bodyLimit: 1_048_576, ...(deps.trustProxy ? { trustProxy: true } : {}) }),
+    { logger: false, rawBody: true },
+  );
+
+  // Opt-in per-IP rate limit (a baseline abuse control; per-instance, so pair it with a shared limiter at the
+  // edge for a fleet). Health and CORS preflight are never limited. Enabled only when a positive rpm is given.
+  if (deps.rateLimit && deps.rateLimit.rpm > 0) {
+    const rpm = deps.rateLimit.rpm;
+    const windowMs = 60_000;
+    const hits = new Map<string, number[]>();
+    app.getHttpAdapter().getInstance().addHook("onRequest", (req, reply, done) => {
+      if (req.method === "OPTIONS" || req.url === "/v1/health") return done();
+      const now = Date.now();
+      const ip = req.ip || "unknown";
+      const recent = (hits.get(ip) ?? []).filter((t) => now - t < windowMs);
+      if (recent.length >= rpm) {
+        void reply.code(429).header("retry-after", "60").type("application/problem+json").send(
+          JSON.stringify({ type: "https://www.tunakula.com/problems/rate-limited", title: "RATE_LIMITED", status: 429, detail: "Too many requests; slow down.", code: "RATE_LIMITED" }),
+        );
+        return;
+      }
+      recent.push(now);
+      hits.set(ip, recent);
+      done();
+    });
+    const prune = setInterval(() => {
+      const now = Date.now();
+      for (const [ip, arr] of hits) { const keep = arr.filter((t) => now - t < windowMs); if (keep.length) hits.set(ip, keep); else hits.delete(ip); }
+    }, windowMs);
+    prune.unref();
+  }
+
   if (deps.corsOrigins?.length) {
     app.enableCors({
       origin: [...deps.corsOrigins],

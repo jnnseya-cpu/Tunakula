@@ -188,6 +188,8 @@ const app = await createApi({
   ...(upsellWriter ? { upsellWriter } : {}),
   routing,
   corsOrigins: (env("TUNAKULA_CONSOLE_ORIGINS") ?? "").split(",").map((o) => o.trim()).filter(Boolean),
+  ...(env("TUNAKULA_TRUST_PROXY") === "1" ? { trustProxy: true } : {}),
+  ...(Number(env("TUNAKULA_RATE_LIMIT_RPM") ?? 0) > 0 ? { rateLimit: { rpm: Number(env("TUNAKULA_RATE_LIMIT_RPM")) } } : {}),
   onError: (e) => log.error("unhandled", { error: e }),
 });
 // Other instances publish too: pick up their changes (CFG-002 rollback must reach every instance within a minute).
@@ -197,6 +199,7 @@ const refresh = setInterval(() => {
 refresh.unref();
 
 // Operations loop: offers waiting orders to riders, expires stale offers, cancels orders no kitchen answered, refunds.
+let loop: ReturnType<typeof setInterval> | undefined;
 const dispatchMs = Number(env("TUNAKULA_DISPATCH_MS") ?? 5000);
 if (dispatchMs > 0) {
   const dispatcher = app.get<DispatchService>(TOKENS.dispatch);
@@ -208,7 +211,7 @@ if (dispatchMs > 0) {
   const subscriptions = app.get<SubscriptionService>(TOKENS.subscriptions);
   const merchantPlans = app.get<MerchantPlanService>(TOKENS.merchantPlans);
   let running = false;
-  const loop = setInterval(async () => {
+  loop = setInterval(async () => {
     if (running) return;
     running = true;
     try {
@@ -245,3 +248,19 @@ if (dispatchMs > 0) {
 
 await app.listen({ port: Number(env("PORT") ?? 8080), host: "0.0.0.0" });
 log.info("api listening", { port: Number(env("PORT") ?? 8080), connectors: connectors.map((c) => c.id) });
+
+// Graceful shutdown: on a rolling deploy or scale-down the orchestrator sends SIGTERM. Stop the background
+// sweeps, then let Nest/Fastify drain in-flight requests before the process exits, so no request is cut off.
+let shuttingDown = false;
+for (const signal of ["SIGTERM", "SIGINT"] as const) {
+  process.on(signal, () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    log.info("shutting down", { signal });
+    clearInterval(refresh);
+    if (loop) clearInterval(loop);
+    const timer = setTimeout(() => { log.error("shutdown timed out; forcing exit", {}); process.exit(1); }, 25_000);
+    timer.unref();
+    app.close().then(() => { log.info("shutdown complete", {}); process.exit(0); }).catch((error) => { log.error("shutdown error", { error }); process.exit(1); });
+  });
+}
