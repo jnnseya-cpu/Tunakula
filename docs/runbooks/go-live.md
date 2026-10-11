@@ -11,9 +11,11 @@ Roles: **Infra** (cloud, DB, DNS, secrets), **Release** (build/deploy), **Ops** 
 
 ## T‑1 — the evening before
 
-1. **Green commit** — the commit you will ship is green in CI (guards, `npm audit`, typecheck, 261 unit + 214 e2e
-   on PostgreSQL 16, both frontend builds, CodeQL). Tag it: `git tag v1.0.0 && git push --tags`.
-   → The **Release** workflow builds and pushes `ghcr.io/<owner>/tunakula-api:1.0.0`. Confirm the image exists.
+1. **Green commit** — the commit you will ship is green in CI (guards, `npm audit`, typecheck, unit + e2e on
+   PostgreSQL 16, both frontend builds, CodeQL). Set the repo variables `CUSTOMER_API_URL` and `ADMIN_API_URL`
+   to the production API URL (baked into the static frontends at build time). Tag it: `git tag v1.0.0 && git push --tags`.
+   → The **Release** workflow builds and pushes three images: `ghcr.io/<owner>/tunakula-api`,
+   `…/tunakula-web-customer`, `…/tunakula-web-admin` (each tagged `1.0.0`). Confirm all three exist.
 2. **Database** (Infra) — provision PostgreSQL 16. Create the two roles and the database (see `deploy/initdb.sql`):
    a migrating owner `tunakula` (CREATEDB, **NOT** superuser, **NOT** BYPASSRLS) and the app role `tunakula_app`
    (**NOT** superuser, **NOT** BYPASSRLS). Enable automated backups + point‑in‑time recovery now, and do one
@@ -63,9 +65,13 @@ against live credentials. → A real low-value test order is authorized and sett
 the order advances.
 
 ### 5. Frontends (Infra)
-Build and deploy the two static exports to the CDN; point them at the production API:
+Deploy the two frontend units — each is its own static image (`tunakula-web-customer`, `tunakula-web-admin`,
+nginx-served) built with the production API URL baked in, or the raw static export to a CDN:
 ```
-npm run build:frontend   # @tunakula/web-customer and @tunakula/web-admin
+# Images (built by the Release workflow), or locally:
+docker build -f frontend/customer/Dockerfile --build-arg NEXT_PUBLIC_API_URL=https://api.tunakula.com -t web-customer .
+# or the static files for a CDN:
+NEXT_PUBLIC_API_URL=https://api.tunakula.com npm run build:frontend   # → frontend/*/out
 ```
 → Admin console and website load; both call the production API (check CORS: `TUNAKULA_CONSOLE_ORIGINS` matches).
 

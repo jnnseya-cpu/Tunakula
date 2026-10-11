@@ -1,13 +1,26 @@
-# Production image for the Tunakula API (NestJS on Fastify, run directly from TypeScript via tsx).
-# The API migrates the database on startup, then serves on $PORT (default 8080).
-# The two web frontends are static exports (`npm run build:frontend`) served by a CDN/static host, not this image.
+# Production image for the Tunakula API only (NestJS on Fastify, run from TypeScript via tsx).
+# Deployed as its own unit — the two web frontends are separate static images (frontend/*/Dockerfile).
+# This installs ONLY the backend + shared workspaces (scoped npm ci), so none of the frontend toolchain
+# (Next.js etc.) ends up in the image. The API migrates the database on startup, then serves on $PORT.
 FROM node:22-slim
 
 WORKDIR /app
 
-# Install the whole workspace from a clean lockfile. --include=dev keeps tsx (the TypeScript runner) available.
-COPY . .
-RUN npm ci --include=dev
+# Only the manifests, shared packages, and backend workspaces — the frontends are not copied.
+COPY package.json package-lock.json tsconfig.base.json tsconfig.json ./
+COPY shared ./shared
+COPY backend ./backend
+
+# Scope the install to the backend runtime graph. --include=dev keeps tsx (the TypeScript runner).
+RUN npm ci --include-workspace-root --include=dev \
+      -w @tunakula/ts-contracts \
+      -w @tunakula/ts-money \
+      -w @tunakula/payment-http \
+      -w @tunakula/payment-connector-bitripay \
+      -w @tunakula/payment-connector-koda \
+      -w @tunakula/payment-connector-sandbox \
+      -w @tunakula/payment-connector-stripe \
+      -w @tunakula/api
 
 ENV NODE_ENV=production
 ENV PORT=8080
@@ -21,6 +34,5 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||8080)+'/v1/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
-# node runs as PID 1 (no npm/shell wrapper), so SIGTERM reaches the process and the graceful-shutdown handler
-# in main.ts runs — draining in-flight requests on rolling deploys. tsx is loaded in-process via --import.
+# node is PID 1 (no npm/shell wrapper), so SIGTERM reaches the graceful-shutdown handler in main.ts.
 CMD ["node", "--import", "tsx", "src/http/main.ts"]

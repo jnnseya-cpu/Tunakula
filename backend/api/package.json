@@ -15,6 +15,7 @@
     "@tunakula/payment-connector-bitripay": "*",
     "@tunakula/payment-connector-koda": "*",
     "@tunakula/payment-connector-sandbox": "*",
+    "@tunakula/payment-connector-stripe": "*",
     "@tunakula/ts-contracts": "*",
     "@tunakula/ts-money": "*",
     "pg": "^8.23.1",

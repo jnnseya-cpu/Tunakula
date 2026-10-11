@@ -1,9 +1,11 @@
-# A self-contained, prod-like stack for staging or local verification: PostgreSQL 16 with the two least-privilege
-# roles, and the API image which migrates on startup and serves on :8080. The static frontends are built
-# separately (`npm run build:frontend`) and hosted on a CDN — they are not part of this stack.
+# A self-contained, prod-like stack where each tier is its OWN unit: PostgreSQL 16, the API image (migrates on
+# startup, serves :8080), and the two web frontends as separate static (nginx) images. In production these are
+# three independent deployments — the frontends are built per-environment (the API URL is baked at build time)
+# and typically served from a CDN; this compose mirrors that split for staging/local verification.
 #
 #   docker compose -f deploy/docker-compose.yml up --build
 #   docker compose -f deploy/docker-compose.yml exec api npm run bootstrap-admin -w @tunakula/api -- +243810000000 "Owner"
+#   # then: customer storefront → http://localhost:3000   admin console → http://localhost:3001
 #
 # Set real secrets via a .env file or your orchestrator; the sandbox payment + dev-OTP flags below are for
 # NON-production only.
@@ -46,6 +48,28 @@ services:
       PORT: "8080"
     ports:
       - "8080:8080"
+
+  # Customer storefront — its own static (nginx) unit. The API URL is baked at build time.
+  customer-web:
+    build:
+      context: ..
+      dockerfile: frontend/customer/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${CUSTOMER_API_URL:-http://localhost:8080}
+    depends_on: [api]
+    ports:
+      - "3000:80"
+
+  # Admin console — its own static (nginx) unit.
+  admin-web:
+    build:
+      context: ..
+      dockerfile: frontend/admin/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${ADMIN_API_URL:-http://localhost:8080}
+    depends_on: [api]
+    ports:
+      - "3001:80"
 
 volumes:
   tunakula-db:
