@@ -413,6 +413,30 @@ export class AdminService {
     });
   }
 
+  /** A CSV export of rider payouts (money out) over the last `days`. Finance only (ledger:read). */
+  async payoutsCsv(principal: Principal, country: string, daysParam: number): Promise<{ filename: string; csv: string }> {
+    const profile = this.#profile(country);
+    if (!this.#can(principal, "ledger:read", { type: "scope", country }, profile)) throw forbidden("Exporting payouts needs ledger:read");
+    const days = Math.min(Math.max(Math.trunc(daysParam) || 30, 1), 366);
+    const end = this.now();
+    const start = new Date(end.getTime() - days * 86_400_000);
+    return this.db.tx({ country }, async (sql) => {
+      const rows = await sql.query<{ at: Date; id: string; rider: string; amount_minor: string; currency: string; method: string }>(
+        `SELECT p.at, p.id, COALESCE(u.display_name, 'Rider') AS rider, p.amount_minor::text, p.currency, p.method
+           FROM dispatch.rider_payout p JOIN identity.app_user u ON u.id = p.rider_id
+          WHERE p.at >= $1 AND p.at < $2 ORDER BY p.at DESC`,
+        [start.toISOString(), end.toISOString()],
+      );
+      const header = ["Date (UTC)", "Payout ID", "Rider", "Amount", "Currency", "Method"];
+      const lines = [header.map(csvCell).join(",")];
+      for (const r of rows) {
+        lines.push([new Date(r.at).toISOString(), r.id, r.rider, majorUnits(r.amount_minor), r.currency, r.method].map(csvCell).join(","));
+      }
+      const stamp = end.toISOString().slice(0, 10);
+      return { filename: `tunakula-rider-payouts-${country}-${stamp}-${days}d.csv`, csv: lines.join("\r\n") + "\r\n" };
+    });
+  }
+
   /** GET /v1/admin/branches */
   async branches(principal: Principal, country: string) {
     const profile = this.#profile(country);

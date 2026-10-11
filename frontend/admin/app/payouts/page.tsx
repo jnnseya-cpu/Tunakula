@@ -7,7 +7,7 @@
  */
 import { useEffect, useState } from "react";
 import { Gate, Shell, useConsole } from "../../components/shell";
-import { api } from "../../lib/api";
+import { api, downloadFile } from "../../lib/api";
 import { money } from "../../lib/format";
 
 interface MoneyWire { amount_minor: string; currency: string }
@@ -96,6 +96,7 @@ function Payouts() {
       {data.riders ? (
         <section className="card">
           <div className="card-head"><div><h2>{L("Décaissements livreurs", "Rider payouts")}</h2><p>{L("Les livreurs encaissent eux-mêmes (Fast Pay) ; voici le journal et le solde encore dû.", "Riders cash out themselves (Fast Pay); here is the ledger and what is still owed.")}</p></div>
+            <button type="button" className="btn sm" disabled={busy === "export"} onClick={async () => { setBusy("export"); setNotice(null); try { await downloadFile(`/v1/admin/exports/payouts.csv?days=${days}`, "rider-payouts.csv", country); } catch (e) { setNotice((e as Error).message); } finally { setBusy(null); } }} title={L("Exporter les décaissements en CSV", "Export rider payouts as CSV")}>{busy === "export" ? "…" : L("⭳ Exporter CSV", "⭳ Export CSV")}</button>
             <div className="kpis">
               <div className="kpi"><span className="kpi-n num">{m(data.riders.paid_lifetime)}</span><span className="kpi-l">{L("Payé (total)", "Paid (lifetime)")}</span></div>
               <div className="kpi"><span className="kpi-n num">{m(data.riders.outstanding)}</span><span className="kpi-l">{L("Solde dû", "Outstanding")}</span></div>

@@ -732,6 +732,17 @@ export class AdminController {
       .send(out.csv);
   }
 
+  /** A CSV export of rider payouts over the last ?days (default 30). Finance only (ledger:read). */
+  @Get("exports/payouts.csv")
+  async payoutsCsv(@Req() req: FastifyRequest, @Res() reply: FastifyReply, @Query("days") days?: string) {
+    const out = await this.admin.payoutsCsv(await this.#principal(req), country(req), Number(days ?? 30));
+    await reply
+      .header("content-type", "text/csv; charset=utf-8")
+      .header("content-disposition", `attachment; filename="${out.filename}"`)
+      .header("cache-control", "no-store")
+      .send(out.csv);
+  }
+
   @Get("orders")
   async orders(@Req() req: FastifyRequest, @Query("group") group?: string, @Query("limit") limit?: string, @Query("before") before?: string) {
     return this.admin.orders(await this.#principal(req), country(req), {

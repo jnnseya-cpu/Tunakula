@@ -1930,6 +1930,20 @@ describe("admin exports (orders CSV)", () => {
     const forbidden = await api.inject({ method: "GET", url: "/v1/admin/exports/orders.csv", headers: { authorization: `Bearer ${customer.token}`, "x-country": "CD" } });
     assert.equal(forbidden.statusCode, 403);
   });
+
+  test("finance downloads a rider-payouts CSV; a country admin (no ledger:read) cannot", async () => {
+    const finance = await signIn("+243810000840");
+    await grant({ userId: finance.userId, role: "COUNTRY_FINANCE", scope: { type: "COUNTRY", id: "CD" } });
+    const r = await api.inject({ method: "GET", url: "/v1/admin/exports/payouts.csv?days=90", headers: { authorization: `Bearer ${finance.token}`, "x-country": "CD" } });
+    assert.equal(r.statusCode, 200, r.body);
+    assert.match(String(r.headers["content-type"]), /text\/csv/);
+    assert.match(String(r.headers["content-disposition"]), /attachment; filename="tunakula-rider-payouts-CD-.*\.csv"/);
+    const lines = r.body.trim().split("\r\n");
+    assert.equal(lines[0], "Date (UTC),Payout ID,Rider,Amount,Currency,Method");
+    // A country admin lacks ledger:read, so cannot export payouts; a plain customer certainly cannot.
+    assert.equal((await api.inject({ method: "GET", url: "/v1/admin/exports/payouts.csv", headers: { authorization: `Bearer ${admin.token}`, "x-country": "CD" } })).statusCode, 403);
+    assert.equal((await api.inject({ method: "GET", url: "/v1/admin/exports/payouts.csv", headers: { authorization: `Bearer ${customer.token}`, "x-country": "CD" } })).statusCode, 403);
+  });
 });
 
 describe("saved addresses", () => {
