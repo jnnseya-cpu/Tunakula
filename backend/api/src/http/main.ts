@@ -51,7 +51,9 @@ import { LlmAssistantBrain } from "../modules/assistant/llm-brain.ts";
 import { SandboxBrain } from "../modules/assistant/sandbox-brain.ts";
 import { LlmMenuWriter } from "../modules/merchant/llm-menu-writer.ts";
 import { TemplateMenuWriter } from "../modules/merchant/template-menu-writer.ts";
-import type { AssistantBrain, MenuWriterBrain } from "@tunakula/ts-contracts";
+import { LlmWinBackWriter } from "../modules/growth/llm-win-back-writer.ts";
+import { TemplateWinBackWriter } from "../modules/growth/template-win-back-writer.ts";
+import type { AssistantBrain, MenuWriterBrain, WinBackWriter } from "@tunakula/ts-contracts";
 import { createApi } from "./app.ts";
 import { TOKENS } from "./common.ts";
 
@@ -133,6 +135,7 @@ registry.restore(await db.tx({}, loadVersions));
 // brain as the automatic fallback on any error. With no key, the deterministic brain runs on its own.
 let assistantBrain: AssistantBrain | undefined;
 let menuWriterBrain: MenuWriterBrain | undefined;
+let winBackWriter: WinBackWriter | undefined;
 const assistantKey = env("TUNAKULA_ASSISTANT_API_KEY");
 const assistantProvider = (env("TUNAKULA_ASSISTANT_PROVIDER") ?? "anthropic").toLowerCase();
 if (assistantKey && assistantProvider === "anthropic") {
@@ -140,7 +143,9 @@ if (assistantKey && assistantProvider === "anthropic") {
   assistantBrain = new LlmAssistantBrain({ apiKey: assistantKey, model }, new SandboxBrain());
   // The same key powers the merchant copilot's AI dish writer (draft / translate), with the template fallback.
   menuWriterBrain = new LlmMenuWriter({ apiKey: assistantKey, model }, new TemplateMenuWriter());
-  log.info("AI assistant and menu writer: hosted model enabled", { model });
+  // …and the growth agent's win-back copywriter, which personalises re-engagement messages, template fallback.
+  winBackWriter = new LlmWinBackWriter({ apiKey: assistantKey, model }, new TemplateWinBackWriter());
+  log.info("AI assistant, menu writer and win-back writer: hosted model enabled", { model });
 }
 
 // Map provider for distances and travel times; any outage falls back to the estimate, never to an error.
@@ -162,6 +167,7 @@ const app = await createApi({
   ...(vapid ? { vapid } : {}),
   ...(assistantBrain ? { assistantBrain } : {}),
   ...(menuWriterBrain ? { menuWriterBrain } : {}),
+  ...(winBackWriter ? { winBackWriter } : {}),
   routing,
   corsOrigins: (env("TUNAKULA_CONSOLE_ORIGINS") ?? "").split(",").map((o) => o.trim()).filter(Boolean),
   onError: (e) => log.error("unhandled", { error: e }),

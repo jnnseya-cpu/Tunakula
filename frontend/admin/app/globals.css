@@ -815,3 +815,6 @@ tr.sel td { background: rgba(250, 210, 14, 0.12); }
 .auto-runs h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 8px; }
 .auto-runs ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .auto-runs li { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; font-size: 13px; color: var(--ink-2); }
+.auto-sample { margin-top: 12px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
+.auto-sample-head { display: flex; gap: 10px; align-items: center; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin-bottom: 6px; }
+.auto-sample p { margin: 0; font-size: 14px; line-height: 1.5; color: var(--ink); font-style: italic; }

@@ -41,10 +41,10 @@ function Growth() {
     setBusy(c.customer_id); setNotice(null);
     try {
       const minor = Math.round(Number(credit || "0") * 100);
-      const r = await api<{ segment: string; credited: { amount_minor: string; currency: string } | null }>("/v1/ops/growth/win-back", {
+      const r = await api<{ segment: string; credited: { amount_minor: string; currency: string } | null; message?: string }>("/v1/ops/growth/win-back", {
         method: "POST", country, body: { customer_id: c.customer_id, ...(minor > 0 ? { credit_minor: String(minor), currency: c.currency } : {}) },
       });
-      setNotice(L(`Message envoyé à ${c.display_name}`, `Win-back sent to ${c.display_name}`) + (r.credited ? ` · ${fmt(r.credited.amount_minor, r.credited.currency)}` : ""));
+      setNotice(L(`Message envoyé à ${c.display_name}`, `Win-back sent to ${c.display_name}`) + (r.credited ? ` · ${fmt(r.credited.amount_minor, r.credited.currency)}` : "") + (r.message ? ` — « ${r.message} »` : ""));
       void load();
     } catch (e) { setNotice((e as Error).message); } finally { setBusy(null); }
   };
@@ -88,7 +88,7 @@ function Growth() {
 interface Money { amount_minor: string; currency: string }
 interface Policy { enabled: boolean; segments: string[]; per_customer_cap: Money; daily_budget: Money; max_customers_per_run: number; currency: string }
 interface Run { id: string; dry_run: boolean; reached: number; planned: number; credited: Money; would_spend: Money; capped_by: string | null; ran_at: string }
-interface SweepResult { dry_run: boolean; planned: number; reached: number; would_spend: Money; credited: Money; capped_by: string | null; eligible: number; preview: { display_name: string; phone: string; segment: string; credit: Money | null }[] }
+interface SweepResult { dry_run: boolean; planned: number; reached: number; would_spend: Money; credited: Money; capped_by: string | null; eligible: number; preview: { display_name: string; phone: string; segment: string; credit: Money | null }[]; sample_message?: string; sample_source?: string }
 const AUTO_SEGS = ["LAPSED", "DORMANT"] as const;
 const major = (m: Money) => (Number(m.amount_minor) / 100).toFixed(2);
 const CAP_REASON: Record<string, { fr: string; en: string }> = {
@@ -195,6 +195,12 @@ function Autonomy({ country, L, onRan }: { country: string; L: (fr: string, en: 
             </span>
             {result.capped_by ? <span className="pill warn">{L("Plafonné : ", "Capped: ")}{L(CAP_REASON[result.capped_by]?.fr ?? result.capped_by, CAP_REASON[result.capped_by]?.en ?? result.capped_by)}</span> : null}
           </div>
+          {result.sample_message ? (
+            <div className="auto-sample">
+              <div className="auto-sample-head"><span>{L("Exemple de message", "Sample message")}</span><span className={`pill ${result.sample_source === "ai" ? "good" : ""}`}>{result.sample_source === "ai" ? L("IA", "AI") : L("Modèle", "Template")}</span></div>
+              <p>{result.sample_message}</p>
+            </div>
+          ) : null}
           {result.dry_run && result.preview.length > 0 ? (
             <ul className="auto-preview">
               {result.preview.slice(0, 8).map((p, i) => (

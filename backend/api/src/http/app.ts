@@ -29,13 +29,14 @@ import { AssistantService } from "../app/assistant.ts";
 import { SandboxBrain } from "../modules/assistant/sandbox-brain.ts";
 import { GrowthService } from "../app/growth.ts";
 import { SandboxGrowthBrain } from "../modules/growth/sandbox-growth-brain.ts";
+import { TemplateWinBackWriter } from "../modules/growth/template-win-back-writer.ts";
 import { MerchantCopilotService } from "../app/merchant-copilot.ts";
 import { SandboxMerchantBrain } from "../modules/merchant/sandbox-merchant-brain.ts";
 import { MenuWriterService } from "../app/menu-writer.ts";
 import { TemplateMenuWriter } from "../modules/merchant/template-menu-writer.ts";
 import { RiderCopilotService } from "../app/rider-copilot.ts";
 import { SandboxRiderBrain } from "../modules/rider/sandbox-rider-brain.ts";
-import type { AssistantBrain, GrowthBrain, MerchantBrain, RiderBrain, MenuWriterBrain } from "@tunakula/ts-contracts";
+import type { AssistantBrain, GrowthBrain, MerchantBrain, RiderBrain, MenuWriterBrain, WinBackWriter } from "@tunakula/ts-contracts";
 import { IntegrationsService } from "../app/integrations.ts";
 import { SubscriptionService } from "../app/subscriptions.ts";
 import { PosService } from "../app/pos.ts";
@@ -74,6 +75,8 @@ export interface ApiDeps {
   readonly assistantBrain?: AssistantBrain;
   /** The growth agent brain. Defaults to the in-house deterministic SandboxGrowthBrain. */
   readonly growthBrain?: GrowthBrain;
+  /** The win-back copywriter. Defaults to the offline TemplateWinBackWriter; a hosted model personalises the copy. */
+  readonly winBackWriter?: WinBackWriter;
   /** The merchant copilot brain. Defaults to the in-house deterministic SandboxMerchantBrain. */
   readonly merchantBrain?: MerchantBrain;
   /** The rider copilot brain. Defaults to the in-house deterministic SandboxRiderBrain. */
@@ -112,7 +115,7 @@ export async function createApi(deps: ApiDeps): Promise<NestFastifyApplication> 
   const siteContent = new SiteContentService(deps.db, deps.registry);
   const chef = new ChefService(deps.db, deps.registry, now);
   const assistant = new AssistantService(deps.db, deps.registry, deps.assistantBrain ?? new SandboxBrain(), now);
-  const growth = new GrowthService(deps.db, deps.registry, deps.growthBrain ?? new SandboxGrowthBrain(), wallet, comms, now);
+  const growth = new GrowthService(deps.db, deps.registry, deps.growthBrain ?? new SandboxGrowthBrain(), wallet, comms, deps.winBackWriter ?? new TemplateWinBackWriter(), now);
   const catalogue = new CatalogueService(deps.db, deps.registry);
   const admin = new AdminService(deps.db, deps.registry, now);
   const merchantCopilot = new MerchantCopilotService(deps.db, deps.registry, deps.merchantBrain ?? new SandboxMerchantBrain(), catalogue, admin);

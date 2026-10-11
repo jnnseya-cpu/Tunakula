@@ -8,7 +8,7 @@
  *    through the ledger (promotion_expense → wallet), recorded, and audited. It never credits an active
  *    customer, and the win-back message honours the customer's comms opt-outs.
  */
-import type { GrowthBrain, GrowthSignals, RecommendationCandidate } from "@tunakula/ts-contracts";
+import type { GrowthBrain, GrowthSignals, RecommendationCandidate, WinBackContext, WinBackCopy, WinBackWriter } from "@tunakula/ts-contracts";
 import { Money, type MoneyJSON } from "@tunakula/ts-money";
 import type { Db, Sql } from "../db/db.ts";
 import type { CountryConfigRegistry } from "../modules/config/config-registry.ts";
@@ -48,10 +48,11 @@ export class GrowthService {
   private readonly brain: GrowthBrain;
   private readonly wallet: WalletService;
   private readonly comms: NotificationService;
+  private readonly writer: WinBackWriter;
   private readonly now: () => Date;
 
-  constructor(db: Db, registry: CountryConfigRegistry, brain: GrowthBrain, wallet: WalletService, comms: NotificationService, now: () => Date = () => new Date()) {
-    this.db = db; this.registry = registry; this.brain = brain; this.wallet = wallet; this.comms = comms; this.now = now;
+  constructor(db: Db, registry: CountryConfigRegistry, brain: GrowthBrain, wallet: WalletService, comms: NotificationService, writer: WinBackWriter, now: () => Date = () => new Date()) {
+    this.db = db; this.registry = registry; this.brain = brain; this.wallet = wallet; this.comms = comms; this.writer = writer; this.now = now;
   }
 
   #market(country: string) {
@@ -148,22 +149,52 @@ export class GrowthService {
         if (minor > 0n) credit = Money.ofMinor(minor, ccy);
       }
 
-      await this.#sendWinBack(sql, country, customerId, segment, credit, reference, principal.userId);
-      return { ok: true, segment, credited: credit ? wire(credit) : null };
+      const copy = await this.#sendWinBack(sql, country, customerId, segment, credit, reference, principal.userId);
+      return { ok: true, segment, credited: credit ? wire(credit) : null, message: copy.text, message_source: copy.source };
     });
   }
 
-  /** Issue one win-back: optional capped credit, the opt-out-respecting message, the idempotent record, the audit.
-   *  Shared by the manual win-back and the autonomous sweep, so both move money on exactly the same, audited rail. */
-  async #sendWinBack(sql: Sql, country: string, customerId: string, segment: string, credit: Money | null, reference: string, actorId: string | null) {
+  /** Issue one win-back: optional capped credit, the written message, the idempotent record, the audit. Shared by
+   *  the manual win-back and the autonomous sweep, so both move money on exactly the same, audited rail, and the
+   *  message is written by the win-back writer (hosted model, or the deterministic template). Returns the copy. */
+  async #sendWinBack(sql: Sql, country: string, customerId: string, segment: string, credit: Money | null, reference: string, actorId: string | null): Promise<WinBackCopy> {
     if (credit) await this.wallet.creditFromPromotion(sql, country, customerId, credit, "WINBACK", reference);
-    const offer = credit ? creditPhrase(credit) : "nous aimerions vous revoir";
-    await this.comms.dispatch({ country, eventKey: "promo.winback", recipientUserId: customerId, audience: "customer", data: { offer }, dedupeKey: reference }).catch(() => undefined);
+    const copy = await this.writer.write(await this.#winBackContext(sql, customerId, credit));
+    await this.comms.dispatch({ country, eventKey: "promo.winback", recipientUserId: customerId, audience: "customer", data: { message: copy.text }, dedupeKey: reference }).catch(() => undefined);
     await sql.query(
       "INSERT INTO growth.nudge (country_iso2, customer_id, kind, segment, credit_minor, currency, reference, sent_by) VALUES ($1,$2,'WIN_BACK',$3,$4,$5,$6,$7)",
       [country, customerId, segment, credit ? credit.minor.toString() : null, credit ? credit.currency : null, reference, actorId],
     );
-    await audit(sql, { actor: actorId ?? AGENT_ACTOR, action: "growth.winback", target: `customer:${customerId}`, country, detail: { segment, credit: credit ? wire(credit) : null } });
+    await audit(sql, { actor: actorId ?? AGENT_ACTOR, action: "growth.winback", target: `customer:${customerId}`, country, detail: { segment, credit: credit ? wire(credit) : null, message_source: copy.source } });
+    return copy;
+  }
+
+  /** Resolve the grounded facts a win-back message is written from: the customer's name, a real favourite dish,
+   *  and how long they've been away. The credit is set by the service; the writer only phrases it. */
+  async #winBackContext(sql: Sql, customerId: string, credit: Money | null, lang: "fr" | "en" = "fr"): Promise<WinBackContext> {
+    const u = (await sql.query<{ display_name: string; days: number | null } & Record<string, unknown>>(
+      `SELECT u.display_name,
+              (SELECT EXTRACT(DAY FROM now() - MAX(o.created_at))::int FROM ordering.order_view o WHERE o.customer_id = u.id AND o.state IN ${COUNTED_STATES}) AS days
+         FROM identity.app_user u WHERE u.id = $1`,
+      [customerId],
+    ))[0];
+    const dishes = await sql.query<{ nm: string } & Record<string, unknown>>(
+      `SELECT COALESCE(m.names->>$2, m.names->>'fr', m.names->>'en') AS nm, SUM((line->>'quantity')::int) AS q
+         FROM ordering.order_view o
+         JOIN ordering.order_event d ON d.order_id = o.order_id AND d.type = 'ORDER_DRAFTED'
+         CROSS JOIN LATERAL jsonb_array_elements(d.payload->'snapshot'->'lines') AS line
+         JOIN catalogue.menu_item m ON m.id = (line->>'itemId')::uuid
+        WHERE o.customer_id = $1 AND o.state IN ${COUNTED_STATES}
+        GROUP BY 1 ORDER BY 2 DESC NULLS LAST LIMIT 2`,
+      [customerId, lang],
+    );
+    return {
+      displayName: u?.display_name ?? "",
+      daysSinceLastOrder: u?.days ?? null,
+      favouriteDishes: dishes.map((d) => d.nm).filter((n): n is string => Boolean(n)),
+      ...(credit ? { credit: credit.toJSON() } : {}),
+      lang,
+    };
   }
 
   /** Ops: the autonomy policy (caps that bound an autonomous win-back sweep) plus the agent's recent runs. */
@@ -264,7 +295,12 @@ export class GrowthService {
       }
 
       let reached = 0, credited = 0n;
-      if (!opts.dryRun) {
+      // A dry run writes one sample message (for the first customer) so the operator sees the agent's voice before
+      // committing; a live run writes a message per customer as it sends.
+      let sample: WinBackCopy | null = null;
+      if (opts.dryRun) {
+        if (chosen[0]) sample = await this.writer.write(await this.#winBackContext(sql, chosen[0].customerId, chosen[0].credit));
+      } else {
         for (const ch of chosen) {
           const reference = `winback:${ch.customerId}:${period}`;
           await this.#sendWinBack(sql, country, ch.customerId, ch.segment, ch.credit, reference, principal?.userId ?? null);
@@ -287,6 +323,7 @@ export class GrowthService {
         credited: { amount_minor: credited.toString(), currency: policy.currency },
         capped_by: cappedBy, eligible: candidates.length,
         preview: opts.dryRun ? chosen.map((c) => ({ display_name: c.display_name, phone: c.phone, segment: c.segment, credit: c.credit ? wire(c.credit) : null })) : [],
+        ...(sample ? { sample_message: sample.text, sample_source: sample.source } : {}),
       };
     });
   }
@@ -319,10 +356,6 @@ async function loadPolicy(sql: Sql, country: string, fallbackCcy: string): Promi
 const wire = (m: Money) => ({ amount_minor: m.minor.toString(), currency: m.currency });
 const maskPhone = (p: string) => (p.length > 4 ? `${p.slice(0, 4)}…${p.slice(-3)}` : p);
 const monthKey = (d: Date) => `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
-function creditPhrase(m: Money): string {
-  const whole = m.minor / 100n, cents = (m.minor % 100n).toString().padStart(2, "0");
-  return `un crédit de ${whole}.${cents} ${m.currency} vous attend`;
-}
 
 async function readSignals(sql: Sql, customerId: string): Promise<GrowthSignals> {
   const r = (await sql.query<{ orders: string; last_at: Date | null; spend: string | null; currency: string | null }>(

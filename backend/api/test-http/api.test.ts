@@ -3956,6 +3956,10 @@ describe("growth agent (recommendations + win-back)", () => {
     assert.equal(w.status, 200, JSON.stringify(w.body));
     assert.equal(w.body.segment, "LAPSED");
     assert.equal(w.body.credited.amount_minor, "500");
+    // The win-back message is written (offline, by the template writer) and grounded in the credit.
+    assert.equal(w.body.message_source, "template");
+    assert.ok(typeof w.body.message === "string" && w.body.message.length > 0, "a message was written");
+    assert.match(w.body.message, /5\.00 USD/, "the message states the real credit");
 
     // The credit really landed in the wallet, funded by promotion_expense.
     const tx = await inspect("CD", "SELECT amount_minor::text AS amount FROM wallet.transaction WHERE user_id = $1 AND kind = 'WINBACK'", [gcust.userId]);
@@ -4024,6 +4028,9 @@ describe("growth agent — autonomous win-backs under caps", () => {
     assert.ok(BigInt(d.body.would_spend.amount_minor) <= 100000n, "within the budget");
     assert.equal(d.body.preview.length, d.body.planned, "the preview lists each planned customer");
     assert.ok(d.body.preview.every((c: { phone: string }) => c.phone.includes("…")), "preview phones are masked");
+    // The preview includes one sample of the message the agent would send (written offline here).
+    assert.equal(d.body.sample_source, "template");
+    assert.ok(typeof d.body.sample_message === "string" && d.body.sample_message.length > 0, "a sample message is drafted");
     for (const u of swept) {
       const tx = await inspect("CD", "SELECT id FROM wallet.transaction WHERE user_id = $1 AND kind = 'WINBACK'", [u.userId]);
       assert.equal(tx.length, 0, "a dry run moves no money");
