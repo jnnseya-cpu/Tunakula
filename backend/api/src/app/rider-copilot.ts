@@ -5,7 +5,7 @@
  * caller is a rider acting on their own resource. It never nudges a rider to accept jobs.
  */
 import type { MoneyJSON } from "@tunakula/ts-money";
-import type { RiderBrain, RiderFacts, ZoneDemand } from "@tunakula/ts-contracts";
+import type { RiderBrain, RiderBriefWriter, RiderFacts, ZoneDemand } from "@tunakula/ts-contracts";
 import type { CountryConfigRegistry } from "../modules/config/config-registry.ts";
 import type { DispatchService } from "./dispatch.ts";
 import type { Principal } from "../modules/identity/policy.ts";
@@ -18,11 +18,12 @@ const WEEK_MS = 7 * 86_400_000;
 export class RiderCopilotService {
   private readonly registry: CountryConfigRegistry;
   private readonly brain: RiderBrain;
+  private readonly briefer: RiderBriefWriter;
   private readonly dispatch: DispatchService;
   private readonly now: () => Date;
 
-  constructor(registry: CountryConfigRegistry, brain: RiderBrain, dispatch: DispatchService, now: () => Date = () => new Date()) {
-    this.registry = registry; this.brain = brain; this.dispatch = dispatch; this.now = now;
+  constructor(registry: CountryConfigRegistry, brain: RiderBrain, briefer: RiderBriefWriter, dispatch: DispatchService, now: () => Date = () => new Date()) {
+    this.registry = registry; this.brain = brain; this.briefer = briefer; this.dispatch = dispatch; this.now = now;
   }
 
   async coach(country: string, principal: Principal, lang: "fr" | "en" = "fr") {
@@ -68,8 +69,11 @@ export class RiderCopilotService {
       payout: { pending: toJ(earnings.available) },
     };
 
+    const briefing = await this.briefer.write(facts, lang);
     return {
       tips: this.brain.insights(facts, lang),
+      // A short natural-language shift outlook, written from the same grounded facts.
+      brief: briefing.text, brief_source: briefing.source,
       // The raw numbers power the panel's header (wire money), the tips are the coaching.
       summary: {
         today: { amount_minor: facts.earnings.today.minor, currency: facts.earnings.today.currency },

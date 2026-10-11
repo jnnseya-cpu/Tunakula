@@ -352,6 +352,8 @@ const TIER_COLOR: Record<string, string> = { BRONZE: "#a9713b", SILVER: "#8a93a6
 
 interface Coach {
   tips: { id: string; category: "ZONES" | "EARNINGS" | "PAYOUT"; tone: "ACTION" | "INFO" | "CHEER"; title: string; detail: string; metric?: string }[];
+  brief?: string;
+  brief_source?: "ai" | "template";
   summary: { today: MoneyWire; week: MoneyWire; jobs_today: number; jobs_week: number; available: MoneyWire; tier: { tier: string } };
 }
 
@@ -377,6 +379,12 @@ function CoachPanel({ onClose }: { onClose: () => void }) {
               <div><small>This week</small><b>{money(c.summary.week)}</b><span>{c.summary.jobs_week} job{c.summary.jobs_week === 1 ? "" : "s"}</span></div>
               <div><small>Ready to cash out</small><b>{money(c.summary.available)}</b><span>{c.summary.tier.tier.toLowerCase()} rider</span></div>
             </div>
+            {c.brief ? (
+              <div className="r-coach-brief">
+                <div className="r-coach-brief-head"><span>Shift outlook</span>{c.brief_source === "ai" ? <span className="r-coach-ai">AI</span> : null}</div>
+                <p>{c.brief}</p>
+              </div>
+            ) : null}
             <div className="r-coach-list">
               {c.tips.length === 0 ? <p className="muted">All quiet — nothing to flag right now. Ride safe.</p> : c.tips.map((t) => (
                 <div key={t.id} className={`r-coach-card tone-${t.tone.toLowerCase()} cat-${t.category.toLowerCase()}`}>

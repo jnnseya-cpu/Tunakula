@@ -4158,8 +4158,11 @@ describe("rider copilot (earnings, zones, cash-out — no pressure to accept)", 
     assert.ok(Array.isArray(r.body.tips));
     assert.ok(r.body.summary.available, "the summary carries the rider's available balance");
     assert.ok(r.body.tips.every((t: { category: string }) => ["ZONES", "EARNINGS", "PAYOUT"].includes(t.category)));
-    // The copilot never tells a rider to accept more jobs.
-    const text = r.body.tips.map((t: { title: string; detail: string }) => `${t.title} ${t.detail}`).join(" ").toLowerCase();
+    // A natural-language shift outlook is written (offline here, by the template writer).
+    assert.equal(r.body.brief_source, "template");
+    assert.ok(typeof r.body.brief === "string" && r.body.brief.length > 0, "a shift-outlook brief comes back");
+    // Neither the tips nor the brief ever tell a rider to accept more jobs.
+    const text = (r.body.brief + " " + r.body.tips.map((t: { title: string; detail: string }) => `${t.title} ${t.detail}`).join(" ")).toLowerCase();
     assert.ok(!/accept more|should accept/.test(text));
   });
 
