@@ -1,0 +1,51 @@
+# A self-contained, prod-like stack for staging or local verification: PostgreSQL 16 with the two least-privilege
+# roles, and the API image which migrates on startup and serves on :8080. The static frontends are built
+# separately (`npm run build:frontend`) and hosted on a CDN — they are not part of this stack.
+#
+#   docker compose -f deploy/docker-compose.yml up --build
+#   docker compose -f deploy/docker-compose.yml exec api npm run bootstrap-admin -w @tunakula/api -- +243810000000 "Owner"
+#
+# Set real secrets via a .env file or your orchestrator; the sandbox payment + dev-OTP flags below are for
+# NON-production only.
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - ./initdb.sql:/docker-entrypoint-initdb.d/10-roles.sql:ro
+      - tunakula-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # The migrating owner and the least-privilege app role (see initdb.sql).
+      DATABASE_OWNER_URL: postgres://tunakula:tunakula@db:5432/tunakula
+      DATABASE_URL: postgres://tunakula_app:tunakula_app@db:5432/tunakula
+      DATABASE_APP_ROLE: tunakula_app
+      # A 32+ char signing secret. REPLACE for anything shared; prefer a secrets manager in production.
+      TUNAKULA_TOKEN_SECRET: ${TUNAKULA_TOKEN_SECRET:-change-me-change-me-change-me-32ch}
+      # Browser origins allowed to call the API (the admin console and website).
+      TUNAKULA_CONSOLE_ORIGINS: ${TUNAKULA_CONSOLE_ORIGINS:-}
+      # Behind a load balancer, trust X-Forwarded-* and enable a per-instance rate limit.
+      TUNAKULA_TRUST_PROXY: ${TUNAKULA_TRUST_PROXY:-1}
+      TUNAKULA_RATE_LIMIT_RPM: ${TUNAKULA_RATE_LIMIT_RPM:-600}
+      # NON-production conveniences — remove for a real deployment and configure Twilio + a payment connector.
+      TUNAKULA_SANDBOX_PAYMENTS: ${TUNAKULA_SANDBOX_PAYMENTS:-1}
+      TUNAKULA_DEV_OTP: ${TUNAKULA_DEV_OTP:-1}
+      PORT: "8080"
+    ports:
+      - "8080:8080"
+
+volumes:
+  tunakula-db:
