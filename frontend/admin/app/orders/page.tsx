@@ -2,7 +2,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Gate, Shell, useConsole } from "../../components/shell";
-import { api, type OrderRow } from "../../lib/api";
+import { api, downloadFile, type OrderRow } from "../../lib/api";
 import { dateTime, money } from "../../lib/format";
 import { stateLabel } from "../../lib/i18n";
 import { stateTone } from "../../lib/status";
@@ -24,7 +24,14 @@ function Orders() {
   const [next, setNext] = useState<string | null>(null);
   const [q, setQ] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
   const L = (fr: string, en: string) => (lang === "fr" ? fr : en);
+
+  const exportCsv = async () => {
+    setExporting(true); setError(null);
+    try { await downloadFile(`/v1/admin/exports/orders.csv?days=90`, "orders.csv", country); }
+    catch (e) { setError((e as Error).message); } finally { setExporting(false); }
+  };
 
   const load = (before?: string) => {
     const qs = new URLSearchParams({ limit: "50", ...(group !== "all" ? { group } : {}), ...(before ? { before } : {}) });
@@ -42,6 +49,7 @@ function Orders() {
           {GROUPS.map((g) => <button key={g} type="button" aria-pressed={group === g} onClick={() => setGroup(g)}>{GROUP_LABEL[g][lang === "fr" ? 0 : 1]}</button>)}
         </div>
         <input className="input" placeholder={L("Rechercher : numéro, commerce, client", "Search: id, merchant, customer")} value={q} onChange={(e) => setQ(e.target.value)} style={{ minWidth: 280 }} />
+        <button type="button" className="btn" disabled={exporting} onClick={exportCsv} style={{ marginLeft: "auto" }} title={L("Exporter les 90 derniers jours en CSV", "Export the last 90 days as CSV")}>{exporting ? "…" : L("⭳ Exporter CSV", "⭳ Export CSV")}</button>
       </div>
       {error ? <div className="banner error">{error}</div> : null}
       <section className="card">

@@ -75,6 +75,32 @@ export async function api<T>(path: string, opts: { method?: "GET" | "POST" | "DE
   return data as T;
 }
 
+/** Fetch an authenticated file (e.g. a CSV export) and save it in the browser. Honours the server's filename. */
+export async function downloadFile(path: string, fallbackName: string, country?: string | null): Promise<void> {
+  const headers: Record<string, string> = {};
+  const token = session.token();
+  if (token) headers["authorization"] = `Bearer ${token}`;
+  const c = country === undefined ? session.country() : country;
+  if (c) headers["x-country"] = c;
+  let res: Response;
+  try { res = await fetch(`${API_BASE}${path}`, { headers }); }
+  catch { throw new ApiError(0, "NETWORK", `The API at ${API_BASE} cannot be reached`); }
+  if (!res.ok) {
+    if (res.status === 401) session.setToken(null);
+    throw new ApiError(res.status, `HTTP_${res.status}`, `Export failed (${res.status})`);
+  }
+  const blob = await res.blob();
+  const match = /filename="?([^"]+)"?/.exec(res.headers.get("content-disposition") ?? "");
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = match?.[1] ?? fallbackName;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 // ---------- response types (mirror backend/api/src/app/admin.ts) ----------
 
 export interface Money { amount_minor: string; currency: string }

@@ -1916,6 +1916,22 @@ describe("storefront upsell (AI cross-sell copy)", () => {
   });
 });
 
+describe("admin exports (orders CSV)", () => {
+  test("a privileged admin downloads a scoped orders CSV; a plain customer cannot", async () => {
+    const r = await api.inject({ method: "GET", url: "/v1/admin/exports/orders.csv?days=90", headers: { authorization: `Bearer ${admin.token}`, "x-country": "CD" } });
+    assert.equal(r.statusCode, 200);
+    assert.match(String(r.headers["content-type"]), /text\/csv/);
+    assert.match(String(r.headers["content-disposition"]), /attachment; filename="tunakula-orders-CD-.*\.csv"/);
+    const lines = r.body.trim().split("\r\n");
+    assert.equal(lines[0], "Date (UTC),Order ID,Branch,Commune,State,Type,Payment mode,Payment method,Total,Currency,Customer");
+    assert.ok(lines.length >= 2, "at least one order row is exported");
+    assert.match(lines[1]!, /USD/, "each row carries its currency");
+    // A plain customer cannot export the market's orders.
+    const forbidden = await api.inject({ method: "GET", url: "/v1/admin/exports/orders.csv", headers: { authorization: `Bearer ${customer.token}`, "x-country": "CD" } });
+    assert.equal(forbidden.statusCode, 403);
+  });
+});
+
 describe("saved addresses", () => {
   test("a customer saves, lists, re-defaults and deletes addresses", async () => {
     const list0 = await call("GET", "/v1/me/addresses", { token: customer.token, country: "CD" });

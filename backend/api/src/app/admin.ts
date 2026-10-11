@@ -372,6 +372,47 @@ export class AdminService {
     });
   }
 
+  /** A CSV export of the market's orders over the last `days`, scoped to what the caller can see. For finance and
+   *  ops reconciliation — the same visibility and totals as the console, as a downloadable file. */
+  async ordersCsv(principal: Principal, country: string, daysParam: number): Promise<{ filename: string; csv: string }> {
+    const profile = this.#profile(country);
+    const days = Math.min(Math.max(Math.trunc(daysParam) || 30, 1), 366);
+    const end = this.now();
+    const start = new Date(end.getTime() - days * 86_400_000);
+    return this.db.tx({ country }, async (sql) => {
+      const vis = await this.#visibility(sql, principal, country, profile);
+      if (!vis.all && vis.branches.length === 0) throw forbidden("No orders you can see in this market");
+      const rows = await sql.query<{ created_at: Date; order_id: string; branch_name: string; commune: string | null; state: string; type: string; payment_mode: string; method: string | null; total_minor: string; currency: string; customer_name: string | null }>(
+        `SELECT o.created_at, o.order_id, b.name AS branch_name, b.commune, o.state, o.type, o.payment_mode,
+                (SELECT i.method_type FROM payments.payment_intent i WHERE i.order_id = o.order_id AND i.status = 'SUCCEEDED' ORDER BY i.created_at DESC LIMIT 1) AS method,
+                o.total_minor::text AS total_minor, o.currency, u.display_name AS customer_name
+           FROM ordering.order_view o JOIN catalogue.branch b ON b.id = o.branch_id LEFT JOIN identity.app_user u ON u.id = o.customer_id
+          WHERE o.created_at >= $1 AND o.created_at < $2 AND ($3::uuid[] IS NULL OR o.branch_id = ANY($3::uuid[]))
+          ORDER BY o.created_at DESC`,
+        [start, end, vis.all ? null : vis.branches.map((b) => b.id)],
+      );
+      const header = ["Date (UTC)", "Order ID", "Branch", "Commune", "State", "Type", "Payment mode", "Payment method", "Total", "Currency", "Customer"];
+      const lines = [header.map(csvCell).join(",")];
+      for (const r of rows) {
+        lines.push([
+          new Date(r.created_at).toISOString(),
+          r.order_id,
+          r.branch_name,
+          r.commune ?? "",
+          r.state,
+          r.type,
+          r.payment_mode,
+          r.method ?? "",
+          majorUnits(r.total_minor),
+          r.currency,
+          r.customer_name ?? "",
+        ].map(csvCell).join(","));
+      }
+      const stamp = end.toISOString().slice(0, 10);
+      return { filename: `tunakula-orders-${country}-${stamp}-${days}d.csv`, csv: lines.join("\r\n") + "\r\n" };
+    });
+  }
+
   /** GET /v1/admin/branches */
   async branches(principal: Principal, country: string) {
     const profile = this.#profile(country);
@@ -886,4 +927,19 @@ export class AdminService {
 
 function publicBinding(b: RoleBinding) {
   return { id: b.id, role: "role" in b ? b.role : `profile:${b.profile.name}`, scope: b.scope };
+}
+
+/** Minor units → a plain decimal string (no currency symbol), e.g. 1250 → "12.50". For CSV cells. */
+function majorUnits(minor: string): string {
+  const neg = minor.startsWith("-");
+  const n = BigInt(neg ? minor.slice(1) : minor);
+  return `${neg ? "-" : ""}${n / 100n}.${(n % 100n).toString().padStart(2, "0")}`;
+}
+
+/** Escape one CSV cell (RFC 4180): quote when it contains a comma, quote, CR or LF; double embedded quotes. A
+ *  leading =,+,-,@ is prefixed with a quote so spreadsheets don't treat the value as a formula. */
+function csvCell(value: string): string {
+  let s = String(value ?? "");
+  if (/^[=+\-@]/.test(s)) s = `'${s}`;
+  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
