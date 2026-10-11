@@ -16,7 +16,7 @@
   "devDependencies": {
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "playwright-core": "1.56"
+    "playwright-core": "1.64"
   },
   "dependencies": {
     "@fontsource-variable/inter": "^5.2.5",
