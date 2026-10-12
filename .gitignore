@@ -14,3 +14,6 @@ frontend/*/.preview/
 # Production secrets for docker-compose.prod.yml — never commit
 deploy/.env.prod
 .env.prod
+
+# Cloud SQL service-account key — never commit
+deploy/cloudsql-key.json
