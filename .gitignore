@@ -17,3 +17,6 @@ deploy/.env.prod
 
 # Cloud SQL service-account key — never commit
 deploy/cloudsql-key.json
+
+# Staging env (generated on the VPS) — never commit
+deploy/.env.staging
