@@ -1,0 +1,24 @@
+# Caddy reverse proxy for the Tunakula API on the Hostinger VPS.
+# Caddy obtains and renews TLS certificates automatically (Let's Encrypt) for the domain below.
+# Replace api.tunakula.com with your real API hostname (it must resolve to this VPS's public IP,
+# and must be listed in TUNAKULA_API_HOSTS so the app accepts the Host header).
+
+api.tunakula.com {
+	# Forward everything to the always-on API container. Caddy sets X-Forwarded-For / -Proto,
+	# which the app reads because TUNAKULA_TRUST_PROXY=1.
+	reverse_proxy api:8080
+
+	# Edge hardening headers (the app sets its own CSP/security on HTML responses; these are belt-and-braces).
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	# Structured access logs to stdout (ship them with the API's JSON logs).
+	log {
+		output stdout
+		format json
+	}
+}
