@@ -554,6 +554,10 @@ footer .legal { margin-top: 64px; padding-top: 22px; border-top: 1px solid var(-
 .fav .muted { font-size: 14px; margin-top: 2px; }
 .fav-foot { margin-top: 8px; display: flex; justify-content: space-between; font-size: 15px; color: var(--ink-2); }
 
+/* Trending chart: rank badge on the photo + a rising marker in the footer. */
+.trend-rank { position: absolute; left: 10px; top: 10px; min-width: 34px; height: 26px; padding: 0 8px; border-radius: 999px; background: rgba(0,0,0,0.62); color: #fff; font-family: var(--display); font-weight: 650; font-size: 14px; display: flex; align-items: center; justify-content: center; letter-spacing: -0.01em; backdrop-filter: blur(2px); }
+.trend-flag { display: inline-flex; align-items: center; gap: 4px; font-size: 12.5px; font-weight: 650; color: #138a4e; white-space: nowrap; }
+
 .steps3 { counter-reset: s; list-style: none; }
 .steps3 li { position: relative; padding: 18px 0 18px 58px; border-top: 1px solid var(--rule); font-size: 16.5px; color: var(--ink-2); }
 .steps3 li::before { counter-increment: s; content: counter(s); position: absolute; left: 0; top: 14px; width: 38px; height: 38px; border-radius: 50%; background: var(--yellow); color: var(--navy); display: flex; align-items: center; justify-content: center; font-weight: 800; }
