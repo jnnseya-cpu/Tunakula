@@ -8,6 +8,8 @@ import { JoinCard } from "../components/merchant";
 import { LiveMerchantGrid } from "../components/live";
 import { Recommendations } from "../components/recommendations";
 import { Trending } from "../components/trending";
+import { CategoryTiles, BestReviewed } from "../components/home-sections";
+import { PromoBanners } from "../components/promo-banners";
 import { FoodImage, PlateArt, type Recipe } from "../components/plate";
 import { fc, favourites, MERCHANTS } from "../lib/catalogue";
 import fees from "@tunakula/ts-contracts/published/fee-comparison.json";
@@ -106,6 +108,10 @@ export default function Home() {
         </div>
       </section>
 
+      <PromoBanners />
+
+      <CategoryTiles />
+
       <section className="tight crave-sec">
         <div className="wrap">
           <h2 className="sec-title">What are you craving?</h2>
@@ -138,6 +144,8 @@ export default function Home() {
       </section>
 
       <Trending />
+
+      <BestReviewed />
 
       <Recommendations />
 

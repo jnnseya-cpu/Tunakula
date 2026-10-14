@@ -558,6 +558,20 @@ footer .legal { margin-top: 64px; padding-top: 22px; border-top: 1px solid var(-
 .fav .muted { font-size: 14px; margin-top: 2px; }
 .fav-foot { margin-top: 8px; display: flex; justify-content: space-between; font-size: 15px; color: var(--ink-2); }
 
+/* "What's on your mind?" cuisine tiles: a scrollable row of square art + label. */
+.cats { display: grid; grid-auto-flow: column; grid-auto-columns: 128px; gap: 18px; overflow-x: auto; scroll-snap-type: x proximity; padding-bottom: 6px; scrollbar-width: none; }
+.cats::-webkit-scrollbar { display: none; }
+.cat { scroll-snap-align: start; display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; }
+.cat-pic { width: 128px; height: 128px; border-radius: 20px; background: var(--card-2); display: grid; place-items: center; overflow: hidden; border: 1px solid var(--rule); transition: transform 0.25s var(--ease), border-color 0.2s; }
+.cat-art { width: 86%; height: 86%; }
+.cat:hover .cat-pic { transform: translateY(-3px); border-color: var(--yellow); }
+.cat span { font-size: 14px; font-weight: 650; color: var(--ink); }
+@media (max-width: 720px) { .cats { grid-auto-columns: 104px; } .cat-pic { width: 104px; height: 104px; } }
+
+/* Best reviewed: a rating star on the photo. */
+.rev-star { position: absolute; left: 10px; top: 10px; display: inline-flex; align-items: center; gap: 3px; height: 26px; padding: 0 9px; border-radius: 999px; background: rgba(0,0,0,0.6); color: var(--yellow); font-size: 13px; font-weight: 700; backdrop-filter: blur(2px); }
+.rev-star small { color: rgba(255,255,255,0.75); font-weight: 500; }
+
 /* Trending chart: rank badge on the photo + a rising marker in the footer. */
 .trend-rank { position: absolute; left: 10px; top: 10px; min-width: 34px; height: 26px; padding: 0 8px; border-radius: 999px; background: rgba(0,0,0,0.62); color: #fff; font-family: var(--display); font-weight: 650; font-size: 14px; display: flex; align-items: center; justify-content: center; letter-spacing: -0.01em; backdrop-filter: blur(2px); }
 .trend-flag { display: inline-flex; align-items: center; gap: 4px; font-size: 12.5px; font-weight: 650; color: #138a4e; white-space: nowrap; }
