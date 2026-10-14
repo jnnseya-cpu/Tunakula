@@ -122,7 +122,7 @@ export function Shell({ title, children, actions }: { title: Key; children: Reac
   const [error, setError] = useState<string | null>(null);
   const [country, setCountryState] = useState("CD");
   const [lang, setLang] = useState<Lang>("fr");
-  const [theme, setTheme] = useState<"auto" | "light" | "dark">("auto");
+  const [theme, setTheme] = useState<"auto" | "light" | "dark">("dark");
 
   useEffect(() => {
     if (!session.token()) { router.replace("/login/"); return; }
