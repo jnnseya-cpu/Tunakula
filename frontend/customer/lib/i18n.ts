@@ -66,6 +66,10 @@ const DICT: Record<string, Entry> = {
   "tab.explore": { en: "Explore", fr: "Explorer", ln: "Luka", sw: "Gundua" },
   "tab.sendHome": { en: "Send home", fr: "Envoyer", ln: "Tinda", sw: "Tuma" },
   "tab.orders": { en: "Orders", fr: "Commandes", ln: "Komande", sw: "Oda" },
+  "tab.cart": { en: "Cart", fr: "Panier", ln: "Panye", sw: "Kikapu" },
+  "tab.menu": { en: "Menu", fr: "Menu", ln: "Menu", sw: "Menyu" },
+  "tab.wallet": { en: "My wallet", fr: "Mon portefeuille", ln: "Portefeuille", sw: "Pochi langu" },
+  "tab.help": { en: "Help", fr: "Aide", ln: "Lisalisi", sw: "Msaada" },
   // ── Footer: column titles & tagline ──
   "foot.order": { en: "Order", fr: "Commander", ln: "Komanda", sw: "Agiza" },
   "foot.partners": { en: "Partners", fr: "Partenaires", ln: "Baninga ya mosala", sw: "Washirika" },
