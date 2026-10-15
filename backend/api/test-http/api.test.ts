@@ -1847,6 +1847,22 @@ describe("coupons / promo codes", () => {
     const [red] = await inspect("CD", "SELECT amount_minor::text AS a FROM promotions.coupon_redemption WHERE order_id = $1", [orderId]);
     assert.equal(red.a, "200", "the redemption records the $2 discount");
   });
+
+  test("a merchant creates their own promo code for their storefront, with or without an admin", async () => {
+    // The merchant's own code is scoped to their branch, funded by them, and cannot be free delivery.
+    assert.equal((await call("POST", `/v1/merchant/branches/${branchId}/coupons`, { token: restaurantOwner.token, country: "CD", body: { code: "CHEZNOUS", kind: "FREE_DELIVERY" } })).body.code, "FUNDING_INVALID");
+    const made = await call("POST", `/v1/merchant/branches/${branchId}/coupons`, { token: restaurantOwner.token, country: "CD", body: { code: "CHEZNOUS", kind: "PERCENT", value_bps: 1000, days: 30 } });
+    assert.equal(made.status, 201, JSON.stringify(made.body));
+    assert.equal(made.body.branch_id, branchId);
+    assert.equal(made.body.funded_by, "MERCHANT");
+    // A plain customer cannot create a code for the storefront.
+    assert.equal((await call("POST", `/v1/merchant/branches/${branchId}/coupons`, { token: customer.token, country: "CD", body: { code: "HACK2", kind: "PERCENT", value_bps: 5000 } })).status, 403);
+    // It lists for the merchant and a customer can apply it at checkout.
+    const list = await call("GET", `/v1/merchant/branches/${branchId}/coupons`, { token: restaurantOwner.token, country: "CD" });
+    assert.ok(list.body.coupons.some((x: { code: string }) => x.code === "CHEZNOUS"));
+    const q = await call("POST", "/v1/carts/quote", { token: customer.token, country: "CD", body: { ...cart(), coupon_code: "CHEZNOUS" } });
+    assert.ok(BigInt(q.body.coupon.discount.amount_minor) > 0n, "the merchant's own code discounts the order");
+  });
 });
 
 describe("reviews and ratings", () => {

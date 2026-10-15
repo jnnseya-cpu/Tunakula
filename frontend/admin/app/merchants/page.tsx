@@ -9,7 +9,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Shell, useConsole } from "../../components/shell";
-import { api } from "../../lib/api";
+import { api, type Money } from "../../lib/api";
+import { money } from "../../lib/format";
 import { count } from "../../lib/format";
 
 interface Branch { id: string; name: string; restaurant_group_id: string; city: string | null; commune: string | null; status: string; items: number; available_items: number; orders_30d: number; published: boolean; store_type?: string }
@@ -243,7 +244,53 @@ function MerchantHub({ data, isOwner, country, lang, L, reload }: { data: Data; 
           <button className="btn primary" type="button" disabled={busy || form.name.trim().length < 2} onClick={addBranch} style={{ marginTop: 10 }}>{L("Ajouter l'établissement", "Add branch")}</button>
         </section>
       ) : null}
+      {data.data.length > 0 ? <MerchantCoupons branches={data.data.map((b) => ({ id: b.id, name: b.name }))} country={country} L={L} /> : null}
     </>
+  );
+}
+
+/** A merchant runs their own promo codes for one of their storefronts (merchant-funded, no admin needed). */
+function MerchantCoupons({ branches, country, L }: { branches: { id: string; name: string }[]; country: string; L: (fr: string, en: string) => string }) {
+  const [branchId, setBranchId] = useState(branches[0]?.id ?? "");
+  const [rows, setRows] = useState<{ id: string; code: string; kind: string; value_bps: number; value: Money; active: boolean }[]>([]);
+  const [form, setForm] = useState({ code: "", kind: "PERCENT", value_bps: "10", value_minor: "", min_subtotal_minor: "0", days: "30" });
+  const [msg, setMsg] = useState<string | null>(null);
+  const load = (id: string) => { if (!id) return; api<{ coupons: typeof rows }>(`/v1/merchant/branches/${id}/coupons`, { country }).then((r) => setRows(r.coupons)).catch(() => setRows([])); };
+  useEffect(() => { load(branchId); }, [branchId, country]); // eslint-disable-line react-hooks/exhaustive-deps
+  const save = async () => {
+    setMsg(null);
+    try {
+      await api(`/v1/merchant/branches/${branchId}/coupons`, { method: "POST", country, body: {
+        code: form.code.trim().toUpperCase(), kind: form.kind,
+        value_bps: Number(form.value_bps) || 0, value_minor: form.value_minor.trim() || "0",
+        min_subtotal_minor: form.min_subtotal_minor.trim() || "0", days: Number(form.days) || 30,
+      } });
+      setForm({ code: "", kind: "PERCENT", value_bps: "10", value_minor: "", min_subtotal_minor: "0", days: "30" }); load(branchId);
+      setMsg(L("Code créé.", "Coupon created."));
+    } catch (e) { setMsg((e as Error).message); }
+  };
+  return (
+    <section className="card">
+      <div className="card-head"><div><h2>{L("Vos codes promo", "Your promo codes")}</h2><p>{L("Créez vos propres réductions — financées par vous, sans passer par l'administrateur.", "Create your own discounts — funded by you, without going through an admin.")}</p></div>
+        {branches.length > 1 ? <select className="select" value={branchId} onChange={(e) => setBranchId(e.target.value)}>{branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select> : null}
+      </div>
+      {msg ? <div className="banner">{msg}</div> : null}
+      {rows.length > 0 ? (
+        <div className="table-wrap"><table className="data">
+          <thead><tr><th>Code</th><th>{L("Réduction", "Discount")}</th><th>{L("Actif", "Active")}</th></tr></thead>
+          <tbody>{rows.map((c) => <tr key={c.id}><td><b>{c.code}</b></td><td>{c.kind === "PERCENT" ? `${c.value_bps / 100}%` : c.kind === "FIXED" ? money(L("fr", "en") as "fr" | "en", c.value.amount_minor, c.value.currency) : L("Livraison offerte", "Free delivery")}</td><td>{c.active ? "✓" : "—"}</td></tr>)}</tbody>
+        </table></div>
+      ) : <p className="muted" style={{ padding: "0 4px 8px" }}>{L("Aucun code pour l'instant.", "No codes yet.")}</p>}
+      <div className="form-grid">
+        <label>Code<input className="input" value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "") })} placeholder="CHEZNOUS" /></label>
+        <label>{L("Type", "Type")}<select className="select" value={form.kind} onChange={(e) => setForm({ ...form, kind: e.target.value })}><option value="PERCENT">{L("Pourcentage", "Percent")}</option><option value="FIXED">{L("Montant fixe", "Fixed amount")}</option></select></label>
+        {form.kind === "PERCENT" ? <label>{L("Pourcentage (bps)", "Percent (bps)")}<input className="input" inputMode="numeric" value={form.value_bps} onChange={(e) => setForm({ ...form, value_bps: e.target.value.replace(/[^0-9]/g, "") })} /></label>
+          : <label>{L("Montant (unités mineures)", "Amount (minor units)")}<input className="input" inputMode="numeric" value={form.value_minor} onChange={(e) => setForm({ ...form, value_minor: e.target.value.replace(/[^0-9]/g, "") })} /></label>}
+        <label>{L("Sous-total min", "Min subtotal")}<input className="input" inputMode="numeric" value={form.min_subtotal_minor} onChange={(e) => setForm({ ...form, min_subtotal_minor: e.target.value.replace(/[^0-9]/g, "") })} /></label>
+        <label>{L("Durée (jours)", "Window (days)")}<input className="input" inputMode="numeric" value={form.days} onChange={(e) => setForm({ ...form, days: e.target.value.replace(/[^0-9]/g, "") })} /></label>
+      </div>
+      <div className="card-foot"><button className="btn primary" type="button" disabled={!form.code.trim() || !branchId} onClick={save}>{L("Créer le code", "Create code")}</button></div>
+    </section>
   );
 }
 

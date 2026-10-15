@@ -1084,6 +1084,36 @@ export class CouponController {
   }
 }
 
+/** Merchant-created promo codes: a merchant runs their own codes for their storefront (merchant-funded, no admin needed). */
+@Controller("v1/merchant/branches")
+export class MerchantCouponController {
+  constructor(
+    @Inject(TOKENS.db) private readonly db: Db,
+    @Inject(TOKENS.tokens) private readonly tokens: TokenService,
+    @Inject(TOKENS.coupons) private readonly coupons: CouponService,
+  ) {}
+
+  #p(req: FastifyRequest) {
+    return this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+  }
+
+  @Get(":id/coupons")
+  async list(@Req() req: FastifyRequest, @Param("id") id: string) {
+    return this.coupons.listForMerchant(country(req), await this.#p(req), id);
+  }
+
+  @Post(":id/coupons")
+  async create(@Req() req: FastifyRequest, @Param("id") id: string, @Body() body: Record<string, unknown>) {
+    return this.coupons.saveForMerchant(country(req), await this.#p(req), id, undefined, body ?? {});
+  }
+
+  @Post(":id/coupons/:cid")
+  @HttpCode(200)
+  async update(@Req() req: FastifyRequest, @Param("id") id: string, @Param("cid") cid: string, @Body() body: Record<string, unknown>) {
+    return this.coupons.saveForMerchant(country(req), await this.#p(req), id, cid, body ?? {});
+  }
+}
+
 /** Saved delivery addresses for the signed-in customer. */
 @Controller("v1/me/addresses")
 export class AddressController {

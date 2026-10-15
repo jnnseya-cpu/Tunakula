@@ -46,6 +46,9 @@ const COLS =
 export async function listCoupons(sql: Sql, country: string): Promise<CouponRow[]> {
   return sql.query<CouponRow & Record<string, unknown>>(`SELECT ${COLS} FROM promotions.coupon WHERE country_iso2 = $1 ORDER BY created_at DESC LIMIT 200`, [country]);
 }
+export async function listCouponsForBranch(sql: Sql, country: string, branchId: string): Promise<CouponRow[]> {
+  return sql.query<CouponRow & Record<string, unknown>>(`SELECT ${COLS} FROM promotions.coupon WHERE country_iso2 = $1 AND branch_id = $2 ORDER BY created_at DESC LIMIT 200`, [country, branchId]);
+}
 export async function couponById(sql: Sql, id: string): Promise<CouponRow | undefined> {
   const [row] = await sql.query<CouponRow & Record<string, unknown>>(`SELECT ${COLS} FROM promotions.coupon WHERE id = $1`, [id]);
   return row;

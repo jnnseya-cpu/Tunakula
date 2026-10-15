@@ -15,6 +15,7 @@ import {
   insertCoupon,
   insertRedemption,
   listCoupons,
+  listCouponsForBranch,
   redemptionCounts,
   updateCoupon,
   type CouponInput,
@@ -81,6 +82,43 @@ export class CouponService implements CouponLookup {
         row = await insertCoupon(sql, country, input);
       }
       await audit(sql, { actor: principal.userId, action: couponId ? "coupon.updated" : "coupon.created", target: `coupon:${row.id}`, country, detail: { code: row.code, kind: row.kind } });
+      return view(row);
+    });
+  }
+
+  /** A merchant's own promo codes for one of their storefronts. */
+  async listForMerchant(country: string, principal: Principal, branchId: string) {
+    const profile = this.profile(country);
+    return this.db.tx({ country }, async (sql) => {
+      const branch = await getBranch(sql, branchId);
+      if (!branch) throw notFound("Merchant");
+      require(principal, "branch:manage", { type: "branch", country, branchId, restaurantGroupId: branch.restaurant_group_id }, { activeCountry: country, profile });
+      const rows = await listCouponsForBranch(sql, country, branchId);
+      return { coupons: rows.map(view) };
+    });
+  }
+
+  /**
+   * A merchant creates or edits a promo code for their own storefront, without needing an admin.
+   * The code is always scoped to that merchant and funded by that merchant (never the platform),
+   * and cannot be free delivery (the platform and rider share that fee).
+   */
+  async saveForMerchant(country: string, principal: Principal, branchId: string, couponId: string | undefined, body: Record<string, unknown>) {
+    const profile = this.profile(country);
+    const input = { ...parse({ ...body, branch_id: branchId, funded_by: "MERCHANT" }, profile.money.settlement_currency, this.now()), branchId, fundedBy: "MERCHANT" as const };
+    return this.db.tx({ country }, async (sql) => {
+      const branch = await getBranch(sql, branchId);
+      if (!branch) throw notFound("Merchant");
+      require(principal, "branch:manage", { type: "branch", country, branchId, restaurantGroupId: branch.restaurant_group_id }, { activeCountry: country, profile });
+      let row: CouponRow;
+      if (couponId) {
+        const existing = await couponById(sql, couponId);
+        if (!existing || existing.country_iso2 !== country || existing.branch_id !== branchId) throw notFound("Coupon");
+        row = await updateCoupon(sql, couponId, input);
+      } else {
+        row = await insertCoupon(sql, country, input);
+      }
+      await audit(sql, { actor: principal.userId, action: couponId ? "coupon.updated" : "coupon.created", target: `coupon:${row.id}`, country, detail: { code: row.code, kind: row.kind, branchId } });
       return view(row);
     });
   }
