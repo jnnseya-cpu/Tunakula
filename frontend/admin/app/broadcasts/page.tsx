@@ -87,8 +87,9 @@ function Broadcasts() {
           </div>
         </fieldset>
 
-        <label style={{ display: "block", marginTop: 12 }}>{L("Message", "Message")}
-          <textarea className="input" rows={3} maxLength={480} value={message} onChange={(e) => setMessage(e.target.value)} placeholder={L("🎉 -20% ce week-end avec le code WEEKEND20", "🎉 20% off this weekend with code WEEKEND20")} />
+        <label style={{ display: "block", marginTop: 12 }}>
+          <span style={{ display: "block", marginBottom: 4 }}>{L("Message", "Message")}</span>
+          <textarea className="input" rows={3} maxLength={480} value={message} onChange={(e) => setMessage(e.target.value)} placeholder={L("🎉 -20% ce week-end avec le code WEEKEND20", "🎉 20% off this weekend with code WEEKEND20")} style={{ width: "100%" }} />
         </label>
         <p className="muted" style={{ fontSize: 12 }}>{message.length}/480</p>
 
