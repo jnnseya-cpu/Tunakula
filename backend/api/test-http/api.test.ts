@@ -1888,6 +1888,14 @@ describe("broadcasts (one-click offers to an audience)", () => {
     // An explicit selection targets just those users.
     const one = await call("POST", "/v1/admin/broadcasts", { token: admin.token, country: "CD", body: { user_ids: [customer.userId], channels: ["inapp"], message: "Just for you" } });
     assert.equal(one.body.recipients, 1, "a hand-picked selection reaches exactly those users");
+    // Every send is recorded in the history, with its delivery tally.
+    const hist = await call("GET", "/v1/admin/broadcasts", { token: admin.token, country: "CD" });
+    assert.equal(hist.status, 200, JSON.stringify(hist.body));
+    const row = hist.body.broadcasts.find((b: { message: string }) => /WEEKEND20/.test(b.message));
+    assert.ok(row, "the broadcast appears in the history");
+    assert.ok(row.recipients >= 1 && row.delivered >= 1, "with its recipient and delivery counts");
+    assert.deepEqual(row.channels, ["inapp"]);
+    assert.equal((await call("GET", "/v1/admin/broadcasts", { token: customer.token, country: "CD" })).status, 403, "a non-admin cannot read the history");
   });
 });
 

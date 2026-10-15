@@ -8,6 +8,7 @@
 import type { OtpSender } from "./auth.ts";
 import type { ChannelResult, ChannelSender } from "./comms.ts";
 import type { MessagingChannel } from "../modules/messaging/messaging.ts";
+import type { EmailMessage, EmailResult } from "../modules/messaging/smtp.ts";
 
 /** Bridges a MessagingChannel into the dispatch engine. SMS/WhatsApp are sent; the rest are logged. */
 export function messagingSender(messaging: MessagingChannel): ChannelSender {
@@ -20,6 +21,20 @@ export function messagingSender(messaging: MessagingChannel): ChannelSender {
       if (r.status === "sent") return { status: "sent", ref: r.ref };
       // unavailable / unknown / failed all land as a failed delivery row, with the reason recorded.
       return { status: "failed", failure: `${r.status}: ${r.failure}` };
+    },
+  };
+}
+
+/** The dispatch engine's `email` channel adapter: sends over SMTP. No address on file → logged, not failed. */
+export function emailSender(smtp: { send(m: EmailMessage): Promise<EmailResult> }): ChannelSender {
+  return {
+    async send(message): Promise<ChannelResult> {
+      if (message.channel !== "email") return { status: "logged" };
+      const to = message.to.email;
+      if (!to) return { status: "logged" }; // no email on file — nothing to send to
+      const subject = message.subject.slice(0, 150);
+      const r = await smtp.send({ to, subject, text: message.subject });
+      return r.status === "sent" ? { status: "sent", ...(r.ref ? { ref: r.ref } : {}) } : { status: "failed", failure: r.failure ?? "email send failed" };
     },
   };
 }

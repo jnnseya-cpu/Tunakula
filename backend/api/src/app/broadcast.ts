@@ -98,10 +98,37 @@ export class BroadcastService {
       }).catch(() => ({ deliveries: [] as { status: string }[] }));
       for (const d of r.deliveries) tally[d.status] = (tally[d.status] ?? 0) + 1;
     }
-    await this.db.tx({ country }, (sql) => audit(sql, {
-      actor: principal.userId, action: "broadcast.sent", target: campaignId, country,
-      detail: { audience: input.audience, segment: input.segment ?? null, channels, recipients: recipients.length, message: message.slice(0, 80) },
-    }));
+    await this.db.tx({ country }, async (sql) => {
+      await sql.query(
+        `INSERT INTO promotions.broadcast (country_iso2, audience, segment, channels, message, recipients, sent, logged, suppressed, failed, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+        [country, input.audience, input.segment ?? null, channels, message, recipients.length, tally.sent, tally.logged, tally.suppressed, tally.failed, principal.userId],
+      );
+      await audit(sql, {
+        actor: principal.userId, action: "broadcast.sent", target: campaignId, country,
+        detail: { audience: input.audience, segment: input.segment ?? null, channels, recipients: recipients.length, message: message.slice(0, 80) },
+      });
+    });
     return { campaignId, recipients: recipients.length, truncated: ids.length > recipients.length, ...tally };
+  }
+
+  /** Recent broadcasts in this market, newest first, with their delivery tallies. */
+  async list(country: string, principal: Principal, limit = 50) {
+    this.#assert(country, principal);
+    const rows = await this.db.tx({ country }, (sql) => sql.query<{
+      id: string; audience: string; segment: string | null; channels: string[]; message: string;
+      recipients: number; sent: number; logged: number; suppressed: number; failed: number; created_at: Date;
+    }>(
+      `SELECT id, audience, segment, channels, message, recipients, sent, logged, suppressed, failed, created_at
+         FROM promotions.broadcast WHERE country_iso2 = $1 ORDER BY created_at DESC LIMIT $2`,
+      [country, Math.min(Math.max(limit, 1), 200)],
+    ));
+    return {
+      broadcasts: rows.map((r) => ({
+        id: r.id, audience: r.audience, segment: r.segment, channels: r.channels, message: r.message,
+        recipients: r.recipients, delivered: r.sent + r.logged, sent: r.sent, logged: r.logged, suppressed: r.suppressed, failed: r.failed,
+        created_at: new Date(r.created_at).toISOString(),
+      })),
+    };
   }
 }

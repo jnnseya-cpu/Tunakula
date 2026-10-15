@@ -26,7 +26,8 @@ import { StripeConnector } from "@tunakula/payment-connector-stripe";
 import { SandboxConnector } from "@tunakula/payment-connector-sandbox";
 import type { ConnectorCapability, PaymentConnector } from "@tunakula/ts-contracts";
 import type { OtpSender } from "../app/auth.ts";
-import { messagingSender, otpViaMessaging } from "../app/channels.ts";
+import { emailSender, messagingSender, otpViaMessaging } from "../app/channels.ts";
+import { smtpSender } from "../modules/messaging/smtp.ts";
 import { composeSenders, webPushSender, type VapidConfig } from "../app/push.ts";
 import type { ChannelSender } from "../app/comms.ts";
 import type { MessagingChannel } from "../modules/messaging/messaging.ts";
@@ -127,6 +128,19 @@ const vapid: VapidConfig | undefined = env("TUNAKULA_VAPID_PUBLIC_KEY")
 const senderParts: ChannelSender[] = [];
 if (messaging) senderParts.push(messagingSender(messaging));
 if (vapid) senderParts.push(webPushSender(db, vapid));
+// Email channel over SMTP, when configured (host + from). Secure=1 for implicit TLS (465); otherwise
+// STARTTLS is used opportunistically on 587/25. Without it, the email channel logs like SMS without Twilio.
+if (env("TUNAKULA_SMTP_HOST") && env("TUNAKULA_SMTP_FROM")) {
+  senderParts.push(emailSender(smtpSender({
+    host: required("TUNAKULA_SMTP_HOST"),
+    port: Number(env("TUNAKULA_SMTP_PORT") ?? 587),
+    secure: env("TUNAKULA_SMTP_SECURE") === "1",
+    from: required("TUNAKULA_SMTP_FROM"),
+    ...(env("TUNAKULA_SMTP_USER") ? { user: required("TUNAKULA_SMTP_USER") } : {}),
+    ...(env("TUNAKULA_SMTP_PASS") ? { pass: required("TUNAKULA_SMTP_PASS") } : {}),
+  })));
+  log.info("email configured", { host: env("TUNAKULA_SMTP_HOST") });
+}
 const senders: ChannelSender | undefined = senderParts.length ? composeSenders(...senderParts) : undefined;
 if (vapid) log.info("web push configured", {});
 const registry = new CountryConfigRegistry({

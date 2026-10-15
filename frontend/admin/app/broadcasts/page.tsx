@@ -4,6 +4,7 @@ import { Gate, Shell, useConsole } from "../../components/shell";
 import { api } from "../../lib/api";
 
 type Audience = "all" | "customer" | "rider" | "restaurant";
+interface BroadcastRow { id: string; audience: string; segment: string | null; channels: string[]; message: string; recipients: number; delivered: number; suppressed: number; failed: number; created_at: string }
 const CHANNELS = [
   { id: "inapp", fr: "In-app", en: "In-app" },
   { id: "push", fr: "Push", en: "Push" },
@@ -28,6 +29,10 @@ function Broadcasts() {
   const [result, setResult] = useState<{ recipients: number; sent: number; logged: number; suppressed: number; failed: number } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [history, setHistory] = useState<BroadcastRow[] | null>(null);
+
+  const loadHistory = () => api<{ broadcasts: BroadcastRow[] }>("/v1/admin/broadcasts", { country }).then((r) => setHistory(r.broadcasts)).catch(() => setHistory([]));
+  useEffect(() => { void loadHistory(); }, [country]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggle = (id: string) => setChannels((cs) => (cs.includes(id) ? cs.filter((c) => c !== id) : [...cs, id]));
 
@@ -43,7 +48,7 @@ function Broadcasts() {
     try {
       const body = { audience, ...(audience === "customer" && segment ? { segment } : {}), channels, message: message.trim() };
       setResult(await api("/v1/admin/broadcasts", { method: "POST", country, body }));
-      setMessage("");
+      setMessage(""); void loadHistory();
     } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   };
 
@@ -100,6 +105,30 @@ function Broadcasts() {
           <button className="btn primary" type="button" disabled={!canSend} onClick={send}>
             {busy ? L("Envoi…", "Sending…") : L(`Envoyer à ${count ?? "…"} ${audienceLabel(audience).toLowerCase()}`, `Send to ${count ?? "…"} ${audienceLabel(audience).toLowerCase()}`)}
           </button>
+        </div>
+      </section>
+
+      <section className="card">
+        <div className="card-head"><div><h2>{L("Historique", "History")}</h2><p>{history ? `${history.length}` : "…"}</p></div></div>
+        <div className="table-wrap">
+          <table className="data">
+            <thead><tr><th>{L("Quand", "When")}</th><th>{L("Audience", "Audience")}</th><th>{L("Canaux", "Channels")}</th><th>{L("Message", "Message")}</th><th className="num">{L("Destinataires", "Recipients")}</th><th className="num">{L("Livrés", "Delivered")}</th><th className="num">{L("Désinscrits", "Opted out")}</th><th className="num">{L("Échecs", "Failed")}</th></tr></thead>
+            <tbody>
+              {history?.map((b) => (
+                <tr key={b.id}>
+                  <td>{new Date(b.created_at).toLocaleString()}</td>
+                  <td>{audienceLabel((b.audience as Audience)) ?? b.audience}{b.segment ? ` · ${b.segment}` : ""}</td>
+                  <td>{b.channels.join(", ")}</td>
+                  <td style={{ maxWidth: 280, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b.message}</td>
+                  <td className="num">{b.recipients}</td>
+                  <td className="num">{b.delivered}</td>
+                  <td className="num">{b.suppressed}</td>
+                  <td className="num">{b.failed}</td>
+                </tr>
+              ))}
+              {history && history.length === 0 ? <tr><td colSpan={8} className="muted">{L("Aucune diffusion pour l'instant.", "No broadcasts yet.")}</td></tr> : null}
+            </tbody>
+          </table>
         </div>
       </section>
     </>

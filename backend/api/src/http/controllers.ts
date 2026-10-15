@@ -1130,6 +1130,11 @@ export class BroadcastController {
     return this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
   }
 
+  @Get()
+  async list(@Req() req: FastifyRequest) {
+    return this.broadcast.list(country(req), await this.#p(req));
+  }
+
   @Get("preview")
   async preview(@Req() req: FastifyRequest, @Query("audience") audience?: string, @Query("segment") segment?: string) {
     return this.broadcast.preview(country(req), await this.#p(req), { audience: aud(audience), ...(segment ? { segment } : {}) });
