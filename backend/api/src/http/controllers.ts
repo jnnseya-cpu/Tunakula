@@ -1723,6 +1723,12 @@ export class GrowthController {
     return this.growth.recommendations(country(req), await this.#p(req), lang ?? "fr");
   }
 
+  /** Public storefront discovery: trending (order volume) and best-reviewed dishes for the market. */
+  @Get("discovery")
+  discovery(@Req() req: FastifyRequest, @Query("lang") lang?: string) {
+    return this.growth.discover(country(req), lang === "en" ? "en" : "fr");
+  }
+
   @Get("me/standing")
   async standing(@Req() req: FastifyRequest) {
     return this.growth.myStanding(country(req), await this.#p(req));

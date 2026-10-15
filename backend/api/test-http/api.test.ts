@@ -1854,6 +1854,23 @@ describe("reviews and ratings", () => {
     assert.equal(after.body.reviews.find((r: { id: string }) => r.id === reviewId).reply, "Merci beaucoup! See you soon.");
   });
 
+  test("public discovery surfaces trending dishes and best-reviewed kitchens from real activity", async () => {
+    const d = await call("GET", "/v1/discovery", { country: "CD" });
+    assert.equal(d.status, 200, JSON.stringify(d.body));
+    // Trending ranks real order volume; the delivered orders above put dishes here.
+    assert.ok(Array.isArray(d.body.trending) && d.body.trending.length >= 1, "trending has dishes");
+    assert.ok(d.body.trending.every((t: { item_id: string; branch_id: string }) => typeof t.item_id === "string" && typeof t.branch_id === "string"));
+    assert.ok(d.body.trending.some((t: { qty?: number }) => typeof t.qty === "number" && (t.qty ?? 0) >= 1), "trending carries an order-volume signal");
+    // Best-reviewed ranks branches by rating; the 5-star review above puts this branch here.
+    assert.ok(Array.isArray(d.body.top_rated) && d.body.top_rated.length >= 1, "top_rated has dishes");
+    const reviewed = d.body.top_rated.find((t: { branch_id: string }) => t.branch_id === branchId);
+    assert.ok(reviewed, "the reviewed branch appears in best reviewed");
+    assert.ok(reviewed.rating >= 1 && reviewed.rating <= 5, "it carries its average rating");
+    assert.ok((reviewed.ratings ?? 0) >= 1, "and its review count");
+    // Discovery is country-scoped; an unknown market is refused.
+    assert.equal((await call("GET", "/v1/discovery", { country: "ZZ" })).status >= 400, true);
+  });
+
   test("the merchant drafts an AI reply — grounded, offline (template); a non-owner cannot, unknown 404", async () => {
     // A plain customer cannot draft a reply for a branch they don't manage.
     assert.equal((await call("POST", `/v1/admin/reviews/${reviewId}/draft-reply`, { token: customer.token, country: "CD", body: {} })).status, 403);

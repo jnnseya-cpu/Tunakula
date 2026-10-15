@@ -1,7 +1,10 @@
+"use client";
 import Link from "next/link";
-import { PlateArt, FoodImage, type Recipe } from "./plate";
+import { useEffect, useState } from "react";
+import { PlateArt, type Recipe } from "./plate-art";
 import { EtaChip } from "./location";
 import { fc, MERCHANTS, type Merchant, type MenuItem } from "../lib/catalogue";
+import { fetchDiscovery, foodPhotoUrl, live, money, type DiscoveryItem } from "../lib/api";
 
 /* ─── "What's on your mind?" — cuisine category tiles ─────────────────────────
  * Each tile searches the browse page for a term that really matches the catalogue
@@ -57,8 +60,14 @@ function topRatedDishes(n = 6): { merchant: Merchant; item: MenuItem }[] {
 }
 
 export function BestReviewed() {
-  const picks = topRatedDishes(6);
-  if (picks.length === 0) return null;
+  const snap = topRatedDishes(6);
+  const [liveItems, setLiveItems] = useState<DiscoveryItem[] | null>(null);
+  useEffect(() => {
+    if (!live()) return;
+    fetchDiscovery().then((d) => { if (d.top_rated?.length) setLiveItems(d.top_rated.slice(0, 6)); }).catch(() => undefined);
+  }, []);
+
+  if (snap.length === 0 && !liveItems) return null;
   return (
     <section className="tight">
       <div className="wrap">
@@ -70,21 +79,38 @@ export function BestReviewed() {
           <Link className="link" href="/order/?sort=rating">See top rated</Link>
         </div>
         <div className="fav-grid">
-          {picks.map(({ merchant: m, item }) => (
-            <Link key={`${m.slug}-${item.id}`} className="fav" href={`/r/${m.slug}/`} data-reveal>
-              <div className="fav-pic" style={{ background: m.tone.bg }}>
-                <FoodImage slug={item.id} recipe={item.recipe} alt={item.name} className="pic" />
-                <span className="rev-star" aria-label={`Rated ${m.rating.toFixed(1)} out of 5`}>
-                  <span aria-hidden>★</span> {m.rating.toFixed(1)}{m.ratings > 0 ? <small> ({m.ratings})</small> : null}
-                </span>
-                <span className="fav-add" aria-hidden>+</span>
-              </div>
-              <h3>{item.name}</h3>
-              <p className="muted">{m.name} · {m.commune}</p>
-              <p className="fav-foot"><b className="num">{fc(item.price)}</b></p>
-              <EtaChip slug={m.slug} />
-            </Link>
-          ))}
+          {liveItems
+            ? liveItems.map((it) => (
+                <Link key={it.item_id} className="fav" href={`/store/?id=${it.branch_id}`} data-reveal>
+                  <div className="fav-pic" style={{ background: "var(--card-2)" }}>
+                    {it.image_id ? <img className="pic is-photo" src={foodPhotoUrl(it.image_id)} alt={it.name} /> : null}
+                    {typeof it.rating === "number" ? (
+                      <span className="rev-star" aria-label={`Rated ${it.rating.toFixed(1)} out of 5`}>
+                        <span aria-hidden>★</span> {it.rating.toFixed(1)}{it.ratings ? <small> ({it.ratings})</small> : null}
+                      </span>
+                    ) : null}
+                    <span className="fav-add" aria-hidden>+</span>
+                  </div>
+                  <h3>{it.name}</h3>
+                  <p className="muted">{it.branch_name}</p>
+                  <p className="fav-foot"><b className="num">{it.price ? money(it.price) : ""}</b></p>
+                </Link>
+              ))
+            : snap.map(({ merchant: m, item }) => (
+                <Link key={`${m.slug}-${item.id}`} className="fav" href={`/r/${m.slug}/`} data-reveal>
+                  <div className="fav-pic" style={{ background: m.tone.bg }}>
+                    <PlateArt className="pic" recipe={item.recipe} seed={item.id} title={item.name} />
+                    <span className="rev-star" aria-label={`Rated ${m.rating.toFixed(1)} out of 5`}>
+                      <span aria-hidden>★</span> {m.rating.toFixed(1)}{m.ratings > 0 ? <small> ({m.ratings})</small> : null}
+                    </span>
+                    <span className="fav-add" aria-hidden>+</span>
+                  </div>
+                  <h3>{item.name}</h3>
+                  <p className="muted">{m.name} · {m.commune}</p>
+                  <p className="fav-foot"><b className="num">{fc(item.price)}</b></p>
+                  <EtaChip slug={m.slug} />
+                </Link>
+              ))}
         </div>
       </div>
     </section>

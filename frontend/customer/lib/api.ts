@@ -193,6 +193,15 @@ export const redeemLoyalty = (points: number) =>
 export interface Banner { id: string; headline: string; subtext: string; cta_label: string; cta_href: string; tone: "ACCENT" | "DARK" | "GREEN" | "ORANGE"; sort: number }
 export const liveBanners = () => api<{ banners: Banner[] }>("/v1/banners", { auth: false }).then((r) => r.banners);
 
+/** Public storefront discovery: trending (real order volume) and best-reviewed dishes for the market. */
+export interface DiscoveryItem {
+  readonly item_id: string; readonly name: string; readonly branch_id: string; readonly branch_name: string;
+  readonly image_id: string | null; readonly price: MoneyWire | null;
+  readonly qty?: number; readonly rating?: number; readonly ratings?: number;
+}
+export interface Discovery { readonly currency: string; readonly trending: DiscoveryItem[]; readonly top_rated: DiscoveryItem[] }
+export const fetchDiscovery = () => api<Discovery>("/v1/discovery", { auth: false });
+
 // ── In-order chat (customer ↔ rider) ──
 export interface ChatMessage { id: string; from: "CUSTOMER" | "RIDER"; mine: boolean; body: string; at: string }
 export interface ChatThread { role: "CUSTOMER" | "RIDER"; counterparty: "CUSTOMER" | "RIDER" | null; open: boolean; messages: ChatMessage[] }

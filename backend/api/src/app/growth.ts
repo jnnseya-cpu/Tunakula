@@ -87,6 +87,21 @@ export class GrowthService {
     });
   }
 
+  /**
+   * Public storefront discovery for a market: what's trending (real order volume over the last
+   * 45 days) and what's best reviewed (branches by average rating), each with a representative
+   * dish. Country-scoped by RLS; no personalization, so it needs no sign-in.
+   */
+  async discover(country: string, lang = "fr", limit = 8) {
+    const v = this.#market(country);
+    const ccy = v.profile.money.settlement_currency;
+    return this.db.tx({ country }, async (sql) => ({
+      currency: ccy,
+      trending: await trendingItems(sql, lang, ccy, limit),
+      top_rated: await topRatedItems(sql, lang, ccy, limit),
+    }));
+  }
+
   /** The signed-in customer's own lifecycle standing (for a "we miss you" surface). */
   async myStanding(country: string, principal: Principal) {
     this.#market(country);
@@ -394,6 +409,54 @@ function priceOf(prices: Record<string, string>, ccy: string): MoneyJSON | undef
 function toCandidate(row: MenuRow, lang: string, ccy: string, reason: RecommendationCandidate["reason"], weight: number): RecommendationCandidate {
   const price = priceOf(row.prices, ccy);
   return { itemId: row.id, name: name(row.names, lang), branchId: row.branch_id, branchName: row.branch_name, reason, weight, ...(price ? { price } : {}) };
+}
+
+/** One storefront discovery card: a dish, its kitchen, a photo and price, plus the ranking signal. */
+interface DiscoveryWire {
+  item_id: string; name: string; branch_id: string; branch_name: string; image_id: string | null;
+  price: { amount_minor: string; currency: string } | null; qty?: number; rating?: number; ratings?: number;
+}
+type MenuImgRow = MenuRow & { image_id: string | null } & Record<string, unknown>;
+
+function toWire(row: MenuImgRow, lang: string, ccy: string): DiscoveryWire {
+  const price = priceOf(row.prices, ccy);
+  return {
+    item_id: row.id, name: name(row.names, lang), branch_id: row.branch_id, branch_name: row.branch_name,
+    image_id: row.image_id ?? null, price: price ? { amount_minor: price.minor, currency: price.currency } : null,
+  };
+}
+
+/** Trending: the dishes ordered most across the market in the last 45 days. */
+async function trendingItems(sql: Sql, lang: string, ccy: string, limit: number): Promise<DiscoveryWire[]> {
+  const rows = await sql.query<MenuImgRow & { qty: string }>(
+    `SELECT m.id, m.names, m.prices, m.image_id, m.branch_id, b.name AS branch_name, SUM((line->>'quantity')::int)::text AS qty
+       FROM ordering.order_view o
+       JOIN ordering.order_event d ON d.order_id = o.order_id AND d.type = 'ORDER_DRAFTED'
+       CROSS JOIN LATERAL jsonb_array_elements(d.payload->'snapshot'->'lines') AS line
+       JOIN catalogue.menu_item m ON m.id = (line->>'itemId')::uuid AND m.available
+       JOIN catalogue.branch b ON b.id = m.branch_id
+      WHERE o.created_at > now() - interval '45 days' AND o.state IN ${COUNTED_STATES}
+      GROUP BY m.id, m.names, m.prices, m.image_id, m.branch_id, b.name ORDER BY qty DESC LIMIT $1`,
+    [limit],
+  );
+  return rows.map((r) => ({ ...toWire(r, lang, ccy), qty: Number(r.qty) }));
+}
+
+/** Best reviewed: branches by average rating, each with a representative (recommended) dish. */
+async function topRatedItems(sql: Sql, lang: string, ccy: string, limit: number): Promise<DiscoveryWire[]> {
+  const rows = await sql.query<MenuImgRow & { rating: string; ratings: string }>(
+    `SELECT m.id, m.names, m.prices, m.image_id, b.id AS branch_id, b.name AS branch_name,
+            r.avg::text AS rating, r.cnt::text AS ratings
+       FROM (SELECT branch_id, round(AVG(restaurant_rating), 1) AS avg, COUNT(*) AS cnt
+               FROM reviews.order_review GROUP BY branch_id) r
+       JOIN catalogue.branch b ON b.id = r.branch_id
+       JOIN LATERAL (SELECT id, names, prices, image_id FROM catalogue.menu_item mi
+                      WHERE mi.branch_id = b.id AND mi.available
+                      ORDER BY mi.recommended DESC NULLS LAST, mi.id LIMIT 1) m ON true
+      ORDER BY r.avg DESC, r.cnt DESC LIMIT $1`,
+    [limit],
+  );
+  return rows.map((r) => ({ ...toWire(r, lang, ccy), rating: Number(r.rating), ratings: Number(r.ratings) }));
 }
 
 async function orderAgain(sql: Sql, customerId: string, lang: string, ccy: string): Promise<RecommendationCandidate[]> {
