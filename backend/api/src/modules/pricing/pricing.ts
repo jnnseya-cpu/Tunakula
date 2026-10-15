@@ -13,10 +13,27 @@
  */
 import { Money, divideRounded, parseDecimal, type Ratio } from "@tunakula/ts-money";
 import type { CountryProfile } from "@tunakula/ts-contracts";
+import type { Vehicle } from "@tunakula/ts-contracts/eta-model";
 import { createJournal, type Journal, type LedgerEntry } from "../money/journal.ts";
 import { RIDER_ORDER_TYPES, type OrderChannel, type OrderType } from "../ordering/order-types.ts";
 
 export type PricingConfig = CountryProfile["pricing"];
+
+/**
+ * §18.3 vehicle size tiers. The per_km/cap ladder is priced for bikes and motorcycles (tier 0, the reference);
+ * each larger vehicle adds the market's size surcharge per tier above them. Walking riders carry no more than a
+ * bike, so FOOT is tier 0 too.
+ */
+export const DELIVERY_MODE_SIZE_TIER: Record<Vehicle, number> = { FOOT: 0, BICYCLE: 0, MOTO: 0, CAR: 1, VAN: 2, TRUCK: 3 };
+/** Group default when a market sets no size_surcharge_bps: +25% per tier. */
+export const DEFAULT_SIZE_SURCHARGE_BPS = 2500;
+
+/** The total surcharge in bps applied to the reference fee for a delivery mode (0 for bikes/motorcycles/foot). */
+export function sizeSurchargeBps(pricing: PricingConfig, mode: Vehicle | undefined): number {
+  if (!mode) return 0;
+  const perTier = pricing.delivery_fee.size_surcharge_bps ?? DEFAULT_SIZE_SURCHARGE_BPS;
+  return DELIVERY_MODE_SIZE_TIER[mode] * perTier;
+}
 
 export class PricingError extends Error {
   readonly code: string;
@@ -51,6 +68,11 @@ export interface DeliveryFeeInput {
   readonly surgeSuppressed?: boolean;
   /** A matched delivery zone's flat fee (minor units): when set, it replaces the distance ladder, surge and rural. */
   readonly flatFeeMinor?: bigint;
+  /**
+   * §18.3 delivery mode. Bikes/motorcycles are the reference; a larger vehicle adds the market's size surcharge
+   * per tier (car, van, truck). Absent means the reference fee — unchanged from before modes existed.
+   */
+  readonly mode?: Vehicle;
 }
 
 export interface DeliveryFee {
@@ -63,6 +85,9 @@ export interface DeliveryFee {
   readonly surgeMultiplier: string;
   readonly surgeTrigger?: string;
   readonly surgeSuppressed: boolean;
+  /** §18.3 delivery mode priced, and the size surcharge applied over the reference fee (0 for bikes/motorcycles). */
+  readonly mode: Vehicle | null;
+  readonly sizeSurchargeBps: number;
   /** Fee charged for the delivery (before any merchant-funded promotion). */
   readonly fee: Money;
   /** §18.4: rider share of the fee actually charged. */
@@ -77,13 +102,18 @@ export function deliveryFee(pricing: PricingConfig, currency: string, input: Del
   const perKm = Money.of(cfg.per_km, currency).minor;
   const cap = Money.of(cfg.cap, currency).minor;
   const chargedKm = Math.max(1, Math.ceil(input.distanceMeters / 1000));
+  // §18.3: a larger vehicle than the reference bike/motorcycle adds the market's size surcharge per tier.
+  const surchargeBps = sizeSurchargeBps(pricing, input.mode);
+  const mode = input.mode ?? null;
 
-  // A matched delivery zone's flat fee replaces the whole ladder (and any surge/rural); the rider split still applies.
+  // A matched delivery zone's flat fee replaces the whole ladder (and any surge/rural); the size surcharge and
+  // rider split still apply (the flat fee is the bike/motorcycle reference for the zone).
   if (input.flatFeeMinor !== undefined) {
     if (input.flatFeeMinor < 0n) fail("DELIVERY_FEE_INVALID", "A zone fee cannot be negative");
-    const fee = Money.ofMinor(input.flatFeeMinor, currency);
+    const baseMinor = surchargeBps > 0 ? divideRounded(input.flatFeeMinor * (BPS + BigInt(surchargeBps)), BPS, ROUNDING) : input.flatFeeMinor;
+    const fee = Money.ofMinor(baseMinor, currency);
     const riderShare = share(fee, pricing.rider_share_bps);
-    return { chargedKm, bands: 0, step: "ZONE_FLAT", rural: input.rural, surgeMultiplier: "1", surgeSuppressed: false, fee, riderShare, platformShare: fee.subtract(riderShare) };
+    return { chargedKm, bands: 0, step: "ZONE_FLAT", rural: input.rural, surgeMultiplier: "1", surgeSuppressed: false, mode, sizeSurchargeBps: surchargeBps, fee, riderShare, platformShare: fee.subtract(riderShare) };
   }
 
   // Exact fee in minor units as a fraction n/d, rounded once at the end.
@@ -103,6 +133,10 @@ export function deliveryFee(pricing: PricingConfig, currency: string, input: Del
   }
   if (input.rural) {
     n *= BigInt(pricing.delivery_fee.rural_bps);
+    d *= BPS;
+  }
+  if (surchargeBps > 0) {
+    n *= BPS + BigInt(surchargeBps);
     d *= BPS;
   }
 
@@ -130,6 +164,8 @@ export function deliveryFee(pricing: PricingConfig, currency: string, input: Del
     surgeMultiplier,
     ...(input.surge && !suppressed ? { surgeTrigger: input.surge.trigger } : {}),
     surgeSuppressed: suppressed,
+    mode,
+    sizeSurchargeBps: surchargeBps,
     fee,
     riderShare,
     platformShare: fee.subtract(riderShare),
