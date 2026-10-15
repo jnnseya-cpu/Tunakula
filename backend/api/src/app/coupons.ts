@@ -20,6 +20,7 @@ import {
   type CouponInput,
   type CouponRow,
 } from "../persistence/coupons.ts";
+import { getBranch } from "../persistence/catalogue.ts";
 import { badRequest, notFound, unprocessable } from "./errors.ts";
 import { require } from "./principal.ts";
 
@@ -27,11 +28,13 @@ export interface CouponPrice {
   readonly couponId: string;
   readonly code: string;
   readonly discount: Money;
+  /** Who funds this discount: the platform (promotion_expense) or the merchant (reduced payout). */
+  readonly fundedBy: "PLATFORM" | "MERCHANT";
 }
 
 /** What commerce needs: price a code against an order, and record the redemption once the order exists. */
 export interface CouponLookup {
-  priceFor(sql: Sql, country: string, userId: string, code: string, fees: { goods: Money; customerDeliveryFee: Money }): Promise<CouponPrice | undefined>;
+  priceFor(sql: Sql, country: string, userId: string, code: string, fees: { goods: Money; customerDeliveryFee: Money }, branchId: string): Promise<CouponPrice | undefined>;
   record(sql: Sql, country: string, couponId: string, userId: string, orderId: string, amount: Money): Promise<void>;
 }
 
@@ -64,6 +67,11 @@ export class CouponService implements CouponLookup {
     require(principal, "campaign:write", { type: "coupon", country }, { activeCountry: country, profile });
     const input = parse(body, profile.money.settlement_currency, this.now());
     return this.db.tx({ country }, async (sql) => {
+      // A merchant scope must be a real storefront in this market (RLS already confines the lookup).
+      if (input.branchId) {
+        const branch = await getBranch(sql, input.branchId);
+        if (!branch) throw notFound("Merchant");
+      }
       let row: CouponRow;
       if (couponId) {
         const existing = await couponById(sql, couponId);
@@ -78,9 +86,11 @@ export class CouponService implements CouponLookup {
   }
 
   /** Values a code for a customer against an order's fees, enforcing window, minimum and limits. */
-  async priceFor(sql: Sql, country: string, userId: string, code: string, fees: { goods: Money; customerDeliveryFee: Money }): Promise<CouponPrice | undefined> {
+  async priceFor(sql: Sql, country: string, userId: string, code: string, fees: { goods: Money; customerDeliveryFee: Money }, branchId: string): Promise<CouponPrice | undefined> {
     const coupon = await couponByCode(sql, country, code.trim());
     if (!coupon) throw unprocessable("COUPON_INVALID", "That promo code is not valid");
+    // A merchant-scoped coupon only applies on that merchant's orders.
+    if (coupon.branch_id && coupon.branch_id !== branchId) throw unprocessable("COUPON_WRONG_MERCHANT", "That code does not apply at this restaurant");
     const now = this.now();
     if (new Date(coupon.starts_at) > now || new Date(coupon.ends_at) < now) throw unprocessable("COUPON_EXPIRED", "That promo code is not active right now");
     const ccy = fees.goods.currency;
@@ -93,7 +103,7 @@ export class CouponService implements CouponLookup {
     if (counts.byUser >= coupon.per_customer_limit) throw unprocessable("COUPON_ALREADY_USED", "You have already used this promo code");
     const discount = this.#discount(coupon, fees);
     if (discount.isZero()) return undefined;
-    return { couponId: coupon.id, code: coupon.code, discount };
+    return { couponId: coupon.id, code: coupon.code, discount, fundedBy: coupon.funded_by };
   }
 
   #discount(coupon: CouponRow, fees: { goods: Money; customerDeliveryFee: Money }): Money {
@@ -124,6 +134,7 @@ function view(c: CouponRow) {
     value_bps: c.value_bps, value: money(c.value_minor, c.currency),
     min_subtotal: money(c.min_subtotal_minor, c.currency), max_discount: money(c.max_discount_minor, c.currency),
     usage_limit: c.usage_limit, per_customer_limit: c.per_customer_limit,
+    branch_id: c.branch_id, funded_by: c.funded_by,
     starts_at: new Date(c.starts_at).toISOString(), ends_at: new Date(c.ends_at).toISOString(),
     active: c.active,
   };
@@ -139,6 +150,10 @@ function parse(body: Record<string, unknown>, settlement: string, now: Date): Co
   const valueMinor = kind === "FIXED" ? big(body.value_minor, "value_minor") : 0n;
   if (kind === "FIXED" && valueMinor <= 0n) throw badRequest("VALUE_INVALID", "value_minor must be positive for a fixed coupon");
   const days = Math.min(Math.max(Math.trunc(Number(body.days) || 30), 1), 365);
+  const branchId = typeof body.branch_id === "string" && body.branch_id.trim() ? body.branch_id.trim() : null;
+  const fundedBy = body.funded_by === "MERCHANT" ? "MERCHANT" : "PLATFORM";
+  if (fundedBy === "MERCHANT" && !branchId) throw badRequest("MERCHANT_REQUIRED", "A merchant-funded coupon must name the merchant that funds it");
+  if (fundedBy === "MERCHANT" && kind === "FREE_DELIVERY") throw badRequest("FUNDING_INVALID", "A merchant cannot fund free delivery; the platform and rider share that fee");
   return {
     code,
     description: String(body.description ?? "").slice(0, 280),
@@ -150,6 +165,8 @@ function parse(body: Record<string, unknown>, settlement: string, now: Date): Co
     maxDiscountMinor: big(body.max_discount_minor ?? "0", "max_discount_minor"),
     usageLimit: Math.max(0, Math.trunc(Number(body.usage_limit ?? 0))),
     perCustomerLimit: Math.max(1, Math.trunc(Number(body.per_customer_limit ?? 1))),
+    branchId,
+    fundedBy,
     endsAt: body.ends_at ? new Date(String(body.ends_at)) : new Date(now.getTime() + days * 86_400_000),
     active: body.active === undefined ? true : Boolean(body.active),
   };

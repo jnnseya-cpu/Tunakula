@@ -92,6 +92,7 @@ export interface Quote {
     readonly couponId: string;
     readonly code: string;
     readonly discount: MoneyJSON;
+    readonly fundedBy: "PLATFORM" | "MERCHANT";
   };
   /** Present for a referee's first order: the referral first-order discount funded by the platform. */
   readonly referral?: {
@@ -269,7 +270,7 @@ export class CommerceService {
       // A coupon applies on top of any membership benefit; both are funded by the platform.
       let coupon: CouponPrice | undefined;
       if (input.couponCode && input.customerId && this.coupons) {
-        coupon = await this.coupons.priceFor(sql, country, input.customerId, input.couponCode, { goods: breakdown.goods, customerDeliveryFee: breakdown.customerDeliveryFee });
+        coupon = await this.coupons.priceFor(sql, country, input.customerId, input.couponCode, { goods: breakdown.goods, customerDeliveryFee: breakdown.customerDeliveryFee }, branch.id);
       }
       const memberDisc = membership ? Money.fromJSON(membership.discount) : Money.zero(ccy);
       const couponDisc = coupon ? coupon.discount : Money.zero(ccy);
@@ -287,7 +288,7 @@ export class CommerceService {
         branch: { id: branch.id, name: branch.name }, lines, breakdown,
         ...(distanceMeters !== undefined ? { distanceMeters } : {}),
         ...(membership ? { membership } : {}),
-        ...(coupon ? { coupon: { couponId: coupon.couponId, code: coupon.code, discount: coupon.discount.toJSON() } } : {}),
+        ...(coupon ? { coupon: { couponId: coupon.couponId, code: coupon.code, discount: coupon.discount.toJSON(), fundedBy: coupon.fundedBy } } : {}),
         ...(referral ? { referral: { claimId: referral.claimId, discount: referral.discount.toJSON() } } : {}),
         ...((membership || coupon || referral) ? { payable: payable.toJSON() } : {}),
         ...(ageRestricted ? { ageRestricted: true } : {}),
@@ -426,7 +427,7 @@ export class CommerceService {
           riderReceives: b.riderReceives.toJSON(),
           platformReceives: b.platformReceives.toJSON(),
           ...(quote.membership ? { membershipDiscount: quote.membership.discount } : {}),
-          ...(quote.coupon ? { couponDiscount: quote.coupon.discount } : {}),
+          ...(quote.coupon ? { couponDiscount: quote.coupon.discount, couponFundedBy: quote.coupon.fundedBy } : {}),
           ...(quote.referral ? { referralDiscount: quote.referral.discount } : {}),
         },
         paymentMode: settledMode,
@@ -602,6 +603,14 @@ export class CommerceService {
     const couponDisc = m.couponDiscount ? Money.fromJSON(m.couponDiscount) : Money.zero(ccy0);
     const referralDisc = m.referralDiscount ? Money.fromJSON(m.referralDiscount) : Money.zero(ccy0);
     const total = Money.fromJSON(s.total);
+    // A merchant-funded coupon comes out of the merchant's payout instead of the platform. Clamp the
+    // merchant's share to what they earn on the order, so the merchant can never be paid a negative
+    // amount; any excess falls back to the platform. Either way the journal stays balanced.
+    const merchantReceives = Money.fromJSON(m.merchantReceives);
+    const merchantFunded = m.couponFundedBy === "MERCHANT"
+      ? (couponDisc.compare(merchantReceives) > 0 ? merchantReceives : couponDisc)
+      : Money.zero(ccy0);
+    const platformCouponDisc = couponDisc.subtract(merchantFunded);
     // Where the customer's money came in. A full-wallet order is entirely from the wallet; a split order
     // draws a wallet portion and the rest from the method's clearing account; otherwise a single account.
     const methodAccount = s.paymentMode === "PREPAID" ? "psp_clearing" : "cod_cash_in_transit";
@@ -617,9 +626,10 @@ export class CommerceService {
     return [
       ...cashIn,
       { account: "subscription_revenue", country: c, amount: discount },
-      // The platform funds both coupon and referral first-order discounts.
-      { account: "promotion_expense", country: c, amount: couponDisc.add(referralDisc) },
-      { account: "restaurant_payable", country: c, amount: neg(m.merchantReceives) },
+      // The platform funds referral first-order discounts and any platform-funded coupon; a
+      // merchant-funded coupon instead reduces the restaurant payout below.
+      { account: "promotion_expense", country: c, amount: platformCouponDisc.add(referralDisc) },
+      { account: "restaurant_payable", country: c, amount: merchantReceives.subtract(merchantFunded).negate() },
       { account: "service_charge_revenue", country: c, amount: neg(m.serviceCharge) },
       { account: "rider_payable", country: c, amount: neg(m.riderReceives) },
       { account: "delivery_fee_revenue", country: c, amount: neg(m.platformDeliveryShare) },

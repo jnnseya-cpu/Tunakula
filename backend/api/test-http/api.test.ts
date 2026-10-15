@@ -1805,6 +1805,48 @@ describe("coupons / promo codes", () => {
     const list = await call("GET", "/v1/admin/coupons", { token: admin.token, country: "CD" });
     assert.ok(list.body.coupons.some((x: { code: string }) => x.code === "ONCE"));
   });
+
+  test("a coupon can be scoped to one merchant, funded by the platform or the merchant", async () => {
+    // A second storefront, to prove merchant-scoping keeps a code off other merchants' orders.
+    const other = (await call("POST", "/v1/branches", { token: admin.token, country: "CD", body: { name: "Other Kitchen", restaurant_group_id: "rg-other", city: "kinshasa", commune: "gombe", ...KINSHASA } })).body.id;
+
+    // Guards: a merchant-funded code must name a merchant, and a merchant cannot fund free delivery.
+    assert.equal((await call("POST", "/v1/admin/coupons", { token: admin.token, country: "CD", body: { code: "NOFUND", kind: "FIXED", value_minor: "100", funded_by: "MERCHANT", days: 30 } })).body.code, "MERCHANT_REQUIRED");
+    assert.equal((await call("POST", "/v1/admin/coupons", { token: admin.token, country: "CD", body: { code: "NOFREE", kind: "FREE_DELIVERY", branch_id: branchId, funded_by: "MERCHANT", days: 30 } })).body.code, "FUNDING_INVALID");
+
+    // A code scoped to another merchant does not apply at this one.
+    await call("POST", "/v1/admin/coupons", { token: admin.token, country: "CD", body: { code: "OTHERONLY", kind: "FIXED", value_minor: "100", branch_id: other, funded_by: "PLATFORM", days: 30 } });
+    assert.equal((await call("POST", "/v1/carts/quote", { token: customer.token, country: "CD", body: { ...cart(), coupon_code: "OTHERONLY" } })).body.code, "COUPON_WRONG_MERCHANT");
+
+    // A merchant-funded code scoped to this merchant: $2 off, funded by the merchant (not the platform).
+    const made = await call("POST", "/v1/admin/coupons", { token: admin.token, country: "CD", body: { code: "SHOP2", kind: "FIXED", value_minor: "200", branch_id: branchId, funded_by: "MERCHANT", days: 30 } });
+    assert.equal(made.status, 201, JSON.stringify(made.body));
+    assert.equal(made.body.branch_id, branchId);
+    assert.equal(made.body.funded_by, "MERCHANT");
+
+    const q = await call("POST", "/v1/carts/quote", { token: customer.token, country: "CD", body: { ...cart(), coupon_code: "SHOP2" } });
+    assert.equal(q.body.coupon.discount.amount_minor, "200");
+    const placed = await call("POST", "/v1/orders", { token: customer.token, country: "CD", body: { ...cart(), coupon_code: "SHOP2", payment_mode: "CASH_ON_DELIVERY", expected_total: q.body.payable } });
+    const orderId = placed.body.order_id, code = placed.body.recipient_code;
+    await transition(ops, orderId, { type: "ASSIGN_RIDER", riderId: rider.userId });
+    await transition(kitchen, orderId, { type: "ACCEPT" });
+    await transition(kitchen, orderId, { type: "START_PREPARING" });
+    await transition(kitchen, orderId, { type: "PACK", confirmedLineIds: ["l1"], packageCount: 1, allergenAcknowledged: true });
+    await transition(kitchen, orderId, { type: "MARK_READY", packages: [{ labelId: "M-1", sealId: "MS-1" }], packPhotoRef: "photo://pack" });
+    await transition(rider, orderId, { type: "PICK_UP", scannedLabelIds: ["M-1"], restaurantConfirmed: true, sealsIntact: true, location: KINSHASA });
+    assert.equal((await transition(rider, orderId, { type: "DELIVER", scannedLabelId: "M-1", location: DROP, sealIntact: true, verification: { method: "CODE", code }, proofPhotoRef: "photo://door" })).body.state, "DELIVERED");
+
+    // The merchant funds it: NO promotion_expense, the restaurant payout is reduced by $2, books balance.
+    const entries = await inspect("CD", "SELECT e.account, e.amount_minor::text AS amount, e.currency FROM money.ledger_entry e JOIN money.journal j ON j.id = e.journal_id WHERE j.idempotency_key = $1 ORDER BY e.line", [`order:${orderId}:settlement`]);
+    assert.ok(!entries.some((e) => e.account === "promotion_expense"), "the platform funds nothing for a merchant-funded coupon");
+    const base = await inspect("CD", "SELECT e.amount_minor::text AS amount FROM money.ledger_entry e JOIN money.journal j ON j.id = e.journal_id WHERE j.idempotency_key = $1 AND e.account = 'restaurant_payable'", [`order:${orderId}:settlement`]);
+    assert.ok(base.length === 1, "one restaurant payout line");
+    const byCcy = new Map<string, bigint>();
+    for (const e of entries) byCcy.set(e.currency, (byCcy.get(e.currency) ?? 0n) + BigInt(e.amount));
+    for (const [, s] of byCcy) assert.equal(s, 0n, "the settlement journal balances");
+    const [red] = await inspect("CD", "SELECT amount_minor::text AS a FROM promotions.coupon_redemption WHERE order_id = $1", [orderId]);
+    assert.equal(red.a, "200", "the redemption records the $2 discount");
+  });
 });
 
 describe("reviews and ratings", () => {
