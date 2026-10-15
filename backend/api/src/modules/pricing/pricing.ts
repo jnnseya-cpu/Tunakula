@@ -46,6 +46,7 @@ export const STORE_TYPE_DELIVERY_MODE: Readonly<Record<string, Vehicle>> = {
   PHARMACY: "MOTO",
   GROCERY: "CAR",
   CONVENIENCE: "CAR",
+  BOUTIQUE: "VAN", // boutiques sell bigger goods, so a van is the reference vehicle
 };
 export function requiredDeliveryMode(storeType: string | null | undefined): Vehicle {
   if (!storeType) return "MOTO"; // no store type recorded → the reference, never an unwarranted surcharge

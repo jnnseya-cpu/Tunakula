@@ -24,8 +24,10 @@ export interface BranchRow {
   logo_id?: string | null;
   cover_id?: string | null;
   price_markup_bps?: number;
-  /** RESTAURANT (default), GROCERY, CONVENIENCE or PHARMACY — drives discovery grouping and storefront layout. */
+  /** RESTAURANT (default), GROCERY, CONVENIENCE, PHARMACY or BOUTIQUE — drives discovery grouping and storefront layout. */
   store_type?: string;
+  /** Minimum days before delivery. 0 = direct (any time); a boutique selling bigger goods indirectly needs ≥ this many days. */
+  delivery_lead_days?: number;
 }
 
 /** The editable business-profile fields of a branch (address, contact, about, cuisines, order minimum, logo, cover). */
@@ -39,6 +41,7 @@ export interface BranchProfilePatch {
   logoId?: string | null;
   coverId?: string | null;
   storeType?: string;
+  deliveryLeadDays?: number;
 }
 
 export interface VariationOption { id: string; name: string; price: string }
@@ -121,9 +124,9 @@ export async function setInviteCode(sql: Sql, id: string, code: string): Promise
 
 export async function createBranch(sql: Sql, b: Omit<BranchRow, "id" | "status">, published = false): Promise<BranchRow> {
   const [row] = await sql.query<BranchRow & Record<string, unknown>>(
-    `INSERT INTO catalogue.branch (country_iso2, brand_id, restaurant_group_id, name, city, commune, lat, lng, store_type, published_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9, CASE WHEN $10 THEN now() ELSE NULL END) RETURNING id, country_iso2, brand_id, restaurant_group_id, name, city, commune, lat::text, lng::text, status, store_type`,
-    [b.country_iso2, b.brand_id, b.restaurant_group_id, b.name, b.city, b.commune, b.lat, b.lng, b.store_type ?? "RESTAURANT", published],
+    `INSERT INTO catalogue.branch (country_iso2, brand_id, restaurant_group_id, name, city, commune, lat, lng, store_type, delivery_lead_days, published_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10, CASE WHEN $11 THEN now() ELSE NULL END) RETURNING id, country_iso2, brand_id, restaurant_group_id, name, city, commune, lat::text, lng::text, status, store_type, delivery_lead_days`,
+    [b.country_iso2, b.brand_id, b.restaurant_group_id, b.name, b.city, b.commune, b.lat, b.lng, b.store_type ?? "RESTAURANT", b.delivery_lead_days ?? 0, published],
   );
   return row as BranchRow;
 }
@@ -136,7 +139,7 @@ export async function publishBranch(sql: Sql, branchId: string): Promise<void> {
 export async function getBranch(sql: Sql, id: string): Promise<BranchRow | undefined> {
   const rows = await sql.query<BranchRow & Record<string, unknown>>(
     `SELECT id, country_iso2, brand_id, restaurant_group_id, name, city, commune, lat::text, lng::text, status, hours, special_hours,
-            address, phone, email, description, cuisines, min_order_minor::text AS min_order_minor, logo_id::text AS logo_id, cover_id::text AS cover_id, price_markup_bps, store_type
+            address, phone, email, description, cuisines, min_order_minor::text AS min_order_minor, logo_id::text AS logo_id, cover_id::text AS cover_id, price_markup_bps, store_type, delivery_lead_days
        FROM catalogue.branch WHERE id = $1`,
     [id],
   );
@@ -157,6 +160,7 @@ export async function updateBranchProfile(sql: Sql, branchId: string, p: BranchP
   if (p.logoId !== undefined) add("logo_id", p.logoId);
   if (p.coverId !== undefined) add("cover_id", p.coverId);
   if (p.storeType !== undefined) add("store_type", p.storeType);
+  if (p.deliveryLeadDays !== undefined) add("delivery_lead_days", p.deliveryLeadDays);
   if (sets.length === 0) return;
   await sql.query(`UPDATE catalogue.branch SET ${sets.join(", ")}, updated_at = now() WHERE id = $1`, vals);
 }

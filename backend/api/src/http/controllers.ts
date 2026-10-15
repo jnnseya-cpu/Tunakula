@@ -167,10 +167,10 @@ export class CatalogueController {
   }
 
   @Post("branches")
-  async createBranch(@Req() req: FastifyRequest, @Body() body: { name: string; restaurant_group_id: string; city?: string; commune?: string; lat: number; lng: number; store_type?: string }) {
+  async createBranch(@Req() req: FastifyRequest, @Body() body: { name: string; restaurant_group_id: string; city?: string; commune?: string; lat: number; lng: number; store_type?: string; delivery_lead_days?: number }) {
     const principal = await this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
-    const b = await this.catalogue.createBranch(country(req), principal, { name: body?.name, restaurantGroupId: body?.restaurant_group_id, ...(body?.city ? { city: body.city } : {}), ...(body?.commune ? { commune: body.commune } : {}), lat: body?.lat, lng: body?.lng, ...(body?.store_type ? { storeType: String(body.store_type) } : {}) });
-    return { id: b.id, name: b.name, city: b.city, commune: b.commune, status: b.status, store_type: b.store_type ?? "RESTAURANT" };
+    const b = await this.catalogue.createBranch(country(req), principal, { name: body?.name, restaurantGroupId: body?.restaurant_group_id, ...(body?.city ? { city: body.city } : {}), ...(body?.commune ? { commune: body.commune } : {}), lat: body?.lat, lng: body?.lng, ...(body?.store_type ? { storeType: String(body.store_type) } : {}), ...(body?.delivery_lead_days !== undefined ? { deliveryLeadDays: Number(body.delivery_lead_days) } : {}) });
+    return { id: b.id, name: b.name, city: b.city, commune: b.commune, status: b.status, store_type: b.store_type ?? "RESTAURANT", delivery_lead_days: b.delivery_lead_days ?? 0 };
   }
 
   @Post("branches/:id/items")

@@ -25,11 +25,13 @@ export class CatalogueService {
     return v.profile;
   }
 
-  async createBranch(country: string, principal: Principal, input: { name: string; restaurantGroupId: string; city?: string; commune?: string; lat: number; lng: number; storeType?: string }) {
+  async createBranch(country: string, principal: Principal, input: { name: string; restaurantGroupId: string; city?: string; commune?: string; lat: number; lng: number; storeType?: string; deliveryLeadDays?: number }) {
     const profile = this.#profile(country);
     if (!input.name?.trim()) throw badRequest("NAME_REQUIRED", "A branch needs a name");
     if (!Number.isFinite(input.lat) || !Number.isFinite(input.lng)) throw badRequest("LOCATION_REQUIRED", "A branch needs a location");
     const storeType = normaliseStoreType(input.storeType);
+    const leadDays = input.deliveryLeadDays === undefined ? 0 : Math.trunc(Number(input.deliveryLeadDays));
+    if (!Number.isFinite(leadDays) || leadDays < 0 || leadDays > 60) throw badRequest("LEAD_DAYS_INVALID", "delivery_lead_days is a whole number of days from 0 to 60");
     require(principal, "restaurant:manage", { type: "branch", country, restaurantGroupId: input.restaurantGroupId }, { activeCountry: country, profile });
     return this.db.tx({ country }, async (sql) => {
       // Record the brand (restaurant group) so it has a name and can invite franchisees later.
@@ -44,6 +46,7 @@ export class CatalogueService {
         lat: String(input.lat),
         lng: String(input.lng),
         store_type: storeType,
+        delivery_lead_days: leadDays,
       }, true); // an admin-created branch is published immediately
       await audit(sql, { actor: principal.userId, action: "branch.created", target: `branch:${branch.id}`, country });
       return branch;
@@ -295,6 +298,11 @@ export class CatalogueService {
       if (input.logo_id !== undefined) { await this.#assertBranchImage(sql, input.logo_id, "BRANCH_LOGO"); patch.logoId = input.logo_id || null; }
       if (input.cover_id !== undefined) { await this.#assertBranchImage(sql, input.cover_id, "BRANCH_COVER"); patch.coverId = input.cover_id || null; }
       if (input.store_type !== undefined) patch.storeType = normaliseStoreType(input.store_type);
+      if (input.delivery_lead_days !== undefined) {
+        const n = Math.trunc(Number(input.delivery_lead_days));
+        if (!Number.isFinite(n) || n < 0 || n > 60) throw badRequest("LEAD_DAYS_INVALID", "delivery_lead_days is a whole number of days from 0 to 60");
+        patch.deliveryLeadDays = n;
+      }
       await updateBranchProfile(sql, branchId, patch);
       await audit(sql, { actor: principal.userId, action: "branch.profile_updated", target: `branch:${branchId}`, country });
       return branchProfile((await getBranch(sql, branchId)) as BranchRow);
@@ -481,6 +489,7 @@ interface ProfileInput {
   logo_id?: string | null;
   cover_id?: string | null;
   store_type?: string;
+  delivery_lead_days?: number | string;
 }
 
 interface ZoneInput {
@@ -528,11 +537,13 @@ function branchProfile(b: BranchRow) {
     min_order_minor: b.min_order_minor ?? null,
     logo_id: b.logo_id ?? null, cover_id: b.cover_id ?? null,
     store_type: b.store_type ?? "RESTAURANT",
+    // 0 = direct (deliver any time); a boutique selling bigger goods indirectly needs at least this many days.
+    delivery_lead_days: b.delivery_lead_days ?? 0,
   };
 }
 
 /** The store verticals. Discovery groups by this; the storefront lays out non-restaurant stores as aisles. */
-export const STORE_TYPES = ["RESTAURANT", "GROCERY", "CONVENIENCE", "PHARMACY"] as const;
+export const STORE_TYPES = ["RESTAURANT", "GROCERY", "CONVENIENCE", "PHARMACY", "BOUTIQUE"] as const;
 function normaliseStoreType(value: unknown): string {
   const v = String(value ?? "RESTAURANT").toUpperCase();
   if (!(STORE_TYPES as readonly string[]).includes(v)) throw badRequest("STORE_TYPE_INVALID", `store_type is one of ${STORE_TYPES.join(", ")}`);

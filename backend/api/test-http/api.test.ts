@@ -409,6 +409,30 @@ describe("§18 quote and place", () => {
     }
   });
 
+  test("boutique: the merchant sets direct/indirect; an indirect order must be scheduled ≥ the lead ahead, priced for a van", async () => {
+    const feeOf = (r: Res) => BigInt(r.body.price_lines.find((l: { code: string }) => l.code === "DELIVERY_FEE").amount.amount_minor);
+    const feeRef = feeOf(await call("POST", "/v1/carts/quote", { country: "CD", body: cart() })); // restaurant reference
+    // The owner makes the shop an indirect boutique that needs 3 days' notice.
+    const saved = await call("POST", `/v1/branches/${branchId}/profile`, { token: restaurantOwner.token, country: "CD", body: { store_type: "BOUTIQUE", delivery_lead_days: 3 } });
+    assert.equal(saved.status, 200, JSON.stringify(saved.body));
+    assert.equal(saved.body.store_type, "BOUTIQUE");
+    assert.equal(saved.body.delivery_lead_days, 3);
+    try {
+      // An immediate delivery is refused — the boutique needs notice.
+      assert.equal((await call("POST", "/v1/carts/quote", { country: "CD", body: cart() })).body.code, "LEAD_TIME_REQUIRED");
+      // One day ahead is still too soon.
+      const soon = new Date(Date.now() + 1 * 86_400_000).toISOString();
+      assert.equal((await call("POST", "/v1/carts/quote", { country: "CD", body: { ...cart(), order_type: "SCHEDULED", scheduled_for: soon } })).body.code, "LEAD_TIME_TOO_SOON");
+      // Four days ahead is accepted, and priced for a van (+50% over the restaurant reference).
+      const ok = await call("POST", "/v1/carts/quote", { country: "CD", body: { ...cart(), order_type: "SCHEDULED", scheduled_for: new Date(Date.now() + 4 * 86_400_000).toISOString() } });
+      assert.equal(ok.status, 200, JSON.stringify(ok.body));
+      const ratio = Number(feeOf(ok)) / Number(feeRef);
+      assert.ok(ratio > 1.49 && ratio < 1.51, `boutique/restaurant ratio ${ratio} should be ~1.5 (van)`);
+    } finally {
+      await call("POST", `/v1/branches/${branchId}/profile`, { token: restaurantOwner.token, country: "CD", body: { store_type: "RESTAURANT", delivery_lead_days: 0 } });
+    }
+  });
+
   test("placing with a stale total returns PRICE_CHANGED and the fresh quote", async () => {
     const r = await call("POST", "/v1/orders", { token: customer.token, country: "CD", body: { ...cart(), payment_mode: "PREPAID", expected_total: { amount_minor: "1", currency: "USD" } } });
     assert.equal(r.status, 409);

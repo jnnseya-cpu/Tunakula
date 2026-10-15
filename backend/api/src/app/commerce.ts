@@ -239,8 +239,10 @@ export class CommerceService {
     let zoneFlatFeeMinor: bigint | undefined;
     const needsRider = ["DELIVERY", "SCHEDULED", "XBO"].includes(input.orderType);
     // §18.3: the delivery mode the store needs by its type — bike/motorcycle for restaurants and pharmacies,
-    // a larger vehicle (priced for its size) for groceries, convenience and other non-restaurant sellers.
+    // a larger vehicle (priced for its size) for groceries, convenience, boutiques and other non-restaurant sellers.
     const deliveryMode = requiredDeliveryMode(branch.store_type);
+    // An indirect boutique (or any branch with a delivery lead) needs the order scheduled far enough ahead.
+    this.#enforceDeliveryLead(branch, input.orderType, input.scheduledFor);
     if (needsRider) {
       if (!input.delivery) throw badRequest("DELIVERY_PIN_REQUIRED", "Drop a pin for delivery");
       distanceMeters = await this.routing.distanceMeters({ lat: Number(branch.lat), lng: Number(branch.lng) }, input.delivery, deliveryMode);
@@ -311,6 +313,21 @@ export class CommerceService {
     if (apply.minor <= 0n) throw badRequest("WALLET_APPLY_INVALID", "The wallet amount must be greater than zero");
     if (apply.compare(total) >= 0) throw unprocessable("WALLET_APPLY_TOO_LARGE", "To pay the whole order from your wallet, choose wallet as the payment method");
     return apply;
+  }
+
+  /**
+   * A branch with a delivery lead (a boutique's indirect mode) needs the order scheduled at least that many days
+   * ahead. Direct branches (lead 0) are unaffected. Pickup/takeaway from the shop itself is never gated.
+   */
+  #enforceDeliveryLead(branch: BranchRow, orderType: OrderType, scheduledFor: string | undefined): void {
+    const leadDays = branch.delivery_lead_days ?? 0;
+    if (leadDays <= 0) return;
+    if (!["DELIVERY", "SCHEDULED", "XBO"].includes(orderType)) return;
+    const days = `${leadDays} day${leadDays === 1 ? "" : "s"}`;
+    if (!scheduledFor) throw unprocessable("LEAD_TIME_REQUIRED", `${branch.name} delivers to order and needs at least ${days} — choose a delivery date at least ${days} ahead`);
+    const at = new Date(scheduledFor);
+    if (Number.isNaN(at.getTime())) throw badRequest("SCHEDULE_INVALID", "Send a valid scheduled time");
+    if (at.getTime() < this.now().getTime() + leadDays * 86_400_000) throw unprocessable("LEAD_TIME_TOO_SOON", `${branch.name} needs at least ${days}' notice; pick a later delivery date`);
   }
 
   /** Validates a requested scheduled time: a real future time, at least the minimum lead ahead and within the window. */

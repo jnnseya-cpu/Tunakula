@@ -13,8 +13,8 @@ import { api, type Money } from "../../lib/api";
 import { money } from "../../lib/format";
 import { count } from "../../lib/format";
 
-interface Branch { id: string; name: string; restaurant_group_id: string; city: string | null; commune: string | null; status: string; items: number; available_items: number; orders_30d: number; published: boolean; store_type?: string }
-const STORE_TYPE_LABEL: Record<string, [string, string]> = { GROCERY: ["Épicerie", "Grocery"], CONVENIENCE: ["Supérette", "Convenience"], PHARMACY: ["Pharmacie", "Pharmacy"] };
+interface Branch { id: string; name: string; restaurant_group_id: string; city: string | null; commune: string | null; status: string; items: number; available_items: number; orders_30d: number; published: boolean; store_type?: string; delivery_lead_days?: number }
+const STORE_TYPE_LABEL: Record<string, [string, string]> = { GROCERY: ["Épicerie", "Grocery"], CONVENIENCE: ["Supérette", "Convenience"], PHARMACY: ["Pharmacie", "Pharmacy"], BOUTIQUE: ["Boutique", "Boutique"] };
 interface Data { can_create: boolean; has_business: boolean; group_id?: string; data: Branch[] }
 
 export default function MerchantsPage() {
@@ -43,7 +43,7 @@ function Merchants() {
 /** Market admin: see and add every branch (published immediately), then manage each one. */
 function AdminBranches({ data, country, lang, L, reload }: { data: Data; country: string; lang: "fr" | "en"; L: (fr: string, en: string) => string; reload: () => void }) {
   const router = useRouter();
-  const [form, setForm] = useState({ name: "", restaurant_group_id: "", city: "kinshasa", commune: "", lat: "", lng: "", store_type: "RESTAURANT" });
+  const [form, setForm] = useState({ name: "", restaurant_group_id: "", city: "kinshasa", commune: "", lat: "", lng: "", store_type: "RESTAURANT", delivery_lead_days: 0 });
   const [notice, setNotice] = useState<string | null>(null);
   const create = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -65,12 +65,19 @@ function AdminBranches({ data, country, lang, L, reload }: { data: Data; country
           <input className="input" placeholder={L("Commune", "Commune")} value={form.commune} onChange={(e) => setForm({ ...form, commune: e.target.value })} />
           <input className="input" required inputMode="decimal" placeholder="Latitude" value={form.lat} onChange={(e) => setForm({ ...form, lat: e.target.value })} style={{ width: 120 }} />
           <input className="input" required inputMode="decimal" placeholder="Longitude" value={form.lng} onChange={(e) => setForm({ ...form, lng: e.target.value })} style={{ width: 120 }} />
-          <select className="select" aria-label={L("Type de commerce", "Store type")} value={form.store_type} onChange={(e) => setForm({ ...form, store_type: e.target.value })}>
+          <select className="select" aria-label={L("Type de commerce", "Store type")} value={form.store_type} onChange={(e) => setForm({ ...form, store_type: e.target.value, delivery_lead_days: e.target.value === "BOUTIQUE" ? form.delivery_lead_days : 0 })}>
             <option value="RESTAURANT">{L("Restaurant", "Restaurant")}</option>
             <option value="GROCERY">{L("Épicerie / supermarché", "Grocery")}</option>
             <option value="CONVENIENCE">{L("Supérette", "Convenience")}</option>
             <option value="PHARMACY">{L("Pharmacie", "Pharmacy")}</option>
+            <option value="BOUTIQUE">{L("Boutique (gros articles)", "Boutique (bigger items)")}</option>
           </select>
+          {form.store_type === "BOUTIQUE" ? (
+            <select className="select" aria-label={L("Livraison", "Fulfilment")} value={form.delivery_lead_days} onChange={(e) => setForm({ ...form, delivery_lead_days: Number(e.target.value) })}>
+              <option value={0}>{L("Directe — livraison à tout moment", "Direct — deliver any time")}</option>
+              <option value={3}>{L("Indirecte — min. 3 jours avant", "Indirect — at least 3 days ahead")}</option>
+            </select>
+          ) : null}
           <button className="btn primary" type="submit">{L("Créer", "Create")}</button>
         </form>
         {notice ? <div className="banner" style={{ marginTop: 10 }}>{notice}</div> : null}
@@ -303,7 +310,7 @@ function BranchTable({ rows, lang, L, onOpen }: { rows: Branch[]; lang: "fr" | "
           <tbody>
             {rows.map((b) => (
               <tr key={b.id} className="clickable" onClick={() => onOpen(b.id)}>
-                <td><b>{b.name}</b>{b.store_type && b.store_type !== "RESTAURANT" ? <span className="pill" style={{ marginLeft: 8, background: "#1f7a4d", color: "#fff" }}>{STORE_TYPE_LABEL[b.store_type]?.[lang === "fr" ? 0 : 1] ?? b.store_type}</span> : null}{!b.published ? <span className="pill warning" style={{ marginLeft: 8 }}>{L("Brouillon", "Draft")}</span> : null}</td>
+                <td><b>{b.name}</b>{b.store_type && b.store_type !== "RESTAURANT" ? <span className="pill" style={{ marginLeft: 8, background: "#1f7a4d", color: "#fff" }}>{STORE_TYPE_LABEL[b.store_type]?.[lang === "fr" ? 0 : 1] ?? b.store_type}</span> : null}{b.delivery_lead_days && b.delivery_lead_days > 0 ? <span className="pill" style={{ marginLeft: 8, background: "#7a5a1f", color: "#fff" }}>{L(`Indirecte · ${b.delivery_lead_days} j`, `Indirect · ${b.delivery_lead_days}d`)}</span> : null}{!b.published ? <span className="pill warning" style={{ marginLeft: 8 }}>{L("Brouillon", "Draft")}</span> : null}</td>
                 <td className="muted">{b.restaurant_group_id}</td><td>{[b.commune, b.city].filter(Boolean).join(", ")}</td>
                 <td><span className={`pill ${b.status === "OPEN" ? "good" : "warning"}`}>{b.status === "OPEN" ? L("Ouvert", "Open") : b.status}</span></td>
                 <td className="num">{count(lang, b.available_items)} / {count(lang, b.items)}</td><td className="num">{count(lang, b.orders_30d)}</td>
