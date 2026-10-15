@@ -17,7 +17,7 @@ const ID_TYPES: [string, string, string][] = [
   ["PASSPORT", "Passport", "e.g. OP1234567"],
   ["DRIVING_LICENCE", "Driving licence", "Letters and digits"],
 ];
-const VEHICLES: [string, string][] = [["MOTO", "Motorbike"], ["BICYCLE", "Bicycle"], ["CAR", "Car"], ["FOOT", "On foot"]];
+const VEHICLES: [string, string][] = [["MOTO", "Motorbike"], ["BICYCLE", "Bicycle"], ["CAR", "Car"], ["VAN", "Van"], ["TRUCK", "Truck"], ["FOOT", "On foot"]];
 const CHECK_LABEL: Record<string, string> = { AGE: "Age 18 or over", ID_FORMAT: "ID number format", PHOTOS: "ID and selfie", PHOTOS_DISTINCT: "Selfie is a separate photo", DUPLICATE_ID: "ID not used by someone else", LICENCE: "Licence and plate" };
 
 /** Shrinks a camera photo to at most 1280 px and ~450 kB of JPEG, so it uploads on a slow connection. */

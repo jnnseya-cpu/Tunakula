@@ -7,10 +7,13 @@
  * The same loop cancels orders no kitchen answered in time, so a customer is never left waiting forever.
  */
 import { greatCircleMetres, ROAD_FACTOR } from "@tunakula/ts-contracts/eta-model";
+import { VEHICLE_TYPES } from "@tunakula/ts-contracts";
+import type { Vehicle } from "@tunakula/ts-contracts/eta-model";
 import type { Db, Sql } from "../db/db.ts";
 import { authorize, type Principal } from "../modules/identity/policy.ts";
 import type { Action } from "../modules/identity/roles.ts";
 import { RIDER_ORDER_TYPES } from "../modules/ordering/order-types.ts";
+import { DELIVERY_MODE_SIZE_TIER, requiredDeliveryMode } from "../modules/pricing/pricing.ts";
 import { createJournal } from "../modules/money/journal.ts";
 import { Money } from "@tunakula/ts-money";
 import { audit } from "../persistence/identity.ts";
@@ -79,7 +82,7 @@ export class DispatchService {
     const hasPos = Number.isFinite(input.lat) && Number.isFinite(input.lng);
     if (input.online && !hasPos) throw badRequest("LOCATION_REQUIRED", "Going online needs your position");
     if (hasPos && (Math.abs(input.lat!) > 90 || Math.abs(input.lng!) > 180)) throw badRequest("LOCATION_INVALID", "Position out of range");
-    const vehicle = input.vehicle && ["MOTO", "BICYCLE", "CAR", "FOOT"].includes(input.vehicle) ? input.vehicle : "MOTO";
+    const vehicle = input.vehicle && (VEHICLE_TYPES as readonly string[]).includes(input.vehicle) ? input.vehicle : "MOTO";
     return this.db.tx({ country }, async (sql) => {
       const [row] = await sql.query<{ online: boolean; online_since: Date | null }>(
         `INSERT INTO dispatch.rider_presence (country_iso2, rider_id, online, lat, lng, vehicle, online_since, updated_at)
@@ -700,8 +703,8 @@ export class DispatchService {
         cancelled++;
       }
 
-      const waiting = await sql.query<{ order_id: string; branch_lat: string; branch_lng: string; commune: string | null; drop: Point | null; earn: string | null; currency: string }>(
-        `SELECT o.order_id, b.lat::text AS branch_lat, b.lng::text AS branch_lng, b.commune,
+      const waiting = await sql.query<{ order_id: string; branch_lat: string; branch_lng: string; commune: string | null; store_type: string | null; drop: Point | null; earn: string | null; currency: string }>(
+        `SELECT o.order_id, b.lat::text AS branch_lat, b.lng::text AS branch_lng, b.commune, b.store_type,
                 d.payload->'snapshot'->'dropLocation' AS drop,
                 d.payload->'snapshot'->'money'->'riderReceives'->>'minor' AS earn, o.currency
            FROM ordering.order_view o
@@ -717,8 +720,8 @@ export class DispatchService {
       );
       if (!waiting.length) return { expired: expired.length, cancelled, offered: 0 };
 
-      const riders = await sql.query<{ rider_id: string; lat: string; lng: string }>(
-        `SELECT p.rider_id, p.lat::text, p.lng::text FROM dispatch.rider_presence p
+      const riders = await sql.query<{ rider_id: string; lat: string; lng: string; vehicle: string }>(
+        `SELECT p.rider_id, p.lat::text, p.lng::text, p.vehicle FROM dispatch.rider_presence p
           WHERE p.online AND p.lat IS NOT NULL AND p.updated_at >= $1
             AND NOT EXISTS (SELECT 1 FROM dispatch.offer f WHERE f.rider_id = p.rider_id AND f.status = 'OFFERED')
             AND (SELECT count(*) FROM ordering.order_view o WHERE o.rider_id = p.rider_id::text AND o.state = ANY($2)) < $3`,
@@ -734,11 +737,15 @@ export class DispatchService {
         const branch = { lat: Number(w.branch_lat), lng: Number(w.branch_lng) };
         const asked = new Set((await sql.query<{ rider_id: string }>("SELECT rider_id FROM dispatch.offer WHERE order_id = $1", [w.order_id])).map((r) => r.rider_id));
         const onShift = (w.commune && onShiftByZone.get(w.commune)) || new Set<string>();
+        // §18.3: a non-restaurant/non-pharmacy order is bulkier, so a rider whose vehicle is at least the needed
+        // size is privileged. It is a preference, not a hard gate — if none is online, a smaller rider still goes,
+        // so the order is never stranded.
+        const neededTier = DELIVERY_MODE_SIZE_TIER[requiredDeliveryMode(w.store_type)];
         const best = riders
           .filter((r) => !taken.has(r.rider_id) && !asked.has(r.rider_id) && this.#canRide(principals.get(r.rider_id)!, country, w.commune))
-          .map((r) => ({ r, meters: road({ lat: Number(r.lat), lng: Number(r.lng) }, branch) }))
-          // An on-shift rider in this zone is offered first; among equals, the nearest. Off-shift riders still qualify.
-          .sort((a, b) => (onShift.has(a.r.rider_id) ? 0 : 1) - (onShift.has(b.r.rider_id) ? 0 : 1) || a.meters - b.meters)[0];
+          .map((r) => ({ r, meters: road({ lat: Number(r.lat), lng: Number(r.lng) }, branch), capable: (DELIVERY_MODE_SIZE_TIER[r.vehicle as Vehicle] ?? 0) >= neededTier }))
+          // Big enough for the load first, then an on-shift rider in this zone, then the nearest.
+          .sort((a, b) => (a.capable === b.capable ? 0 : a.capable ? -1 : 1) || (onShift.has(a.r.rider_id) ? 0 : 1) - (onShift.has(b.r.rider_id) ? 0 : 1) || a.meters - b.meters)[0];
         if (!best) continue;
         const dropMeters = w.drop ? road(branch, w.drop) : 0;
         await sql.query(

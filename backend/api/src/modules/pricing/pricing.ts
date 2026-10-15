@@ -35,6 +35,23 @@ export function sizeSurchargeBps(pricing: PricingConfig, mode: Vehicle | undefin
   return DELIVERY_MODE_SIZE_TIER[mode] * perTier;
 }
 
+/**
+ * The delivery mode an order needs, by the selling store's type. Restaurants and pharmacies carry food and
+ * small parcels, so a bike or motorcycle is the reference. Everything else — groceries, convenience, and the
+ * informal and private sellers Tunakula is open to — tends to be bulkier, so a larger vehicle is privileged
+ * (and priced for its size). An unknown store type is treated as non-restaurant, i.e. the larger mode.
+ */
+export const STORE_TYPE_DELIVERY_MODE: Readonly<Record<string, Vehicle>> = {
+  RESTAURANT: "MOTO",
+  PHARMACY: "MOTO",
+  GROCERY: "CAR",
+  CONVENIENCE: "CAR",
+};
+export function requiredDeliveryMode(storeType: string | null | undefined): Vehicle {
+  if (!storeType) return "MOTO"; // no store type recorded → the reference, never an unwarranted surcharge
+  return STORE_TYPE_DELIVERY_MODE[storeType] ?? "CAR"; // a known mapping, else a present non-restaurant type → bigger
+}
+
 export class PricingError extends Error {
   readonly code: string;
 

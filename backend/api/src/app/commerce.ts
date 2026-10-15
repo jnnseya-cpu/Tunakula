@@ -13,7 +13,7 @@ import { createJournal, type LedgerEntry } from "../modules/money/journal.ts";
 import { evidenceBundle } from "../modules/ordering/evidence.ts";
 import { OrderRuleError, distanceMetres, replay, type OrderCommand } from "../modules/ordering/order-aggregate.ts";
 import { RIDER_ORDER_TYPES, type Actor, type OrderLine, type OrderSnapshot, type OrderType } from "../modules/ordering/order-types.ts";
-import { priceOrder, PricingError, type PriceBreakdown } from "../modules/pricing/pricing.ts";
+import { priceOrder, PricingError, requiredDeliveryMode, type PriceBreakdown } from "../modules/pricing/pricing.ts";
 import { isOpenNow } from "../modules/catalogue/hours.ts";
 import { membershipDiscount, type MembershipLookup } from "./membership.ts";
 import type { CouponLookup, CouponPrice } from "./coupons.ts";
@@ -238,9 +238,12 @@ export class CommerceService {
     let distanceMeters: number | undefined;
     let zoneFlatFeeMinor: bigint | undefined;
     const needsRider = ["DELIVERY", "SCHEDULED", "XBO"].includes(input.orderType);
+    // §18.3: the delivery mode the store needs by its type — bike/motorcycle for restaurants and pharmacies,
+    // a larger vehicle (priced for its size) for groceries, convenience and other non-restaurant sellers.
+    const deliveryMode = requiredDeliveryMode(branch.store_type);
     if (needsRider) {
       if (!input.delivery) throw badRequest("DELIVERY_PIN_REQUIRED", "Drop a pin for delivery");
-      distanceMeters = await this.routing.distanceMeters({ lat: Number(branch.lat), lng: Number(branch.lng) }, input.delivery, "MOTO");
+      distanceMeters = await this.routing.distanceMeters({ lat: Number(branch.lat), lng: Number(branch.lng) }, input.delivery, deliveryMode);
       // Delivery zones: if the branch has defined service areas, the drop must fall in one. The most specific
       // (smallest-radius) matching zone sets an optional flat fee and/or minimum order for that area. A branch
       // with no zones keeps the distance-ladder fee and no serviceability gate (fully backward-compatible).
@@ -263,7 +266,7 @@ export class CommerceService {
         goods,
         channel: "ONLINE",
         orderType: input.orderType,
-        ...(needsRider ? { delivery: { distanceMeters: distanceMeters as number, rural: input.delivery?.rural === true, ...(zoneFlatFeeMinor !== undefined ? { flatFeeMinor: zoneFlatFeeMinor } : {}) } } : {}),
+        ...(needsRider ? { delivery: { distanceMeters: distanceMeters as number, rural: input.delivery?.rural === true, mode: deliveryMode, ...(zoneFlatFeeMinor !== undefined ? { flatFeeMinor: zoneFlatFeeMinor } : {}) } } : {}),
         ...(input.tip ? { tip: Money.of(input.tip, ccy) } : {}),
       });
       const membership = await this.#memberBenefit(sql, country, input.customerId, breakdown);

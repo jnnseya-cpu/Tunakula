@@ -392,6 +392,23 @@ describe("§18 quote and place", () => {
     assert.equal(sum.toString(), r.body.total.amount_minor);
   });
 
+  test("§18.3 store type sets the delivery mode: a non-restaurant order is priced for a bigger vehicle (+25%)", async () => {
+    const feeOf = (r: Res) => BigInt(r.body.price_lines.find((l: { code: string }) => l.code === "DELIVERY_FEE").amount.amount_minor);
+    // The restaurant branch is the reference (bike/motorcycle).
+    const feeRef = feeOf(await call("POST", "/v1/carts/quote", { country: "CD", body: cart() }));
+    // Make the same branch a grocery — same location, same goods — so only the store type changes.
+    await inspect("CD", "UPDATE catalogue.branch SET store_type = 'GROCERY' WHERE id = $1", [branchId]);
+    try {
+      const feeBig = feeOf(await call("POST", "/v1/carts/quote", { country: "CD", body: cart() }));
+      assert.ok(feeBig > feeRef, `grocery fee ${feeBig} should exceed restaurant fee ${feeRef}`);
+      // +25% (car, tier 1, default size surcharge), within cent rounding.
+      const ratio = Number(feeBig) / Number(feeRef);
+      assert.ok(ratio > 1.24 && ratio < 1.26, `grocery/restaurant ratio ${ratio} should be ~1.25`);
+    } finally {
+      await inspect("CD", "UPDATE catalogue.branch SET store_type = 'RESTAURANT' WHERE id = $1", [branchId]);
+    }
+  });
+
   test("placing with a stale total returns PRICE_CHANGED and the fresh quote", async () => {
     const r = await call("POST", "/v1/orders", { token: customer.token, country: "CD", body: { ...cart(), payment_mode: "PREPAID", expected_total: { amount_minor: "1", currency: "USD" } } });
     assert.equal(r.status, 409);
