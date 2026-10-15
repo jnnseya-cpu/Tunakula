@@ -24,6 +24,7 @@ export const TOKENS = {
   membership: "MEMBERSHIP_SERVICE",
   group: "GROUP_SERVICE",
   coupons: "COUPON_SERVICE",
+  broadcast: "BROADCAST_SERVICE",
   reviews: "REVIEW_SERVICE",
   addresses: "ADDRESS_SERVICE",
   reservations: "RESERVATION_SERVICE",

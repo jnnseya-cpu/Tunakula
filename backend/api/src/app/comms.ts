@@ -47,6 +47,8 @@ export interface DispatchInput {
   readonly data?: Record<string, string | number>;
   /** When set, the same key never delivers twice (per channel). */
   readonly dedupeKey?: string;
+  /** When set, restrict delivery to these channels (intersected with the event's own channels). */
+  readonly channels?: readonly CommsChannel[];
 }
 
 const CHANNELS: readonly CommsChannel[] = ["email", "inapp", "sms", "push", "whatsapp"];
@@ -67,7 +69,8 @@ export class NotificationService {
 
   /** Emit an event to one recipient. Returns what happened on each channel. Safe to call best-effort. */
   async dispatch(input: DispatchInput): Promise<{ event: string; subject: string; deliveries: { channel: CommsChannel; status: string }[] }> {
-    const event = resolveEvent(input.eventKey);
+    const base = resolveEvent(input.eventKey);
+    const event = input.channels ? { ...base, channels: base.channels.filter((c) => input.channels!.includes(c)) } : base;
     const data = input.data ?? {};
     const subject = renderSubject(event.subject, data);
     const audience = input.audience ?? event.audience[0]!;

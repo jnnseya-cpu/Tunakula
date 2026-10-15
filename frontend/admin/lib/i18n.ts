@@ -28,6 +28,7 @@ const T = {
   chefs: { fr: "Chefs (validation)", en: "Chef review" },
   integrations: { fr: "Intégrations / API", en: "Integrations / API" },
   growth: { fr: "Croissance", en: "Growth" },
+  broadcasts: { fr: "Diffusions", en: "Broadcasts" },
   copilot: { fr: "Copilote", en: "Copilot" },
   zones: { fr: "Zones de livraison", en: "Delivery zones" },
   promotions: { fr: "Promotions", en: "Promotions" },

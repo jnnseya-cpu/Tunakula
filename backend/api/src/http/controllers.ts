@@ -14,6 +14,7 @@ import type { OnboardingService } from "../app/onboarding.ts";
 import type { MembershipService } from "../app/membership.ts";
 import type { GroupOrderService } from "../app/group.ts";
 import type { CouponService } from "../app/coupons.ts";
+import type { BroadcastService, BroadcastAudience } from "../app/broadcast.ts";
 import type { ReviewService } from "../app/reviews.ts";
 import type { AddressService } from "../app/addresses.ts";
 import type { ReservationService, BookingStatus } from "../app/reservations.ts";
@@ -1111,6 +1112,39 @@ export class MerchantCouponController {
   @HttpCode(200)
   async update(@Req() req: FastifyRequest, @Param("id") id: string, @Param("cid") cid: string, @Body() body: Record<string, unknown>) {
     return this.coupons.saveForMerchant(country(req), await this.#p(req), id, cid, body ?? {});
+  }
+}
+
+const aud = (v?: string): BroadcastAudience => (v === "customer" || v === "rider" || v === "restaurant" ? v : "all");
+
+/** One-click broadcasts: an admin sends an offer or message to an audience over chosen channels. */
+@Controller("v1/admin/broadcasts")
+export class BroadcastController {
+  constructor(
+    @Inject(TOKENS.db) private readonly db: Db,
+    @Inject(TOKENS.tokens) private readonly tokens: TokenService,
+    @Inject(TOKENS.broadcast) private readonly broadcast: BroadcastService,
+  ) {}
+
+  #p(req: FastifyRequest) {
+    return this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+  }
+
+  @Get("preview")
+  async preview(@Req() req: FastifyRequest, @Query("audience") audience?: string, @Query("segment") segment?: string) {
+    return this.broadcast.preview(country(req), await this.#p(req), { audience: aud(audience), ...(segment ? { segment } : {}) });
+  }
+
+  @Post()
+  @HttpCode(200)
+  async send(@Req() req: FastifyRequest, @Body() body: { audience?: string; segment?: string; user_ids?: string[]; channels?: string[]; message?: string }) {
+    return this.broadcast.send(country(req), await this.#p(req), {
+      audience: aud(body?.audience),
+      ...(body?.segment ? { segment: body.segment } : {}),
+      ...(Array.isArray(body?.user_ids) ? { userIds: body.user_ids.map(String) } : {}),
+      channels: Array.isArray(body?.channels) ? body.channels.map(String) : [],
+      message: String(body?.message ?? ""),
+    });
   }
 }
 

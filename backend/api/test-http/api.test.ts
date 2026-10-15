@@ -1865,6 +1865,32 @@ describe("coupons / promo codes", () => {
   });
 });
 
+describe("broadcasts (one-click offers to an audience)", () => {
+  test("an admin previews an audience and sends over chosen channels; a non-admin cannot", async () => {
+    // A customer cannot broadcast.
+    assert.equal((await call("GET", "/v1/admin/broadcasts/preview?audience=customer", { token: customer.token, country: "CD" })).status, 403);
+    assert.equal((await call("POST", "/v1/admin/broadcasts", { token: customer.token, country: "CD", body: { audience: "customer", channels: ["inapp"], message: "hi" } })).status, 403);
+    // Preview resolves a real audience (the customer has ordered earlier in the suite).
+    const prev = await call("GET", "/v1/admin/broadcasts/preview?audience=customer", { token: admin.token, country: "CD" });
+    assert.equal(prev.status, 200, JSON.stringify(prev.body));
+    assert.ok(prev.body.count >= 1, "there are customers to reach");
+    // Guards: a message with no channel, and an empty message, are refused.
+    assert.equal((await call("POST", "/v1/admin/broadcasts", { token: admin.token, country: "CD", body: { audience: "customer", channels: [], message: "Offer!" } })).body.code, "CHANNEL_REQUIRED");
+    assert.equal((await call("POST", "/v1/admin/broadcasts", { token: admin.token, country: "CD", body: { audience: "customer", channels: ["inapp"], message: "  " } })).body.code, "MESSAGE_REQUIRED");
+    // One click: send an in-app offer to all customers.
+    const sent = await call("POST", "/v1/admin/broadcasts", { token: admin.token, country: "CD", body: { audience: "customer", channels: ["inapp"], message: "20% off this weekend with code WEEKEND20" } });
+    assert.equal(sent.status, 200, JSON.stringify(sent.body));
+    assert.ok(sent.body.recipients >= 1, "it reached at least one recipient");
+    assert.ok((sent.body.sent + sent.body.logged) >= 1, "at least one in-app delivery landed");
+    // The customer sees it in their in-app inbox.
+    const inbox = await call("GET", "/v1/notifications", { token: customer.token, country: "CD" });
+    assert.ok(inbox.body.data.some((n: { subject?: string }) => /WEEKEND20/.test(n.subject ?? "")), "the broadcast reached the customer's inbox");
+    // An explicit selection targets just those users.
+    const one = await call("POST", "/v1/admin/broadcasts", { token: admin.token, country: "CD", body: { user_ids: [customer.userId], channels: ["inapp"], message: "Just for you" } });
+    assert.equal(one.body.recipients, 1, "a hand-picked selection reaches exactly those users");
+  });
+});
+
 describe("reviews and ratings", () => {
   let orderId: string;
   let reviewId: string;

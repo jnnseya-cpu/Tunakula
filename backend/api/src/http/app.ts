@@ -7,6 +7,7 @@ import type { PaymentConnector } from "@tunakula/ts-contracts";
 import { AdminService } from "../app/admin.ts";
 import { AuthService, type OtpSender } from "../app/auth.ts";
 import { NotificationService, sandboxSender, type ChannelSender } from "../app/comms.ts";
+import { BroadcastService } from "../app/broadcast.ts";
 import { CatalogueService } from "../app/catalogue.ts";
 import { CommerceService } from "../app/commerce.ts";
 import { ConfigService } from "../app/config.ts";
@@ -59,7 +60,7 @@ import type { CountryConfigRegistry } from "../modules/config/config-registry.ts
 import { PaymentRouter } from "../modules/payments/payment-router.ts";
 import { IdempotencyInterceptor, ProblemFilter, TOKENS } from "./common.ts";
 import { createMetrics } from "./metrics.ts";
-import { AdminConfigController, AdminController, AuthController, AddressController, FavouriteController, CommsController, CouponController, MerchantCouponController, GroupController, KitchenController, MeController, MembershipController, NotificationsController, OnboardingController, OpsController, RefundController, ReferralController, LoyaltyController, CashbackController, ChatController, BannerController, SiteContentController, ChefController, SupportController, GrowthController, MerchantCopilotController, IntegrationsController, SubscriptionController, PosController, KioskController, PushController, ReservationController, ReviewController, RiderController, WalletController, MerchantOnboardingController, CatalogueController, OrdersController, PaymentsController, PlatformController, WebhooksController } from "./controllers.ts";
+import { AdminConfigController, AdminController, AuthController, AddressController, FavouriteController, CommsController, CouponController, MerchantCouponController, BroadcastController, GroupController, KitchenController, MeController, MembershipController, NotificationsController, OnboardingController, OpsController, RefundController, ReferralController, LoyaltyController, CashbackController, ChatController, BannerController, SiteContentController, ChefController, SupportController, GrowthController, MerchantCopilotController, IntegrationsController, SubscriptionController, PosController, KioskController, PushController, ReservationController, ReviewController, RiderController, WalletController, MerchantOnboardingController, CatalogueController, OrdersController, PaymentsController, PlatformController, WebhooksController } from "./controllers.ts";
 
 export interface ApiDeps {
   readonly db: Db;
@@ -107,6 +108,7 @@ export async function createApi(deps: ApiDeps): Promise<NestFastifyApplication> 
   const tokens = new TokenService(deps.tokenSecret, { now });
   const routing = deps.routing ?? straightLineRouting();
   const comms = new NotificationService(deps.db, deps.registry, deps.senders ?? sandboxSender, now);
+  const broadcast = new BroadcastService(deps.db, deps.registry, comms, now);
   const commerce = new CommerceService(deps.db, deps.registry, routing, now, comms);
   const membership = new MembershipService(deps.db, deps.registry, now);
   commerce.useMembership(membership);
@@ -153,7 +155,7 @@ export async function createApi(deps: ApiDeps): Promise<NestFastifyApplication> 
     static register(): DynamicModule {
       return {
         module: ApiModule,
-        controllers: [AddressController, FavouriteController, AdminConfigController, AdminController, KitchenController, OpsController, OnboardingController, RiderController, MeController, MembershipController, GroupController, CouponController, MerchantCouponController, ReviewController, ReservationController, RefundController, WalletController, ReferralController, LoyaltyController, CashbackController, ChatController, BannerController, SiteContentController, ChefController, SupportController, GrowthController, MerchantCopilotController, IntegrationsController, SubscriptionController, PosController, KioskController, PushController, MerchantOnboardingController, PlatformController, AuthController, CatalogueController, OrdersController, PaymentsController, WebhooksController, NotificationsController, CommsController],
+        controllers: [AddressController, FavouriteController, AdminConfigController, AdminController, KitchenController, OpsController, OnboardingController, RiderController, MeController, MembershipController, GroupController, CouponController, MerchantCouponController, BroadcastController, ReviewController, ReservationController, RefundController, WalletController, ReferralController, LoyaltyController, CashbackController, ChatController, BannerController, SiteContentController, ChefController, SupportController, GrowthController, MerchantCopilotController, IntegrationsController, SubscriptionController, PosController, KioskController, PushController, MerchantOnboardingController, PlatformController, AuthController, CatalogueController, OrdersController, PaymentsController, WebhooksController, NotificationsController, CommsController],
         providers: [
           { provide: TOKENS.db, useValue: deps.db },
           { provide: TOKENS.registry, useValue: deps.registry },
@@ -165,6 +167,7 @@ export async function createApi(deps: ApiDeps): Promise<NestFastifyApplication> 
           { provide: TOKENS.dispatch, useValue: dispatch },
           { provide: TOKENS.onboarding, useValue: onboarding },
           { provide: TOKENS.comms, useValue: comms },
+          { provide: TOKENS.broadcast, useValue: broadcast },
           { provide: TOKENS.eta, useValue: new EtaService(deps.db, deps.registry, routing, now) },
           { provide: TOKENS.config, useValue: new ConfigService(deps.db, deps.registry) },
           { provide: TOKENS.admin, useValue: admin },
