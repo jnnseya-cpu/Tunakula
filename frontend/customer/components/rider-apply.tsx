@@ -66,7 +66,7 @@ export function RiderApply() {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [checks, setChecks] = useState<Check[] | null>(null);
-  const motor = f.vehicle === "MOTO" || f.vehicle === "CAR";
+  const motor = ["MOTO", "CAR", "VAN", "TRUCK"].includes(f.vehicle);
 
   useEffect(() => { setSignedIn(!!getSession()); }, []);
   useEffect(() => {
