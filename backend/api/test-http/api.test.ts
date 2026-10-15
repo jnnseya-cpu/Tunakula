@@ -2651,6 +2651,39 @@ describe("self-serve merchant onboarding", () => {
     assert.ok(row, "the new branch appears in the console");
     assert.equal(row!.published, false, "it is a draft until published");
   });
+
+  test("one account owns a separate, sealed business in each country, with branches in each", async () => {
+    const owner = await signIn("+243810000314");
+    // Register a brand in CD and add a branch there.
+    const cd = await call("POST", "/v1/merchant/register", { token: owner.token, country: "CD", body: { business_name: "Saveurs du Fleuve" } });
+    assert.ok(cd.body.group_id, JSON.stringify(cd.body));
+    const cdBranch = await call("POST", "/v1/merchant/branches", { token: owner.token, country: "CD", body: { group_id: cd.body.group_id, name: "Saveurs — Gombe", lat: KINSHASA.lat, lng: KINSHASA.lng, commune: "gombe" } });
+    assert.ok(cdBranch.body.branch_id, JSON.stringify(cdBranch.body));
+
+    // The SAME account opens a business in GB — a new, distinct brand, not a collision with the CD one.
+    const gb = await call("POST", "/v1/merchant/register", { token: owner.token, country: "GB", body: { business_name: "River Flavours" } });
+    assert.ok(gb.body.group_id, JSON.stringify(gb.body));
+    assert.notEqual(gb.body.group_id, cd.body.group_id, "a different brand id per country");
+    const gbBranch = await call("POST", "/v1/merchant/branches", { token: owner.token, country: "GB", body: { group_id: gb.body.group_id, name: "River — Soho", lat: 51.513, lng: -0.136, commune: "soho" } });
+    assert.ok(gbBranch.body.branch_id, JSON.stringify(gbBranch.body));
+
+    // Each country's console shows only that country's brand and branches — the markets stay sealed.
+    const cdView = await call("GET", "/v1/admin/branches", { token: owner.token, country: "CD" });
+    assert.equal(cdView.body.group_id, cd.body.group_id);
+    const cdIds = (cdView.body.data as { id: string }[]).map((b) => b.id);
+    assert.ok(cdIds.includes(cdBranch.body.branch_id), "CD shows its own branch");
+    assert.ok(!cdIds.includes(gbBranch.body.branch_id), "CD does not see the GB branch");
+
+    const gbView = await call("GET", "/v1/admin/branches", { token: owner.token, country: "GB" });
+    assert.equal(gbView.body.group_id, gb.body.group_id);
+    const gbIds = (gbView.body.data as { id: string }[]).map((b) => b.id);
+    assert.ok(gbIds.includes(gbBranch.body.branch_id), "GB shows its own branch");
+    assert.ok(!gbIds.includes(cdBranch.body.branch_id), "GB does not see the CD branch");
+
+    // Re-registering in CD is a resumable no-op that keeps the same brand (no second CD brand is created).
+    const again = await call("POST", "/v1/merchant/register", { token: owner.token, country: "CD", body: { business_name: "Saveurs du Fleuve" } });
+    assert.equal(again.body.group_id, cd.body.group_id, "resume reuses the existing CD brand");
+  });
 });
 
 describe("food photos", () => {

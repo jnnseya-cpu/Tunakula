@@ -445,8 +445,14 @@ export class AdminService {
       const manage = this.#can(principal, "restaurant:manage", { type: "scope", country }, profile);
       const list = vis.all || manage ? await this.#branches(sql) : vis.branches;
       // A self-serve merchant with no branch yet is not an error: the console shows them how to set up.
-      const ownerGroup = principal.bindings.find((b) => "role" in b && b.role === "RESTAURANT_OWNER" && b.scope.type === "RESTAURANT_GROUP" && "id" in b.scope);
-      const groupId = ownerGroup && "id" in ownerGroup.scope ? (ownerGroup.scope.id as string) : null;
+      // Owner bindings are global — an account that runs businesses in several countries holds one per market —
+      // so resolve the brand that lives in THIS country. Row-level security scopes the lookup to the current market.
+      const ownedGroupIds = principal.bindings
+        .filter((b) => "role" in b && b.role === "RESTAURANT_OWNER" && b.scope.type === "RESTAURANT_GROUP" && "id" in b.scope)
+        .map((b) => (b.scope as { id: string }).id);
+      const groupId = ownedGroupIds.length
+        ? ((await sql.query<{ id: string }>("SELECT id FROM catalogue.restaurant_group WHERE id = ANY($1::text[]) LIMIT 1", [ownedGroupIds]))[0]?.id ?? null)
+        : null;
       const since = new Date(this.now().getTime() - 30 * 86_400_000);
       const stats = await sql.query<{ branch_id: string; items: string; available: string; orders: string; published: boolean }>(
         `SELECT b.id AS branch_id,

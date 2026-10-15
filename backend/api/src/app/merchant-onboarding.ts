@@ -33,36 +33,69 @@ export class MerchantOnboardingService {
     return v.profile;
   }
 
-  /** The restaurant group (brand) the signed-in person owns in this market, if any. */
-  #ownedGroupId(principal: Principal): string | null {
-    const b = principal.bindings.find((x) => "role" in x && x.role === "RESTAURANT_OWNER" && x.scope.type === "RESTAURANT_GROUP" && "id" in x.scope);
-    return b && "id" in b.scope ? b.scope.id : null;
+  /** The restaurant-group ids this account owns anywhere. Owner bindings live in the global identity schema,
+   *  so one account accumulates one per country it has registered a brand in. */
+  #ownedGroupIds(principal: Principal): string[] {
+    return principal.bindings
+      .filter((x) => "role" in x && x.role === "RESTAURANT_OWNER" && x.scope.type === "RESTAURANT_GROUP" && "id" in x.scope)
+      .map((x) => (x.scope as { id: string }).id);
   }
 
-  /** Step 1: register a business (a brand). Creates a restaurant group and makes the signed-in user its owner. */
+  /** The branch ids this account runs as a franchisee anywhere (global bindings). */
+  #franchisedBranchIds(principal: Principal): string[] {
+    return principal.bindings
+      .filter((x) => "role" in x && x.role === "FRANCHISEE" && x.scope.type === "BRANCH" && "id" in x.scope)
+      .map((x) => (x.scope as { id: string }).id);
+  }
+
+  /**
+   * The brand this account owns IN THIS COUNTRY, if any. The lookup runs inside the country transaction, so
+   * row-level security filters the owner's global list down to the one group that lives in this market — an
+   * account that owns brands in several countries resolves to exactly the one here.
+   */
+  async #ownedGroupHere(sql: Sql, principal: Principal): Promise<string | null> {
+    const ids = this.#ownedGroupIds(principal);
+    if (ids.length === 0) return null;
+    const rows = await sql.query<{ id: string }>("SELECT id FROM catalogue.restaurant_group WHERE id = ANY($1::text[]) LIMIT 1", [ids]);
+    return rows[0]?.id ?? null;
+  }
+
+  /** Does this account already run a business — an owned brand or a franchised branch — in this country? */
+  async #hasBusinessHere(sql: Sql, principal: Principal): Promise<boolean> {
+    if (await this.#ownedGroupHere(sql, principal)) return true;
+    const branches = this.#franchisedBranchIds(principal);
+    if (branches.length === 0) return false;
+    const rows = await sql.query<{ id: string }>("SELECT id FROM catalogue.branch WHERE id = ANY($1::uuid[]) LIMIT 1", [branches]);
+    return rows.length > 0;
+  }
+
+  /**
+   * Step 1: register a business (a brand). One account can own a business in several countries — this opens a
+   * separate, country-sealed brand per market. If the account already owns a brand in THIS country, the wizard
+   * is resumable and reuses it; brands in other countries are untouched.
+   */
   async register(country: string, principal: Principal, input: { businessName: string }) {
     const name = String(input.businessName ?? "").trim();
     if (name.length < 2) throw badRequest("BUSINESS_NAME_REQUIRED", "Tell us your business name");
-    // If they already own a group, reuse it (the wizard is resumable).
-    const existing = this.#ownedGroupId(principal);
+    const existing = await this.db.tx({ country }, (sql) => this.#ownedGroupHere(sql, principal));
     if (existing) {
       const g = await this.db.tx({ country }, (sql) => ensureGroup(sql, { id: existing, country, name, createdBy: principal.userId }));
       return { group_id: existing, business_name: g.name };
     }
     const groupId = `rg-${randomUUID().slice(0, 12)}`;
+    await this.db.tx({ country }, (sql) => ensureGroup(sql, { id: groupId, country, name, createdBy: principal.userId }));
     await this.db.tx({}, async (sql) => {
       await addBinding(sql, { userId: principal.userId, role: "RESTAURANT_OWNER", scope: { type: "RESTAURANT_GROUP", id: groupId } });
       await audit(sql, { actor: principal.userId, action: "merchant.registered", target: `group:${groupId}`, country, detail: { name } });
     });
-    await this.db.tx({ country }, (sql) => ensureGroup(sql, { id: groupId, country, name, createdBy: principal.userId }));
     return { group_id: groupId, business_name: name };
   }
 
   /** The brand owner's invite code — franchisees sign up individually and join the brand with it. Created on first ask. */
   async brandInvite(country: string, principal: Principal) {
-    const groupId = this.#ownedGroupId(principal);
-    if (!groupId) throw forbidden("Only a brand owner can invite franchisees");
     return this.db.tx({ country }, async (sql) => {
+      const groupId = await this.#ownedGroupHere(sql, principal);
+      if (!groupId) throw forbidden("Only a brand owner can invite franchisees");
       let g = (await getGroup(sql, groupId)) ?? (await ensureGroup(sql, { id: groupId, country, name: groupId, createdBy: principal.userId }));
       if (!g.invite_code) {
         let code = makeInviteCode();
@@ -84,9 +117,9 @@ export class MerchantOnboardingService {
     if (!code) throw badRequest("CODE_REQUIRED", "Enter the brand's invite code");
     if (!input.name?.trim()) throw badRequest("NAME_REQUIRED", "Your branch needs a name");
     if (!Number.isFinite(input.lat) || !Number.isFinite(input.lng)) throw badRequest("LOCATION_REQUIRED", "Drop a pin for your branch");
-    const alreadyMerchant = principal.bindings.some((b) => "role" in b && (b.role === "RESTAURANT_OWNER" || b.role === "FRANCHISEE"));
-    if (alreadyMerchant) throw conflict("ALREADY_HAS_BUSINESS", "You already run a business on Tunakula");
     return this.db.tx({ country }, async (sql) => {
+      // One business per country: an account may run businesses in several countries, but not two in the same one.
+      if (await this.#hasBusinessHere(sql, principal)) throw conflict("ALREADY_HAS_BUSINESS", "You already run a business in this country");
       const group = await getGroupByInvite(sql, code);
       if (!group) throw badRequest("INVALID_INVITE", "That brand code is not valid");
       const branch = await createBranch(sql, {

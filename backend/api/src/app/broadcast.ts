@@ -58,12 +58,17 @@ async function resolveRecipients(sql: Sql, t: Target): Promise<string[]> {
 }
 
 export class BroadcastService {
-  constructor(
-    private readonly db: Db,
-    private readonly registry: CountryConfigRegistry,
-    private readonly comms: NotificationService,
-    private readonly now: () => Date = () => new Date(),
-  ) {}
+  private readonly db: Db;
+  private readonly registry: CountryConfigRegistry;
+  private readonly comms: NotificationService;
+  private readonly now: () => Date;
+
+  constructor(db: Db, registry: CountryConfigRegistry, comms: NotificationService, now: () => Date = () => new Date()) {
+    this.db = db;
+    this.registry = registry;
+    this.comms = comms;
+    this.now = now;
+  }
 
   #assert(country: string, principal: Principal) {
     const v = this.registry.published(country);
