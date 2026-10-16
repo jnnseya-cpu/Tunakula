@@ -1,0 +1,49 @@
+{
+  "expo": {
+    "name": "Tunakula Rider",
+    "slug": "tunakula-rider",
+    "scheme": "tunakula-rider",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "backgroundColor": "#fff7ee",
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#fff7ee"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.tunakula.rider",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Tunakula Rider uses your location to offer you nearby jobs and guide you to pickups and drop-offs.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Tunakula Rider shares your location while you are online so customers can see their delivery approaching.",
+        "UIBackgroundModes": ["location"]
+      }
+    },
+    "android": {
+      "package": "com.tunakula.rider",
+      "adaptiveIcon": {
+        "backgroundColor": "#ff7a18"
+      },
+      "permissions": ["ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION", "ACCESS_BACKGROUND_LOCATION"]
+    },
+    "plugins": [
+      "expo-secure-store",
+      "expo-location",
+      [
+        "expo-notifications",
+        {
+          "color": "#ff7a18"
+        }
+      ]
+    ],
+    "extra": {
+      "apiUrl": "https://api.tunakula.com",
+      "country": "CD",
+      "eas": {
+        "projectId": "set-by-eas-init"
+      }
+    }
+  }
+}
