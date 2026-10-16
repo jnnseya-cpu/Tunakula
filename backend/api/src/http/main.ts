@@ -28,9 +28,9 @@ import type { ConnectorCapability, PaymentConnector } from "@tunakula/ts-contrac
 import type { OtpSender } from "../app/auth.ts";
 import { emailSender, messagingSender, otpViaMessaging } from "../app/channels.ts";
 import { smtpSender } from "../modules/messaging/smtp.ts";
-import { composeSenders, webPushSender, type VapidConfig } from "../app/push.ts";
+import { composeSenders, expoPushSender, webPushSender, type VapidConfig } from "../app/push.ts";
 import type { ChannelSender } from "../app/comms.ts";
-import type { MessagingChannel } from "../modules/messaging/messaging.ts";
+import { fetchSend, type MessagingChannel } from "../modules/messaging/messaging.ts";
 import { twilioMessaging } from "../modules/messaging/twilio.ts";
 import { connect } from "../db/db.ts";
 import { migrate } from "../db/migrate.ts";
@@ -128,6 +128,10 @@ const vapid: VapidConfig | undefined = env("TUNAKULA_VAPID_PUBLIC_KEY")
 const senderParts: ChannelSender[] = [];
 if (messaging) senderParts.push(messagingSender(messaging));
 if (vapid) senderParts.push(webPushSender(db, vapid));
+// Native push (Expo) is always on: it needs no Apple/FCM credentials — Expo fans out behind the token.
+// An access token only raises production rate limits. It handles the `push` channel for native devices;
+// a user with no registered device yields "logged", so web push (above) still gets its turn.
+senderParts.push(expoPushSender(db, fetchSend(), env("TUNAKULA_EXPO_ACCESS_TOKEN")));
 // Email channel over SMTP, when configured (host + from). Secure=1 for implicit TLS (465); otherwise
 // STARTTLS is used opportunistically on 587/25. Without it, the email channel logs like SMS without Twilio.
 if (env("TUNAKULA_SMTP_HOST") && env("TUNAKULA_SMTP_FROM")) {

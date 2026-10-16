@@ -1553,6 +1553,19 @@ export class PushController {
   async unsubscribe(@Req() req: FastifyRequest, @Body() body: { endpoint?: string }) {
     return this.push.unsubscribe(country(req), await this.#p(req), body?.endpoint ?? "");
   }
+
+  // Native apps (React Native / Expo): one Expo push token per device install.
+  @Post("me/push-devices")
+  @HttpCode(200)
+  async registerDevice(@Req() req: FastifyRequest, @Body() body: { token?: string; app?: string; platform?: string; device_label?: string }) {
+    return this.push.registerDevice(country(req), await this.#p(req), body ?? {});
+  }
+
+  @Post("me/push-devices/remove")
+  @HttpCode(200)
+  async removeDevice(@Req() req: FastifyRequest, @Body() body: { token?: string }) {
+    return this.push.removeDevice(country(req), await this.#p(req), body?.token ?? "");
+  }
 }
 
 @Controller("v1")

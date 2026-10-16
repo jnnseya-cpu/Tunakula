@@ -7,11 +7,18 @@
 import webpush from "web-push";
 import type { Db } from "../db/db.ts";
 import { type Principal } from "../modules/identity/policy.ts";
+import type { HttpSend } from "../modules/messaging/messaging.ts";
+import { fetchSend } from "../modules/messaging/messaging.ts";
+import { deliverExpoPush, isExpoPushToken } from "../modules/comms/expo-push.ts";
 import type { ChannelMessage, ChannelResult, ChannelSender } from "./comms.ts";
 import { badRequest } from "./errors.ts";
 
 export interface VapidConfig { readonly publicKey: string; readonly privateKey: string; readonly subject: string }
 interface SubInput { endpoint?: string; keys?: { p256dh?: string; auth?: string }; user_agent?: string }
+
+const DEVICE_APPS = new Set(["customer", "rider", "merchant"]);
+const DEVICE_PLATFORMS = new Set(["ios", "android"]);
+interface DeviceInput { token?: string; app?: string; platform?: string; device_label?: string }
 
 /** Customer-facing: register / remove this browser's push subscription, and report whether push is on. */
 export class PushService {
@@ -44,8 +51,41 @@ export class PushService {
   }
 
   async status(country: string, principal: Principal) {
-    const [row] = await this.db.tx({ country }, (sql) => sql.query<{ n: number }>("SELECT count(*)::int AS n FROM comms.push_subscription WHERE user_id = $1", [principal.userId]));
-    return { enabled: (row?.n ?? 0) > 0, configured: Boolean(this.vapid), public_key: this.publicKey() };
+    const [row] = await this.db.tx({ country }, (sql) => sql.query<{ web: number; devices: number }>(
+      `SELECT
+         (SELECT count(*) FROM comms.push_subscription WHERE user_id = $1)::int AS web,
+         (SELECT count(*) FROM comms.device_push      WHERE user_id = $1)::int AS devices`,
+      [principal.userId],
+    ));
+    const web = row?.web ?? 0;
+    const devices = row?.devices ?? 0;
+    return { enabled: web + devices > 0, configured: Boolean(this.vapid), public_key: this.publicKey(), web, devices };
+  }
+
+  // ── Native apps (React Native / Expo): register this device's Expo push token ──
+
+  /** The customer / rider / merchant app registers one Expo push token per device install. */
+  async registerDevice(country: string, principal: Principal, input: DeviceInput) {
+    const token = String(input.token ?? "").trim();
+    const app = String(input.app ?? "").trim();
+    const platform = String(input.platform ?? "").trim();
+    if (!isExpoPushToken(token)) throw badRequest("TOKEN_INVALID", "A valid Expo push token is required");
+    if (!DEVICE_APPS.has(app)) throw badRequest("APP_INVALID", "app must be customer, rider or merchant");
+    if (!DEVICE_PLATFORMS.has(platform)) throw badRequest("PLATFORM_INVALID", "platform must be ios or android");
+    await this.db.tx({ country }, (sql) => sql.query(
+      `INSERT INTO comms.device_push (country_iso2, user_id, token, app, platform, device_label)
+       VALUES ($1,$2,$3,$4,$5,$6)
+       ON CONFLICT (token) DO UPDATE SET
+         user_id = EXCLUDED.user_id, app = EXCLUDED.app, platform = EXCLUDED.platform,
+         device_label = EXCLUDED.device_label, country_iso2 = EXCLUDED.country_iso2, last_seen_at = now()`,
+      [country, principal.userId, token, app, platform, input.device_label ? String(input.device_label).slice(0, 120) : null],
+    ));
+    return { enabled: true };
+  }
+
+  async removeDevice(country: string, principal: Principal, token: string) {
+    await this.db.tx({ country }, (sql) => sql.query("DELETE FROM comms.device_push WHERE user_id = $1 AND token = $2", [principal.userId, String(token ?? "")]));
+    return { enabled: false };
   }
 }
 
@@ -69,6 +109,32 @@ export function webPushSender(db: Db, vapid: VapidConfig): ChannelSender {
       // Prune subscriptions the browser has expired, so we stop pushing to them.
       if (dead.length) await db.tx({ country: message.country }, (sql) => sql.query("DELETE FROM comms.push_subscription WHERE endpoint = ANY($1::text[])", [dead]));
       return sent > 0 ? { status: "sent", ref: `push:${sent}` } : { status: "failed", failure: "no push delivered" };
+    },
+  };
+}
+
+/**
+ * The dispatch engine's `push` channel adapter for NATIVE apps: delivers to the recipient's registered
+ * Expo push tokens (customer / rider / merchant), pruning any the OS has expired. Needs no Apple/FCM
+ * credentials — Expo fans out behind the token — and an access token only in production (rate limits).
+ * Returns "logged" when the user has no native device, so a composed web-push sender can still try.
+ */
+export function expoPushSender(db: Db, httpSend: HttpSend = fetchSend(), accessToken?: string): ChannelSender {
+  return {
+    async send(message: ChannelMessage): Promise<ChannelResult> {
+      if (message.channel !== "push") return { status: "logged" };
+      const rows = await db.tx({ country: message.country }, (sql) => sql.query<{ token: string }>(
+        "SELECT token FROM comms.device_push WHERE user_id = $1", [message.to.userId],
+      ));
+      if (rows.length === 0) return { status: "logged" }; // no native device — leave it to another sender
+      const { accepted, dead } = await deliverExpoPush(
+        httpSend,
+        rows.map((r) => r.token),
+        { title: message.event.title, body: message.subject, data: { event: message.event.key, ...message.data } },
+        accessToken,
+      );
+      if (dead.length) await db.tx({ country: message.country }, (sql) => sql.query("DELETE FROM comms.device_push WHERE token = ANY($1::text[])", [dead]));
+      return accepted > 0 ? { status: "sent", ref: `expo:${accepted}` } : { status: "failed", failure: "no push delivered" };
     },
   };
 }
