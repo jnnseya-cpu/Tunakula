@@ -54,6 +54,10 @@ services:
       PORT: "8080"
     ports:
       - "127.0.0.1:8190:8080"
+    networks:
+      default: {}
+      edge:
+        aliases: [tunakula-api]
 
   customer-web:
     build:
@@ -64,6 +68,10 @@ services:
     restart: unless-stopped
     ports:
       - "127.0.0.1:8191:80"
+    networks:
+      default: {}
+      edge:
+        aliases: [tunakula-web]
 
   admin-web:
     build:
@@ -74,6 +82,19 @@ services:
     restart: unless-stopped
     ports:
       - "127.0.0.1:8192:80"
+    networks:
+      default: {}
+      edge:
+        aliases: [tunakula-admin]
+
+# The internal network (db ↔ api) plus the existing gateway's edge network, so the front-door Caddy can reach
+# the Tunakula containers by their aliases (tunakula-web / tunakula-admin / tunakula-api). Set EDGE_NETWORK to the
+# network your Caddy shares with its apps (on this VPS that is construx-edge); it must already exist.
+networks:
+  default: {}
+  edge:
+    external: true
+    name: ${EDGE_NETWORK:-construx-edge}
 
 volumes:
   tunakula-coexist-db:
