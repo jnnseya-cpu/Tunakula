@@ -5,9 +5,9 @@
 # to 127.0.0.1 (localhost only) on high ports, and your EXISTING web server (Nginx/Apache/panel) reverse-
 # proxies the three Tunakula subdomains to them and handles their TLS. Nothing about your current sites changes.
 #
-#   api.<domain>      ->  127.0.0.1:8090   (the API)
-#   <domain>          ->  127.0.0.1:8091   (the customer storefront)
-#   admin.<domain>    ->  127.0.0.1:8092   (the admin console)
+#   api.<domain>      ->  127.0.0.1:8190   (the API)
+#   <domain>          ->  127.0.0.1:8191   (the customer storefront)
+#   admin.<domain>    ->  127.0.0.1:8192   (the admin console)
 #
 # Start it from the repo root with deploy/.env.staging present (the go-live script writes that file; you can
 # also copy deploy/.env.coexist.example to deploy/.env.staging and fill it in):
@@ -53,7 +53,7 @@ services:
       TUNAKULA_SANDBOX_PAYMENTS: "1"
       PORT: "8080"
     ports:
-      - "127.0.0.1:8090:8080"
+      - "127.0.0.1:8190:8080"
 
   customer-web:
     build:
@@ -63,7 +63,7 @@ services:
         NEXT_PUBLIC_API_URL: https://${API_DOMAIN}
     restart: unless-stopped
     ports:
-      - "127.0.0.1:8091:80"
+      - "127.0.0.1:8191:80"
 
   admin-web:
     build:
@@ -73,7 +73,7 @@ services:
         NEXT_PUBLIC_API_URL: https://${API_DOMAIN}
     restart: unless-stopped
     ports:
-      - "127.0.0.1:8092:80"
+      - "127.0.0.1:8192:80"
 
 volumes:
   tunakula-coexist-db:
