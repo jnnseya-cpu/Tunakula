@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import * as Location from "expo-location";
 import { randomUUID } from "expo-crypto";
-import { placeOrder, quoteCart, type CartItemInput } from "../api/endpoints";
+import { createPaymentIntent, placeOrder, quoteCart, type CartItemInput } from "../api/endpoints";
 import { ApiError } from "../api/client";
 import type { OrderType, PaymentMode, Quote } from "../api/types";
 import { useCart } from "../state/cart";
@@ -27,8 +27,10 @@ export default function CartScreen({ navigation }: Screen<"Cart">) {
   const [quote, setQuote] = useState<Quote | null>(null);
   const [quoteError, setQuoteError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [busyMsg, setBusyMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const attempt = useRef<{ key: string; sig: string } | null>(null);
+  const placedId = useRef<string | null>(null); // survives a retry, so a second tap never places twice
 
   // Optimistic local subtotal (the server quote is authoritative once it lands).
   const localSubtotal = cart.lines.length
@@ -84,29 +86,62 @@ export default function CartScreen({ navigation }: Screen<"Cart">) {
   async function submit() {
     if (!cart.branchId || !quote) return;
     setError(null);
+    if (payment === "MOBILE_MONEY_PUSH" && msisdn.replace(/\s/g, "").length < 8) {
+      setError("Enter the mobile money number to charge.");
+      return;
+    }
     const due = quote.payable ?? quote.total;
+    // Cash and wallet orders are placed already paid; everything else is placed PREPAID and then paid
+    // through a payment intent (mobile money push, card, QR).
+    const prepaid = payment !== "CASH_ON_DELIVERY" && payment !== "WALLET";
     const sig = `${due.amount_minor}:${orderType}:${payment}`;
     if (!attempt.current || attempt.current.sig !== sig) attempt.current = { key: randomUUID(), sig };
     setBusy(true);
     try {
-      const placed = await placeOrder(
-        {
-          branch_id: cart.branchId,
-          items,
-          order_type: orderType,
-          ...(orderType === "DELIVERY" && place ? { delivery: place } : {}),
-          payment_mode: payment,
-          expected_total: due,
-          ...(note.trim() ? { kitchen_note: note.trim() } : {}),
-        },
-        attempt.current.key,
-      );
+      // Place once; a retry replays the same order via the stored id + idempotency key.
+      let orderId = placedId.current;
+      if (!orderId) {
+        setBusyMsg("Placing your order…");
+        const placed = await placeOrder(
+          {
+            branch_id: cart.branchId,
+            items,
+            order_type: orderType,
+            ...(orderType === "DELIVERY" && place ? { delivery: place } : {}),
+            payment_mode: prepaid ? "PREPAID" : payment,
+            expected_total: due,
+            ...(note.trim() ? { kitchen_note: note.trim() } : {}),
+          },
+          attempt.current.key,
+        );
+        orderId = placed.order_id;
+        placedId.current = orderId;
+      }
+
+      if (prepaid) {
+        setBusyMsg(payment === "MOBILE_MONEY_PUSH" ? "Approve the payment on your phone…" : "Processing payment…");
+        const intent = await createPaymentIntent(
+          orderId,
+          payment,
+          `pay-${orderId}-${payment}-${msisdn.replace(/\s/g, "")}`,
+          payment === "MOBILE_MONEY_PUSH" ? { msisdn: msisdn.replace(/\s/g, "") } : {},
+        );
+        if (intent.status === "FAILED") {
+          const why = intent.reason_code ? ` (${intent.reason_code.replace(/_/g, " ").toLowerCase()})` : "";
+          setError(`The payment did not go through${why}. Try again or choose another way to pay.`);
+          return; // keep the placed order so a retry pays the same one
+        }
+        // Mobile-money push and QR confirm server-side when the provider's webhook lands; tracking shows it.
+      }
+
       cart.clear();
-      navigation.replace("Track", { orderId: placed.order_id });
+      placedId.current = null;
+      navigation.replace("Track", { orderId });
     } catch (e) {
       setError((e as ApiError).message);
     } finally {
       setBusy(false);
+      setBusyMsg(null);
     }
   }
 
@@ -197,6 +232,7 @@ export default function CartScreen({ navigation }: Screen<"Cart">) {
       {error ? <ErrorText>{error}</ErrorText> : null}
 
       <View style={{ height: space(4) }} />
+      {busyMsg ? <Text style={[font.muted, { textAlign: "center", marginBottom: space(2) }]}>{busyMsg}</Text> : null}
       <Button
         title={total ? `Place order · ${formatMoney(total)}` : "Place order"}
         onPress={submit}

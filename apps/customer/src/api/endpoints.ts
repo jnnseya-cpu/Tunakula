@@ -1,5 +1,5 @@
 import { api } from "./client";
-import type { Menu, NearbyBranch, OrderRow, OrderView, PaymentMode, PlacedOrder, Quote } from "./types";
+import type { Menu, NearbyBranch, OrderRow, OrderView, PaymentIntentResult, PaymentMode, PlacedOrder, Quote } from "./types";
 
 /** Named calls to the Tunakula API, grouped by the customer journey. Each mirrors a v1 route. */
 
@@ -45,6 +45,24 @@ export interface PlaceInput extends QuoteInput {
 }
 export const placeOrder = (input: PlaceInput, idempotencyKey: string) =>
   api<PlacedOrder>("/v1/orders", { method: "POST", key: idempotencyKey, body: input });
+
+/**
+ * Start payment for an order that was placed as PREPAID (card, mobile money, QR). Cash and wallet orders
+ * are already paid at placement and skip this. For mobile money the payer approves a push on their phone;
+ * the result's status says what happened, and next_action carries a QR payload or a redirect URL when one
+ * is needed. Idempotency-keyed per (order, method) so a retry never starts a second charge.
+ */
+export const createPaymentIntent = (
+  orderId: string,
+  methodType: PaymentMode,
+  idempotencyKey: string,
+  payer?: { msisdn?: string },
+) =>
+  api<PaymentIntentResult>("/v1/payments/intents", {
+    method: "POST",
+    key: idempotencyKey,
+    body: { order_id: orderId, method_type: methodType, payer: payer ?? {} },
+  });
 
 // ── Order tracking ──
 export const getOrder = (orderId: string) => api<OrderView>(`/v1/orders/${orderId}`);

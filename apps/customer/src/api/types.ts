@@ -88,3 +88,9 @@ export interface OrderRow {
   readonly total: MoneyWire;
   readonly placed_at: string;
 }
+
+export interface PaymentIntentResult {
+  readonly status: "SUCCEEDED" | "PENDING" | "FAILED" | string;
+  readonly reason_code?: string;
+  readonly next_action?: { type?: string; url?: string; payload?: string } | null;
+}
