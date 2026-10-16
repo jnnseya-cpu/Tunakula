@@ -1,0 +1,79 @@
+# COEXIST — run Tunakula ALONGSIDE other websites already on this VPS.
+#
+# Unlike docker-compose.staging.yml, this does NOT run Caddy and NEVER binds ports 80/443, so it cannot
+# collide with the web server already serving your other sites. Instead it binds the API and the two sites
+# to 127.0.0.1 (localhost only) on high ports, and your EXISTING web server (Nginx/Apache/panel) reverse-
+# proxies the three Tunakula subdomains to them and handles their TLS. Nothing about your current sites changes.
+#
+#   api.<domain>      ->  127.0.0.1:8090   (the API)
+#   <domain>          ->  127.0.0.1:8091   (the customer storefront)
+#   admin.<domain>    ->  127.0.0.1:8092   (the admin console)
+#
+# Start it from the repo root with deploy/.env.staging present (the go-live script writes that file; you can
+# also copy deploy/.env.coexist.example to deploy/.env.staging and fill it in):
+#
+#   docker compose --env-file deploy/.env.staging -f deploy/docker-compose.coexist.yml up -d --build
+#
+# Postgres runs only on the internal compose network (no host port), so it cannot clash with any database
+# already on the box. Volumes are named -coexist- so they never touch another compose stack's data.
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - ./initdb.sql:/docker-entrypoint-initdb.d/10-roles.sql:ro
+      - tunakula-coexist-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_OWNER_URL: postgres://tunakula:tunakula@db:5432/tunakula
+      DATABASE_URL: postgres://tunakula_app:tunakula_app@db:5432/tunakula
+      DATABASE_APP_ROLE: tunakula_app
+      TUNAKULA_TOKEN_SECRET: ${TUNAKULA_TOKEN_SECRET}
+      TUNAKULA_CONSOLE_ORIGINS: https://${CUSTOMER_DOMAIN},https://${ADMIN_DOMAIN}
+      # Behind your web server, so trust its X-Forwarded-* headers for the real client IP and scheme.
+      TUNAKULA_TRUST_PROXY: "1"
+      TUNAKULA_RATE_LIMIT_RPM: "600"
+      # STAGING conveniences — usable with no external accounts. Turn OFF before taking real money.
+      TUNAKULA_DEV_OTP: "1"
+      TUNAKULA_SANDBOX_PAYMENTS: "1"
+      PORT: "8080"
+    ports:
+      - "127.0.0.1:8090:8080"
+
+  customer-web:
+    build:
+      context: ..
+      dockerfile: frontend/customer/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: https://${API_DOMAIN}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8091:80"
+
+  admin-web:
+    build:
+      context: ..
+      dockerfile: frontend/admin/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: https://${API_DOMAIN}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8092:80"
+
+volumes:
+  tunakula-coexist-db:
