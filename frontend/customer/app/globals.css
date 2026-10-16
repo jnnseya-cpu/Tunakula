@@ -7,29 +7,31 @@
  * so accent text uses the deeper --orange-text.
  */
 :root {
-  /* Dark Tunakula: charcoal surfaces, yellow brand accent, light text. */
-  --paper: #161719;
-  --paper-2: #1e2024;
-  --paper-3: #2a2d33;
-  --card: #212429;
-  --card-2: #2a2e35;
-  --ink: #f4f5f7;
-  --ink-2: #c7ccd4;
-  --muted: #969ca7;
-  --rule: rgba(255, 255, 255, 0.10);
-  --rule-strong: rgba(255, 255, 255, 0.22);
-  --navy: #1f305d;
-  --navy-deep: #0e1830;
-  --yellow: #fad20e;
-  --gold: #f4d620;
-  --orange: #eb771a;
-  --orange-text: #f0a24a;
-  --tint: #2a2e36;
-  --good: #35c06a;
-  --critical: #e2604f;
-  --bad: #e2604f;
-  --ok: #35c06a;
-  --brand-gradient: linear-gradient(118deg, #f2de1f 0%, #f5c120 48%, #eb771a 100%);
+  /* Warm Tunakula: sunny cream surfaces, mouth-watering tomato→mango heat, golden brand, warm-brown ink. */
+  color-scheme: light;
+  --paper: #fff7ee;
+  --paper-2: #fff0e1;
+  --paper-3: #ffe7cc;
+  --card: #ffffff;
+  --card-2: #fff7ef;
+  --ink: #2a170e;
+  --ink-2: #5c463b;
+  --muted: #938073;
+  --rule: rgba(42, 23, 14, 0.10);
+  --rule-strong: rgba(42, 23, 14, 0.18);
+  --navy: #2a170e;          /* repurposed: warm deep brown for text-on-yellow surfaces */
+  --navy-deep: #2a170e;
+  --yellow: #ffb400;        /* golden brand */
+  --gold: #ffc21f;
+  --orange: #ff7a18;        /* mango */
+  --tomato: #e8382a;        /* appetite red */
+  --orange-text: #d65412;   /* accessible warm accent text on cream */
+  --tint: #fff0e1;
+  --good: #1fa368;
+  --critical: #e2432f;
+  --bad: #e2432f;
+  --ok: #1fa368;
+  --brand-gradient: linear-gradient(120deg, #ffb400 0%, #ff7a18 55%, #e8382a 100%);
   --display: "Anton", "Impact", "Arial Narrow", sans-serif;
   --sans: "Inter Variable", "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
   --page: min(1240px, calc(100vw - 48px));
@@ -718,12 +720,12 @@ footer .legal { margin-top: 64px; padding-top: 22px; border-top: 1px solid var(-
  * Motion is cinematic but light: cross-fading hero with a slow push-in, staggered reveals,
  * lift-on-hover. All of it stops for prefers-reduced-motion. */
 :root {
-  --paper: #161719;
-  --paper-2: #1e2024;
-  --surface-2: #262a31;
+  --paper: #fff7ee;
+  --paper-2: #fff0e1;
+  --surface-2: #fff7ef;
   --radius-lg: 20px;
-  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.35), 0 6px 18px -8px rgba(0, 0, 0, 0.55);
-  --shadow-2: 0 2px 6px rgba(0, 0, 0, 0.4), 0 24px 44px -18px rgba(0, 0, 0, 0.7);
+  --shadow-1: 0 1px 2px rgba(42, 23, 14, 0.06), 0 8px 20px -10px rgba(42, 23, 14, 0.16);
+  --shadow-2: 0 2px 8px rgba(42, 23, 14, 0.08), 0 26px 50px -22px rgba(42, 23, 14, 0.22);
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
 }
 body::before { display: none; }
@@ -734,7 +736,7 @@ section.tight { padding: 44px 0; }
 .sec-head { align-items: flex-end; margin-bottom: 20px; }
 
 /* Header: logo · deliver-to · search · links */
-.nav { position: sticky; top: 0; z-index: 30; background: rgba(22, 23, 25, 0.9); backdrop-filter: saturate(1.4) blur(12px); border-bottom: 1px solid var(--rule); }
+.nav { position: sticky; top: 0; z-index: 30; background: rgba(255, 249, 240, 0.92); backdrop-filter: saturate(1.4) blur(12px); border-bottom: 1px solid var(--rule); }
 .nav .wrap { height: 76px; gap: 18px; }
 .wordmark img { width: 54px; height: 54px; border-radius: 12px; }
 .nav nav { gap: 20px; font-size: 14.5px; font-weight: 550; }
@@ -902,10 +904,10 @@ section.tight { padding: 44px 0; }
   .nav .right { margin-left: auto; }
   .nav .btn { height: 38px; }
   .nav-search { order: 5; flex-basis: 100%; height: 44px; }
-  .tabbar { display: grid; grid-template-columns: repeat(5, 1fr); align-items: center; position: fixed; left: 0; right: 0; bottom: 0; z-index: 35; background: rgba(20, 21, 24, 0.97); backdrop-filter: blur(12px); border-top: 1px solid var(--rule); padding: 8px 0 calc(8px + env(safe-area-inset-bottom)); }
+  .tabbar { display: grid; grid-template-columns: repeat(5, 1fr); align-items: center; position: fixed; left: 0; right: 0; bottom: 0; z-index: 35; background: rgba(255, 251, 245, 0.97); backdrop-filter: blur(12px); border-top: 1px solid var(--rule); box-shadow: 0 -8px 24px -16px rgba(42,23,14,0.4); padding: 8px 0 calc(8px + env(safe-area-inset-bottom)); }
   .tabbar .tab { display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 11px; font-weight: 600; color: var(--muted); background: none; border: 0; font-family: inherit; cursor: pointer; }
-  .tabbar .tab[aria-current="page"] { color: var(--yellow); }
-  .tabbar .tab[aria-current="page"] svg { color: var(--yellow); }
+  .tabbar .tab[aria-current="page"] { color: var(--tomato); }
+  .tabbar .tab[aria-current="page"] svg { color: var(--tomato); }
   /* Raised center cart button, like the app. */
   .tabbar .tab-fab { position: relative; height: 44px; }
   .tabbar .tab-fab .fab { position: absolute; left: 50%; top: -24px; transform: translateX(-50%); width: 60px; height: 60px; border-radius: 50%; background: var(--yellow); color: var(--navy); display: grid; place-items: center; box-shadow: 0 12px 26px -8px rgba(0, 0, 0, 0.7); border: 5px solid var(--paper); }
