@@ -3,12 +3,12 @@
  * the rider, and leaves a comment; the restaurant can reply. Ratings aggregate into each branch's
  * average, shown on the storefront and in the performance scorecard. Additive.
  */
-import type { CountryProfile } from "@tunakula/ts-contracts";
+import type { CountryProfile, ReviewReplyWriter } from "@tunakula/ts-contracts";
 import type { Db, Sql } from "../db/db.ts";
 import type { CountryConfigRegistry } from "../modules/config/config-registry.ts";
 import type { Principal, ResourceContext } from "../modules/identity/policy.ts";
 import { getBranch } from "../persistence/catalogue.ts";
-import { audit } from "../persistence/identity.ts";
+import { audit, langOf } from "../persistence/identity.ts";
 import { badRequest, conflict, forbidden, notFound, unprocessable } from "./errors.ts";
 import { require } from "./principal.ts";
 
@@ -21,11 +21,13 @@ interface ReviewRow {
 export class ReviewService {
   private readonly db: Db;
   private readonly registry: CountryConfigRegistry;
+  private readonly replyWriter: ReviewReplyWriter;
   private readonly now: () => Date;
 
-  constructor(db: Db, registry: CountryConfigRegistry, now: () => Date = () => new Date()) {
+  constructor(db: Db, registry: CountryConfigRegistry, replyWriter: ReviewReplyWriter, now: () => Date = () => new Date()) {
     this.db = db;
     this.registry = registry;
+    this.replyWriter = replyWriter;
     this.now = now;
   }
 
@@ -131,6 +133,30 @@ export class ReviewService {
       await sql.query("UPDATE reviews.order_review SET reply = $2, replied_by = $3, replied_at = $4, updated_at = $4 WHERE id = $1", [reviewId, reply, principal.userId, this.now()]);
       await audit(sql, { actor: principal.userId, action: "review.replied", target: `review:${reviewId}`, country });
       return { id: reviewId, reply };
+    });
+  }
+
+  /** Merchant: draft an AI reply to a review on a branch they manage. Grounded in the review's rating and comment;
+   *  the writer promises nothing the restaurant hasn't authorised. It changes nothing — the merchant edits and
+   *  posts it via reply(). */
+  async draftReply(country: string, principal: Principal, reviewId: string, lang?: "fr" | "en") {
+    const profile = this.profile(country);
+    return this.db.tx({ country }, async (sql) => {
+      const [r] = await sql.query<{ branch_id: string; restaurant_rating: number; comment: string | null; branch_name: string; reviewer: string | null; locale: string | null } & Record<string, unknown>>(
+        `SELECT r.branch_id, r.restaurant_rating, r.comment, b.name AS branch_name, u.display_name AS reviewer, u.locale
+           FROM reviews.order_review r JOIN catalogue.branch b ON b.id = r.branch_id
+           LEFT JOIN identity.app_user u ON u.id = r.customer_id WHERE r.id = $1`,
+        [reviewId],
+      );
+      if (!r) throw notFound("Review");
+      require(principal, "order:read", await this.branchResource(sql, country, r.branch_id), { activeCountry: country, profile });
+      // Default to the reviewer's own language, so they can read the reply; an explicit choice wins.
+      const draft = await this.replyWriter.write({
+        rating: r.restaurant_rating, branchName: r.branch_name, lang: lang ?? langOf(r.locale),
+        ...(r.comment ? { comment: r.comment } : {}), ...(firstName(r.reviewer) !== "Customer" ? { reviewerName: firstName(r.reviewer) } : {}),
+      });
+      await audit(sql, { actor: principal.userId, action: "review.ai_draft", target: `review:${reviewId}`, country, detail: { source: draft.source } });
+      return { id: reviewId, draft: draft.text, source: draft.source };
     });
   }
 

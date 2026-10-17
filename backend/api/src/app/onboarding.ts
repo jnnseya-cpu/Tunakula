@@ -8,6 +8,7 @@
  * those zones, or reject with a reason. Every decision is audited. Documents are never public.
  */
 import { createHash } from "node:crypto";
+import { VEHICLE_TYPES } from "@tunakula/ts-contracts";
 import type { Db, Sql } from "../db/db.ts";
 import { authorize, type Principal } from "../modules/identity/policy.ts";
 import type { Action } from "../modules/identity/roles.ts";
@@ -18,7 +19,7 @@ import { badRequest, conflict, forbidden, notFound, unprocessable } from "./erro
 
 const MEDIA_MAX_BYTES = 600_000;
 const MEDIA_TYPES = ["image/jpeg", "image/png", "image/webp"];
-const PURPOSES = ["RIDER_ID", "RIDER_SELFIE", "RIDER_LICENCE", "PACK_PHOTO", "PROOF_PHOTO"] as const;
+const PURPOSES = ["RIDER_ID", "RIDER_SELFIE", "RIDER_LICENCE", "PACK_PHOTO", "PROOF_PHOTO", "MENU_ITEM", "BRANCH_LOGO", "BRANCH_COVER"] as const;
 type Purpose = (typeof PURPOSES)[number];
 const ID_TYPES = ["NATIONAL_ID", "VOTER_CARD", "PASSPORT", "DRIVING_LICENCE"] as const;
 const ID_FORMAT: Record<(typeof ID_TYPES)[number], RegExp> = {
@@ -27,7 +28,7 @@ const ID_FORMAT: Record<(typeof ID_TYPES)[number], RegExp> = {
   PASSPORT: /^[A-Z]{1,2}[0-9]{6,8}$/,
   DRIVING_LICENCE: /^[A-Z0-9]{5,20}$/,
 };
-const MOTORISED = ["MOTO", "CAR"];
+const MOTORISED = ["MOTO", "CAR", "VAN", "TRUCK"];
 
 export interface Check { readonly code: string; readonly ok: boolean; readonly detail: string }
 
@@ -108,7 +109,7 @@ export class OnboardingService {
     const name = (input.full_name ?? "").trim().replace(/\s+/g, " ");
     if (name.length < 4 || !name.includes(" ")) throw badRequest("NAME_REQUIRED", "Your full name as on your ID (first name and surname)");
     if (!(ID_TYPES as readonly string[]).includes(input.id_type)) throw badRequest("ID_TYPE_INVALID", `id_type is one of ${ID_TYPES.join(", ")}`);
-    if (!["MOTO", "BICYCLE", "CAR", "FOOT"].includes(input.vehicle)) throw badRequest("VEHICLE_INVALID", "vehicle is MOTO, BICYCLE, CAR or FOOT");
+    if (!(VEHICLE_TYPES as readonly string[]).includes(input.vehicle)) throw badRequest("VEHICLE_INVALID", "vehicle is MOTO, BICYCLE, CAR, VAN, TRUCK or FOOT");
     const dob = new Date(`${input.date_of_birth}T00:00:00Z`);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(input.date_of_birth ?? "") || Number.isNaN(dob.getTime())) throw badRequest("DOB_INVALID", "date_of_birth is YYYY-MM-DD");
     const idNumber = (input.id_number ?? "").toUpperCase().replace(/[\s.-]/g, "");

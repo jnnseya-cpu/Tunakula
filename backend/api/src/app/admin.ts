@@ -13,8 +13,11 @@ import type { CountryConfigRegistry } from "../modules/config/config-registry.ts
 import { authorize, type Principal, type ResourceContext } from "../modules/identity/policy.ts";
 import { assertValidBinding, ROLES, type Action, type Role, type RoleBinding, type Scope } from "../modules/identity/roles.ts";
 import { addBinding, audit, createUser, userByPhone, verifyAuditChain } from "../persistence/identity.ts";
+import { createJournal } from "../modules/money/journal.ts";
+import { postJournal } from "../persistence/ledger.ts";
+import { Money } from "@tunakula/ts-money";
 import { parseSpecial, parseWeekly, type SpecialHours, type WeeklyHours } from "../modules/catalogue/hours.ts";
-import { badRequest, conflict, forbidden, notFound } from "./errors.ts";
+import { badRequest, conflict, forbidden, notFound, unprocessable } from "./errors.ts";
 
 export interface BranchInfo {
   id: string;
@@ -24,6 +27,8 @@ export interface BranchInfo {
   city: string | null;
   commune: string | null;
   status: string;
+  store_type?: string;
+  delivery_lead_days?: number;
 }
 
 /** Which slice of a market a person may see. `all` means the whole market (no branch filter). */
@@ -78,7 +83,7 @@ export class AdminService {
 
   async #branches(sql: Sql): Promise<BranchInfo[]> {
     return sql.query<BranchInfo & Record<string, unknown>>(
-      "SELECT id, name, restaurant_group_id, brand_id, city, commune, status FROM catalogue.branch ORDER BY name",
+      "SELECT id, name, restaurant_group_id, brand_id, city, commune, status, store_type, delivery_lead_days FROM catalogue.branch ORDER BY name",
     );
   }
 
@@ -126,9 +131,15 @@ export class AdminService {
           finance: this.#can(principal, "ledger:read", marketWide, profile),
           payments: vis.all,
           refunds: this.#can(principal, "refund:issue", marketWide, profile) || this.#can(principal, "order:manage", marketWide, profile),
+          support: this.#can(principal, "ai_chat:takeover", marketWide, profile) || this.#can(principal, "order:manage", marketWide, profile),
+          growth: this.#can(principal, "campaign:write", marketWide, profile),
+          copilot: this.#can(principal, "restaurant:manage", marketWide, profile) || vis.branches.some((b) => this.#can(principal, "menu:write", { ...this.#branchResource(country, b), type: "menu" }, profile)),
           audit: this.#can(principal, "audit:read", marketWide, profile),
           customers: vis.all,
           kitchen: prep.all || prep.branches.length > 0,
+          pos: this.#can(principal, "pos:operate", marketWide, profile) || vis.branches.some((b) => this.#can(principal, "pos:operate", this.#branchResource(country, b), profile)),
+          payouts: this.#can(principal, "ledger:read", marketWide, profile) || this.#can(principal, "payout:read", marketWide, profile) || vis.branches.some((b) => this.#can(principal, "payout:read", this.#branchResource(country, b), profile)),
+          merchant_plans: this.#can(principal, "commission:write", marketWide, profile),
           dispatch: this.#can(principal, "dispatch:manage", marketWide, profile) || vis.branches.some((b) => this.#can(principal, "dispatch:manage", this.#branchResource(country, b), profile)),
           riders: this.#can(principal, "rider:manage", marketWide, profile) || vis.branches.some((b) => this.#can(principal, "rider:manage", this.#branchResource(country, b), profile)),
         };
@@ -362,6 +373,71 @@ export class AdminService {
     });
   }
 
+  /** A CSV export of the market's orders over the last `days`, scoped to what the caller can see. For finance and
+   *  ops reconciliation — the same visibility and totals as the console, as a downloadable file. */
+  async ordersCsv(principal: Principal, country: string, daysParam: number): Promise<{ filename: string; csv: string }> {
+    const profile = this.#profile(country);
+    const days = Math.min(Math.max(Math.trunc(daysParam) || 30, 1), 366);
+    const end = this.now();
+    const start = new Date(end.getTime() - days * 86_400_000);
+    return this.db.tx({ country }, async (sql) => {
+      const vis = await this.#visibility(sql, principal, country, profile);
+      if (!vis.all && vis.branches.length === 0) throw forbidden("No orders you can see in this market");
+      const rows = await sql.query<{ created_at: Date; order_id: string; branch_name: string; commune: string | null; state: string; type: string; payment_mode: string; method: string | null; total_minor: string; currency: string; customer_name: string | null }>(
+        `SELECT o.created_at, o.order_id, b.name AS branch_name, b.commune, o.state, o.type, o.payment_mode,
+                (SELECT i.method_type FROM payments.payment_intent i WHERE i.order_id = o.order_id AND i.status = 'SUCCEEDED' ORDER BY i.created_at DESC LIMIT 1) AS method,
+                o.total_minor::text AS total_minor, o.currency, u.display_name AS customer_name
+           FROM ordering.order_view o JOIN catalogue.branch b ON b.id = o.branch_id LEFT JOIN identity.app_user u ON u.id = o.customer_id
+          WHERE o.created_at >= $1 AND o.created_at < $2 AND ($3::uuid[] IS NULL OR o.branch_id = ANY($3::uuid[]))
+          ORDER BY o.created_at DESC`,
+        [start, end, vis.all ? null : vis.branches.map((b) => b.id)],
+      );
+      const header = ["Date (UTC)", "Order ID", "Branch", "Commune", "State", "Type", "Payment mode", "Payment method", "Total", "Currency", "Customer"];
+      const lines = [header.map(csvCell).join(",")];
+      for (const r of rows) {
+        lines.push([
+          new Date(r.created_at).toISOString(),
+          r.order_id,
+          r.branch_name,
+          r.commune ?? "",
+          r.state,
+          r.type,
+          r.payment_mode,
+          r.method ?? "",
+          majorUnits(r.total_minor),
+          r.currency,
+          r.customer_name ?? "",
+        ].map(csvCell).join(","));
+      }
+      const stamp = end.toISOString().slice(0, 10);
+      return { filename: `tunakula-orders-${country}-${stamp}-${days}d.csv`, csv: lines.join("\r\n") + "\r\n" };
+    });
+  }
+
+  /** A CSV export of rider payouts (money out) over the last `days`. Finance only (ledger:read). */
+  async payoutsCsv(principal: Principal, country: string, daysParam: number): Promise<{ filename: string; csv: string }> {
+    const profile = this.#profile(country);
+    if (!this.#can(principal, "ledger:read", { type: "scope", country }, profile)) throw forbidden("Exporting payouts needs ledger:read");
+    const days = Math.min(Math.max(Math.trunc(daysParam) || 30, 1), 366);
+    const end = this.now();
+    const start = new Date(end.getTime() - days * 86_400_000);
+    return this.db.tx({ country }, async (sql) => {
+      const rows = await sql.query<{ at: Date; id: string; rider: string; amount_minor: string; currency: string; method: string }>(
+        `SELECT p.at, p.id, COALESCE(u.display_name, 'Rider') AS rider, p.amount_minor::text, p.currency, p.method
+           FROM dispatch.rider_payout p JOIN identity.app_user u ON u.id = p.rider_id
+          WHERE p.at >= $1 AND p.at < $2 ORDER BY p.at DESC`,
+        [start.toISOString(), end.toISOString()],
+      );
+      const header = ["Date (UTC)", "Payout ID", "Rider", "Amount", "Currency", "Method"];
+      const lines = [header.map(csvCell).join(",")];
+      for (const r of rows) {
+        lines.push([new Date(r.at).toISOString(), r.id, r.rider, majorUnits(r.amount_minor), r.currency, r.method].map(csvCell).join(","));
+      }
+      const stamp = end.toISOString().slice(0, 10);
+      return { filename: `tunakula-rider-payouts-${country}-${stamp}-${days}d.csv`, csv: lines.join("\r\n") + "\r\n" };
+    });
+  }
+
   /** GET /v1/admin/branches */
   async branches(principal: Principal, country: string) {
     const profile = this.#profile(country);
@@ -369,20 +445,32 @@ export class AdminService {
       const vis = await this.#visibility(sql, principal, country, profile);
       const manage = this.#can(principal, "restaurant:manage", { type: "scope", country }, profile);
       const list = vis.all || manage ? await this.#branches(sql) : vis.branches;
-      if (list.length === 0 && !manage) throw forbidden("No branches you can see in this market");
+      // A self-serve merchant with no branch yet is not an error: the console shows them how to set up.
+      // Owner bindings are global — an account that runs businesses in several countries holds one per market —
+      // so resolve the brand that lives in THIS country. Row-level security scopes the lookup to the current market.
+      const ownedGroupIds = principal.bindings
+        .filter((b) => "role" in b && b.role === "RESTAURANT_OWNER" && b.scope.type === "RESTAURANT_GROUP" && "id" in b.scope)
+        .map((b) => (b.scope as { id: string }).id);
+      const groupId = ownedGroupIds.length
+        ? ((await sql.query<{ id: string }>("SELECT id FROM catalogue.restaurant_group WHERE id = ANY($1::text[]) LIMIT 1", [ownedGroupIds]))[0]?.id ?? null)
+        : null;
       const since = new Date(this.now().getTime() - 30 * 86_400_000);
-      const stats = await sql.query<{ branch_id: string; items: string; available: string; orders: string }>(
+      const stats = await sql.query<{ branch_id: string; items: string; available: string; orders: string; published: boolean }>(
         `SELECT b.id AS branch_id,
                 (SELECT count(*) FROM catalogue.menu_item m WHERE m.branch_id = b.id) AS items,
                 (SELECT count(*) FROM catalogue.menu_item m WHERE m.branch_id = b.id AND m.available) AS available,
-                (SELECT count(*) FROM ordering.order_view o WHERE o.branch_id = b.id AND o.created_at >= $2 AND NOT (o.state = ANY($3))) AS orders
+                (SELECT count(*) FROM ordering.order_view o WHERE o.branch_id = b.id AND o.created_at >= $2 AND NOT (o.state = ANY($3))) AS orders,
+                (b.published_at IS NOT NULL) AS published
            FROM catalogue.branch b WHERE b.id = ANY($1::uuid[])`,
         [list.map((b) => b.id), since, NOT_PLACED],
       );
       const by = new Map(stats.map((s) => [s.branch_id, s]));
       return {
         can_create: manage,
-        data: list.map((b) => ({ ...b, items: Number(by.get(b.id)?.items ?? 0), available_items: Number(by.get(b.id)?.available ?? 0), orders_30d: Number(by.get(b.id)?.orders ?? 0) })),
+        // Whether the signed-in person already owns a business (a restaurant group) and may self-serve from the console.
+        has_business: groupId !== null,
+        ...(groupId ? { group_id: groupId } : {}),
+        data: list.map((b) => ({ ...b, items: Number(by.get(b.id)?.items ?? 0), available_items: Number(by.get(b.id)?.available ?? 0), orders_30d: Number(by.get(b.id)?.orders ?? 0), published: by.get(b.id)?.published === true })),
       };
     });
   }
@@ -419,6 +507,128 @@ export class AdminService {
         [country],
       );
       return { balances: balances.map((b) => ({ account: b.account, currency: b.currency, balance_minor: b.balance })), journals };
+    });
+  }
+
+  /**
+   * GET /v1/admin/payouts — merchant earnings statements and rider payouts for a period. A restaurant owner sees
+   * only their own group's statement; finance/country roles see every group in the market. Earnings come from the
+   * order snapshots (merchantReceives / riderReceives) since the ledger carries no party dimension; the outstanding
+   * balance is lifetime earned minus what has already been paid out.
+   */
+  async payouts(principal: Principal, country: string, range: { from?: string; to?: string } = {}) {
+    const profile = this.#profile(country);
+    const ccy = profile.money.settlement_currency;
+    const to = range.to ? new Date(range.to) : this.now();
+    const from = range.from ? new Date(range.from) : new Date(to.getTime() - 30 * 86_400_000);
+    return this.db.tx({ country }, async (sql) => {
+      const vis = await this.#visibility(sql, principal, country, profile);
+      const canSeeAll = this.#can(principal, "ledger:read", { type: "scope", country }, profile);
+      // A merchant may read their own payouts (payout:read); finance reads the whole market (ledger:read).
+      const mayRead = canSeeAll || this.#can(principal, "payout:read", { type: "scope", country }, profile) || vis.branches.some((b) => this.#can(principal, "payout:read", this.#branchResource(country, b), profile));
+      if (!mayRead) throw forbidden("Payouts need payout:read or ledger:read");
+      const branchIds = vis.branches.map((b) => b.id);
+      // Merchant earnings per group, scoped to what the caller can see (all branches for finance; own group for an owner).
+      const merchants = await sql.query<{ group_id: string; name: string; orders_period: string; earned_period: string; earned_lifetime: string }>(
+        `SELECT b.restaurant_group_id AS group_id, COALESCE(g.name, b.restaurant_group_id) AS name,
+                (count(*) FILTER (WHERE o.updated_at >= $1 AND o.updated_at < $2))::text AS orders_period,
+                COALESCE(sum((d.payload->'snapshot'->'money'->'merchantReceives'->>'minor')::bigint)
+                         FILTER (WHERE o.updated_at >= $1 AND o.updated_at < $2), 0)::text AS earned_period,
+                COALESCE(sum((d.payload->'snapshot'->'money'->'merchantReceives'->>'minor')::bigint), 0)::text AS earned_lifetime
+           FROM ordering.order_view o
+           JOIN ordering.order_event d ON d.order_id = o.order_id AND d.type = 'ORDER_DRAFTED'
+           JOIN catalogue.branch b ON b.id = o.branch_id
+           LEFT JOIN catalogue.restaurant_group g ON g.id = b.restaurant_group_id
+          WHERE o.state = 'DELIVERED' AND ($3::boolean OR o.branch_id = ANY($4::uuid[]))
+          GROUP BY b.restaurant_group_id, g.name
+          ORDER BY earned_lifetime DESC`,
+        [from.toISOString(), to.toISOString(), canSeeAll, branchIds],
+      );
+      const paidRows = await sql.query<{ group_id: string; paid: string }>(
+        "SELECT restaurant_group_id AS group_id, COALESCE(sum(amount_minor), 0)::text AS paid FROM money.restaurant_payout GROUP BY restaurant_group_id",
+      );
+      const paidBy = new Map(paidRows.map((r) => [r.group_id, BigInt(r.paid)]));
+      const m = (minor: bigint) => ({ amount_minor: minor.toString(), currency: ccy });
+      const merchantView = merchants.map((r) => {
+        const lifetime = BigInt(r.earned_lifetime);
+        const paid = paidBy.get(r.group_id) ?? 0n;
+        return {
+          group_id: r.group_id, name: r.name,
+          orders_period: Number(r.orders_period),
+          earned_period: m(BigInt(r.earned_period)),
+          earned_lifetime: m(lifetime),
+          paid_lifetime: m(paid),
+          outstanding: m(lifetime - paid),
+        };
+      });
+
+      // Rider payouts: a finance view of what has been cashed out and what riders are still owed (market-wide).
+      let riders: unknown = null;
+      if (canSeeAll) {
+        const recent = await sql.query<{ id: string; rider: string; amount_minor: string; currency: string; method: string; at: Date }>(
+          `SELECT p.id, COALESCE(u.display_name, 'Rider') AS rider, p.amount_minor::text, p.currency, p.method, p.at
+             FROM dispatch.rider_payout p JOIN identity.app_user u ON u.id = p.rider_id
+            WHERE p.at >= $1 AND p.at < $2 ORDER BY p.at DESC LIMIT 50`,
+          [from.toISOString(), to.toISOString()],
+        );
+        const [earned] = await sql.query<{ earned: string }>(
+          `SELECT COALESCE(sum((d.payload->'snapshot'->'money'->'riderReceives'->>'minor')::bigint), 0)::text AS earned
+             FROM ordering.order_view o JOIN ordering.order_event d ON d.order_id = o.order_id AND d.type = 'ORDER_DRAFTED'
+            WHERE o.state = 'DELIVERED'`,
+        );
+        const [bonus] = await sql.query<{ b: string }>("SELECT COALESCE(sum(amount_minor), 0)::text AS b FROM dispatch.rider_bonus");
+        const [paidR] = await sql.query<{ p: string }>("SELECT COALESCE(sum(amount_minor), 0)::text AS p FROM dispatch.rider_payout");
+        const earnedTot = BigInt(earned?.earned ?? "0") + BigInt(bonus?.b ?? "0");
+        const paidTot = BigInt(paidR?.p ?? "0");
+        riders = {
+          paid_lifetime: m(paidTot),
+          outstanding: m(earnedTot - paidTot),
+          recent: recent.map((p) => ({ id: p.id, rider: p.rider, amount: { amount_minor: p.amount_minor, currency: p.currency }, method: p.method, at: new Date(p.at).toISOString() })),
+        };
+      }
+      return { currency: ccy, from: from.toISOString(), to: to.toISOString(), merchants: merchantView, riders };
+    });
+  }
+
+  /** POST /v1/admin/payouts/merchants — record a payout of a group's outstanding balance (finance only). */
+  async recordMerchantPayout(principal: Principal, country: string, input: { restaurant_group_id?: string; amount_minor?: string; method?: string; reference?: string }, key: string) {
+    const profile = this.#profile(country);
+    if (!this.#can(principal, "ledger:read", { type: "scope", country }, profile)) throw forbidden("Issuing a payout needs ledger:read");
+    const groupId = String(input.restaurant_group_id ?? "").trim();
+    if (!groupId) throw badRequest("GROUP_REQUIRED", "Name the restaurant group to pay");
+    const method = String(input.method ?? "MOBILE_MONEY").toUpperCase();
+    if (method !== "MOBILE_MONEY" && method !== "BANK") throw badRequest("METHOD_INVALID", "method is MOBILE_MONEY or BANK");
+    const ccy = profile.money.settlement_currency;
+    return this.db.tx({ country }, async (sql) => {
+      const jkey = `merchant-payout:${groupId}:${key}`;
+      const [existing] = await sql.query<{ amount_minor: string }>("SELECT amount_minor::text FROM money.restaurant_payout WHERE journal_key = $1", [jkey]);
+      // Outstanding = lifetime earned (merchantReceives on delivered orders) - already paid.
+      const [earnedRow] = await sql.query<{ earned: string }>(
+        `SELECT COALESCE(sum((d.payload->'snapshot'->'money'->'merchantReceives'->>'minor')::bigint), 0)::text AS earned
+           FROM ordering.order_view o
+           JOIN ordering.order_event d ON d.order_id = o.order_id AND d.type = 'ORDER_DRAFTED'
+           JOIN catalogue.branch b ON b.id = o.branch_id
+          WHERE o.state = 'DELIVERED' AND b.restaurant_group_id = $1`,
+        [groupId],
+      );
+      const [paidRow] = await sql.query<{ paid: string }>("SELECT COALESCE(sum(amount_minor), 0)::text AS paid FROM money.restaurant_payout WHERE restaurant_group_id = $1", [groupId]);
+      const outstanding = BigInt(earnedRow?.earned ?? "0") - BigInt(paidRow?.paid ?? "0");
+      if (existing) return { paid: { amount_minor: existing.amount_minor, currency: ccy }, outstanding: { amount_minor: outstanding.toString(), currency: ccy } };
+      const amount = input.amount_minor && /^\d+$/.test(String(input.amount_minor)) ? BigInt(String(input.amount_minor)) : outstanding;
+      if (amount <= 0n) throw unprocessable("NOTHING_TO_PAY", "This group has no outstanding balance");
+      if (amount > outstanding) throw conflict("MORE_THAN_OUTSTANDING", `Outstanding is ${outstanding} minor units; pay at most that`);
+      const at = this.now();
+      const money = Money.ofMinor(amount, ccy);
+      await postJournal(sql, createJournal({
+        id: jkey, idempotencyKey: jkey, description: `Merchant payout to ${groupId}`, postedAt: at,
+        entries: [{ account: "restaurant_payable", country, amount: money }, { account: "psp_clearing", country, amount: money.negate() }],
+      }));
+      await sql.query(
+        "INSERT INTO money.restaurant_payout (country_iso2, restaurant_group_id, amount_minor, currency, method, reference, journal_key, at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)",
+        [country, groupId, amount.toString(), ccy, method, input.reference ? String(input.reference).slice(0, 120) : null, jkey, at],
+      );
+      await audit(sql, { actor: principal.userId, action: "merchant.payout", target: `group:${groupId}`, country, detail: { amount_minor: amount.toString(), currency: ccy, method } });
+      return { paid: { amount_minor: amount.toString(), currency: ccy }, outstanding: { amount_minor: (outstanding - amount).toString(), currency: ccy } };
     });
   }
 
@@ -748,4 +958,21 @@ export class AdminService {
 
 function publicBinding(b: RoleBinding) {
   return { id: b.id, role: "role" in b ? b.role : `profile:${b.profile.name}`, scope: b.scope };
+}
+
+/** Minor units → a plain decimal string (no currency symbol), e.g. 1250 → "12.50". For CSV cells. */
+function majorUnits(minor: string): string {
+  const neg = minor.startsWith("-");
+  const n = BigInt(neg ? minor.slice(1) : minor);
+  return `${neg ? "-" : ""}${n / 100n}.${(n % 100n).toString().padStart(2, "0")}`;
+}
+
+/** Escape one CSV cell (RFC 4180): quote when it contains a comma, quote, CR or LF; double embedded quotes. A
+ *  leading =,+,-,@ is prefixed with a quote so spreadsheets don't treat the value as a formula. */
+function csvCell(value: string): string {
+  let s = String(value ?? "");
+  // Neutralise a leading =,+,-,@ so a spreadsheet can't run the cell as a formula — but leave a plain signed
+  // number (e.g. "-12.50") intact, so finance sees a real negative amount, not the text "'-12.50".
+  if (/^[=+\-@]/.test(s) && !/^-?\d+(\.\d+)?$/.test(s)) s = `'${s}`;
+  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }

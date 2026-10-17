@@ -6,14 +6,14 @@
  * Travel time comes from live traffic when a map adapter is connected; otherwise from road distance
  * (great-circle × ROAD_FACTOR) at free-flow speed × the hour's congestion factor.
  */
-export type Vehicle = "MOTO" | "BICYCLE" | "CAR" | "FOOT";
+export type Vehicle = "MOTO" | "BICYCLE" | "CAR" | "VAN" | "TRUCK" | "FOOT";
 
 export const ROAD_FACTOR = 1.3;
 export const DEFAULT_PICKUP_MIN = 18;
 export const HANDOVER_MIN = 2;
 
 /** Free-flow speeds in km/h, before congestion. */
-export const FREE_FLOW_KMH: Record<Vehicle, number> = { MOTO: 28, CAR: 24, BICYCLE: 14, FOOT: 4.5 };
+export const FREE_FLOW_KMH: Record<Vehicle, number> = { MOTO: 28, CAR: 24, VAN: 22, TRUCK: 18, BICYCLE: 14, FOOT: 4.5 };
 
 /**
  * Speed multiplier by local hour (0–23) for a dense African capital: morning and evening rush,

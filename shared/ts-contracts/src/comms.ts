@@ -184,6 +184,8 @@ export const COMMS_CATALOGUE: readonly CommsCategory[] = [
       e("promo.referral_invite", "Referral invite", "Parrainez un ami, gagnez {{amount}}", "info", C, email_inapp),
       e("promo.referral_reward", "Referral reward", "Votre récompense de parrainage est créditée", "success", C, email_inapp_push),
       e("promo.campaign_live", "Campaign live", "Nouvelle campagne : {{campaign}}", "info", ["customer", "restaurant"], email_inapp),
+      e("promo.winback", "Win-back", "{{message}}", "info", C, email_inapp_push),
+      e("promo.broadcast", "Broadcast", "{{message}}", "info", ["customer", "restaurant", "rider", "admin"], ["email", "inapp", "sms", "push", "whatsapp"]),
     ],
   },
   {

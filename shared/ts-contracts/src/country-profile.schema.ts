@@ -149,14 +149,18 @@ export const countryProfileSchema = {
       pricing: obj({
         service_charge_bps: bps,
         all_in_pricing: bool,
-        delivery_fee: obj({
-          per_km: decimal,
-          cap: decimal,
-          cap_hold_km: { type: "integer", minimum: 1 },
-          band_km: { type: "integer", minimum: 1 },
-          band_step_bps: bps,
-          rural_bps: bps,
-        }),
+        delivery_fee: obj(
+          {
+            per_km: decimal,
+            cap: decimal,
+            cap_hold_km: { type: "integer", minimum: 1 },
+            band_km: { type: "integer", minimum: 1 },
+            band_step_bps: bps,
+            rural_bps: bps,
+            size_surcharge_bps: bps,
+          },
+          ["size_surcharge_bps"],
+        ),
         rider_share_bps: bps,
         rider_bonus_bps: bps,
         surge_max_multiplier: decimal,

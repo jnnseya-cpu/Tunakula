@@ -1,0 +1,42 @@
+{
+  "expo": {
+    "name": "Tunakula Restaurant",
+    "slug": "tunakula-restaurant",
+    "scheme": "tunakula-restaurant",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "backgroundColor": "#fff7ee",
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#fff7ee"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.tunakula.restaurant"
+    },
+    "android": {
+      "package": "com.tunakula.restaurant",
+      "adaptiveIcon": {
+        "backgroundColor": "#ff7a18"
+      }
+    },
+    "plugins": [
+      "expo-secure-store",
+      [
+        "expo-notifications",
+        {
+          "color": "#ff7a18"
+        }
+      ]
+    ],
+    "extra": {
+      "apiUrl": "https://api.tunakula.com",
+      "country": "CD",
+      "eas": {
+        "projectId": "set-by-eas-init"
+      }
+    }
+  }
+}

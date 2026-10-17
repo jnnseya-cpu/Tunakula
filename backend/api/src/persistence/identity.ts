@@ -20,13 +20,28 @@ export async function userById(sql: Sql, id: string): Promise<UserRow | undefine
   return (await sql.query<UserRow & Record<string, unknown>>("SELECT id, phone_e164, display_name, email, home_country, status FROM identity.app_user WHERE id = $1", [id]))[0];
 }
 
-export async function createUser(sql: Sql, u: { phone: string; displayName: string; homeCountry?: string }): Promise<UserRow> {
+export async function createUser(sql: Sql, u: { phone: string; displayName: string; homeCountry?: string; locale?: string }): Promise<UserRow> {
   const [row] = await sql.query<UserRow & Record<string, unknown>>(
-    "INSERT INTO identity.app_user (phone_e164, display_name, home_country) VALUES ($1, $2, $3) RETURNING id, phone_e164, display_name, email, home_country, status",
-    [u.phone, u.displayName, u.homeCountry ?? null],
+    "INSERT INTO identity.app_user (phone_e164, display_name, home_country, locale) VALUES ($1, $2, $3, $4) RETURNING id, phone_e164, display_name, email, home_country, status",
+    [u.phone, u.displayName, u.homeCountry ?? null, u.locale ?? null],
   );
   return row as UserRow;
 }
+
+/** Remember the language a person uses the app in. Null-safe: a blank value clears it back to "unknown". */
+export async function setUserLocale(sql: Sql, userId: string, locale: string | null): Promise<void> {
+  await sql.query("UPDATE identity.app_user SET locale = $2 WHERE id = $1", [userId, locale && locale.trim() ? locale.trim().slice(0, 8) : null]);
+}
+
+/** The person's remembered app language, or null if unknown. */
+export async function userLocale(sql: Sql, userId: string): Promise<string | null> {
+  const [r] = await sql.query<{ locale: string | null } & Record<string, unknown>>("SELECT locale FROM identity.app_user WHERE id = $1", [userId]);
+  return r?.locale ?? null;
+}
+
+/** Map a stored locale to a language the AI writers support: English only when it is English, else French
+ *  (Lingala and Swahili speakers read French; an unknown locale falls back to the market's working language). */
+export const langOf = (locale: string | null | undefined): "fr" | "en" => ((locale ?? "").toLowerCase().startsWith("en") ? "en" : "fr");
 
 export async function bindingsOf(sql: Sql, userId: string): Promise<RoleBinding[]> {
   const rows = await sql.query<{ id: string; user_id: string; role: string | null; profile: unknown; scope_type: string; scope_id: string | null; fleet_id: string | null; account_id: string | null }>(

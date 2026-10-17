@@ -123,7 +123,7 @@ export const ROLES = {
   },
   COUNTRY_ADMIN: {
     scopes: ["COUNTRY"],
-    grants: all("country_config:write", "zone:write", "restaurant:manage", "commission:write", "campaign:write", "membership:manage", "order:read", "rider:manage"),
+    grants: all("country_config:write", "zone:write", "restaurant:manage", "commission:write", "campaign:write", "agent_autonomy:set", "membership:manage", "order:read", "rider:manage"),
   },
   CITY_OPS: {
     scopes: ["CITY"],
@@ -147,6 +147,26 @@ export const ROLES = {
       "payout:read",
       "analytics:read",
       "ads:manage",
+      "availability:write",
+      "shift:manage",
+      "pos:operate",
+      "order:read",
+      "order:accept",
+      "order:prepare",
+      "order:handover",
+      "reservation:manage",
+    ),
+  },
+  // A franchisee runs one branch of a brand: full control of their own location (menu, profile, orders),
+  // but scoped to that branch, so they never see or touch the brand's other franchises.
+  FRANCHISEE: {
+    scopes: ["BRANCH"],
+    grants: all(
+      "menu:write",
+      "price:write",
+      "branch:manage",
+      "payout:read",
+      "analytics:read",
       "availability:write",
       "shift:manage",
       "pos:operate",

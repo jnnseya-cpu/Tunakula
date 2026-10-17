@@ -7,10 +7,13 @@
  * The same loop cancels orders no kitchen answered in time, so a customer is never left waiting forever.
  */
 import { greatCircleMetres, ROAD_FACTOR } from "@tunakula/ts-contracts/eta-model";
+import { VEHICLE_TYPES } from "@tunakula/ts-contracts";
+import type { Vehicle } from "@tunakula/ts-contracts/eta-model";
 import type { Db, Sql } from "../db/db.ts";
 import { authorize, type Principal } from "../modules/identity/policy.ts";
 import type { Action } from "../modules/identity/roles.ts";
 import { RIDER_ORDER_TYPES } from "../modules/ordering/order-types.ts";
+import { DELIVERY_MODE_SIZE_TIER, requiredDeliveryMode } from "../modules/pricing/pricing.ts";
 import { createJournal } from "../modules/money/journal.ts";
 import { Money } from "@tunakula/ts-money";
 import { audit } from "../persistence/identity.ts";
@@ -33,6 +36,7 @@ const NEEDS_RIDER = ["PLACED", "ACCEPTED", "PREPARING", "PACKED", "READY"];
 const RIDER_ACTIVE = ["PLACED", "ACCEPTED", "PREPARING", "PACKED", "READY", "PICKED_UP"];
 
 interface Point { lat: number; lng: number }
+type ShiftRow = { id: string; zone: string; starts_at: Date; ends_at: Date; status: "BOOKED" | "CANCELLED" };
 const unprocessableRider = () => unprocessable("NOT_A_RIDER", "That person is not a rider");
 const road = (a: Point, b: Point) => Math.round(greatCircleMetres(a, b) * ROAD_FACTOR);
 
@@ -78,7 +82,7 @@ export class DispatchService {
     const hasPos = Number.isFinite(input.lat) && Number.isFinite(input.lng);
     if (input.online && !hasPos) throw badRequest("LOCATION_REQUIRED", "Going online needs your position");
     if (hasPos && (Math.abs(input.lat!) > 90 || Math.abs(input.lng!) > 180)) throw badRequest("LOCATION_INVALID", "Position out of range");
-    const vehicle = input.vehicle && ["MOTO", "BICYCLE", "CAR", "FOOT"].includes(input.vehicle) ? input.vehicle : "MOTO";
+    const vehicle = input.vehicle && (VEHICLE_TYPES as readonly string[]).includes(input.vehicle) ? input.vehicle : "MOTO";
     return this.db.tx({ country }, async (sql) => {
       const [row] = await sql.query<{ online: boolean; online_since: Date | null }>(
         `INSERT INTO dispatch.rider_presence (country_iso2, rider_id, online, lat, lng, vehicle, online_since, updated_at)
@@ -156,6 +160,179 @@ export class DispatchService {
         cash_in_hand: { amount_minor: cashAll[0]?.cash ?? "0", currency: ccy },
       };
     });
+  }
+
+  // ── Rider shifts (availability scheduling) ──
+
+  /** POST /v1/rider/shifts: book a time window the rider commits to cover in one of their zones. */
+  async bookShift(principal: Principal, country: string, input: { zone?: string; starts_at?: string; ends_at?: string }) {
+    const zones = DispatchService.riderZones(principal);
+    if (zones.length === 0) throw forbidden("Only riders can book shifts");
+    const zone = String(input.zone ?? "").trim().toLowerCase();
+    if (!zone || !zones.includes(zone)) throw badRequest("ZONE_INVALID", "Book a shift in a zone you ride in");
+    const starts = new Date(String(input.starts_at ?? ""));
+    const ends = new Date(String(input.ends_at ?? ""));
+    if (Number.isNaN(starts.getTime()) || Number.isNaN(ends.getTime())) throw badRequest("TIME_INVALID", "Give a start and an end time");
+    const minutes = (ends.getTime() - starts.getTime()) / 60000;
+    if (minutes <= 0) throw unprocessable("SHIFT_INVALID", "A shift ends after it starts");
+    if (minutes < 30) throw unprocessable("SHIFT_TOO_SHORT", "A shift is at least 30 minutes");
+    if (minutes > 12 * 60) throw unprocessable("SHIFT_TOO_LONG", "A shift is at most 12 hours");
+    const now = this.now().getTime();
+    if (ends.getTime() <= now) throw unprocessable("SHIFT_IN_PAST", "A shift ends in the future");
+    if (starts.getTime() > now + 14 * 86_400_000) throw unprocessable("SHIFT_TOO_FAR", "Book shifts within the next two weeks");
+    return this.db.tx({ country }, async (sql) => {
+      const [clash] = await sql.query<{ id: string }>(
+        "SELECT id FROM dispatch.rider_shift WHERE rider_id = $1 AND status = 'BOOKED' AND tstzrange(starts_at, ends_at) && tstzrange($2, $3) LIMIT 1",
+        [principal.userId, starts, ends],
+      );
+      if (clash) throw conflict("SHIFT_OVERLAP", "That overlaps a shift you have already booked");
+      const [row] = await sql.query<ShiftRow>(
+        "INSERT INTO dispatch.rider_shift (country_iso2, rider_id, zone, starts_at, ends_at) VALUES ($1, $2, $3, $4, $5) RETURNING id, zone, starts_at, ends_at, status",
+        [country, principal.userId, zone, starts, ends],
+      );
+      return this.#shiftView(row!);
+    });
+  }
+
+  /** GET /v1/rider/shifts: the rider's shifts (upcoming first, then recent past), with their zones to choose from. */
+  async myShifts(principal: Principal, country: string) {
+    const zones = DispatchService.riderZones(principal);
+    if (zones.length === 0) throw forbidden("Only riders have shifts");
+    const now = this.now();
+    return this.db.tx({ country }, async (sql) => {
+      const rows = await sql.query<ShiftRow>(
+        `SELECT id, zone, starts_at, ends_at, status FROM dispatch.rider_shift
+          WHERE rider_id = $1 AND (ends_at >= $2::timestamptz - interval '7 days')
+          ORDER BY (status = 'BOOKED' AND ends_at >= $2::timestamptz) DESC, starts_at`,
+        [principal.userId, now],
+      );
+      return { zones, shifts: rows.map((r) => this.#shiftView(r)) };
+    });
+  }
+
+  /** POST /v1/rider/shifts/:id/cancel: drop a booked shift that has not already ended. */
+  async cancelShift(principal: Principal, country: string, shiftId: string) {
+    if (DispatchService.riderZones(principal).length === 0) throw forbidden("Only riders have shifts");
+    return this.db.tx({ country }, async (sql) => {
+      const [row] = await sql.query<ShiftRow>(
+        "UPDATE dispatch.rider_shift SET status = 'CANCELLED', updated_at = $3 WHERE id = $1 AND rider_id = $2 AND status = 'BOOKED' AND ends_at > $3 RETURNING id, zone, starts_at, ends_at, status",
+        [shiftId, principal.userId, this.now()],
+      );
+      if (!row) throw notFound("Shift");
+      return this.#shiftView(row);
+    });
+  }
+
+  /** GET /v1/ops/shifts: the upcoming (and currently running) rider shifts, for the dispatch board. */
+  async shifts(principal: Principal, country: string) {
+    await this.#requireOps(principal, country);
+    const now = this.now();
+    return this.db.tx({ country }, async (sql) => {
+      const rows = await sql.query<ShiftRow & { rider_id: string; name: string | null }>(
+        `SELECT s.id, s.zone, s.starts_at, s.ends_at, s.status, s.rider_id, u.display_name AS name
+           FROM dispatch.rider_shift s JOIN identity.app_user u ON u.id = s.rider_id
+          WHERE s.status = 'BOOKED' AND s.ends_at >= $1::timestamptz AND s.starts_at <= $1::timestamptz + interval '2 days'
+          ORDER BY s.starts_at`,
+        [now],
+      );
+      return {
+        now: now.toISOString(),
+        shifts: rows.map((r) => ({ ...this.#shiftView(r), rider_id: r.rider_id, rider_name: r.name })),
+      };
+    });
+  }
+
+  /** The riders on a booked shift at `at`, grouped by zone (used to prefer them in dispatch). */
+  async #onShiftByZone(sql: Sql, at: Date): Promise<Map<string, Set<string>>> {
+    const rows = await sql.query<{ rider_id: string; zone: string }>(
+      "SELECT rider_id::text, zone FROM dispatch.rider_shift WHERE status = 'BOOKED' AND starts_at <= $1 AND ends_at > $1",
+      [at],
+    );
+    const byZone = new Map<string, Set<string>>();
+    for (const r of rows) {
+      const set = byZone.get(r.zone) ?? new Set<string>();
+      set.add(r.rider_id);
+      byZone.set(r.zone, set);
+    }
+    return byZone;
+  }
+
+  #shiftView(r: ShiftRow) {
+    const starts = new Date(r.starts_at), ends = new Date(r.ends_at);
+    const now = this.now();
+    return {
+      id: r.id, zone: r.zone, status: r.status,
+      starts_at: starts.toISOString(), ends_at: ends.toISOString(),
+      active_now: r.status === "BOOKED" && starts <= now && ends > now,
+      upcoming: r.status === "BOOKED" && starts > now,
+    };
+  }
+
+  // ── Demand heatmap (busy areas) ──
+
+  /** GET /v1/rider/heatmap: where demand is high right now, so a rider can position themselves well. */
+  async riderHeatmap(principal: Principal, country: string) {
+    if (DispatchService.riderZones(principal).length === 0) throw forbidden("Only riders see the busy-areas map");
+    return this.db.tx({ country }, (sql) => this.#heatmap(sql, country));
+  }
+
+  /** GET /v1/ops/heatmap: the same demand view for operations. */
+  async opsHeatmap(principal: Principal, country: string) {
+    await this.#requireOps(principal, country);
+    return this.db.tx({ country }, (sql) => this.#heatmap(sql, country));
+  }
+
+  /** Demand vs. supply per zone over the last 45 minutes, plus recent drop points for a heat layer. */
+  async #heatmap(sql: Sql, country: string) {
+    const at = this.now();
+    const since = new Date(at.getTime() - 45 * 60_000);
+    const fresh = new Date(at.getTime() - PRESENCE_FRESH_MS);
+    const rows = await sql.query<{ zone: string; waiting: string; recent: string; riders: string }>(
+      `SELECT c.commune AS zone,
+              COALESCE(d.waiting, 0)::text AS waiting, COALESCE(d.recent, 0)::text AS recent,
+              COALESCE(r.riders, 0)::text AS riders
+         FROM (SELECT DISTINCT commune FROM catalogue.branch WHERE commune IS NOT NULL) c
+         LEFT JOIN (
+           SELECT b.commune AS zone,
+                  count(*) FILTER (WHERE o.rider_id IS NULL AND o.state = ANY($2)) AS waiting,
+                  count(*) FILTER (WHERE o.created_at >= $3) AS recent
+             FROM ordering.order_view o JOIN catalogue.branch b ON b.id = o.branch_id
+            WHERE o.type = ANY($1) AND b.commune IS NOT NULL
+              AND (o.created_at >= $3 OR (o.rider_id IS NULL AND o.state = ANY($2)))
+            GROUP BY b.commune
+         ) d ON d.zone = c.commune
+         LEFT JOIN (
+           SELECT b.scope_id AS zone, count(DISTINCT p.rider_id) AS riders
+             FROM identity.role_binding b
+             JOIN dispatch.rider_presence p ON p.rider_id = b.user_id AND p.online = true AND p.updated_at >= $4
+            WHERE b.role = 'RIDER' AND b.scope_type = 'ZONE'
+            GROUP BY b.scope_id
+         ) r ON r.zone = c.commune`,
+      [RIDER_ORDER_TYPES, NEEDS_RIDER, since, fresh],
+    );
+    const zones = rows
+      .map((r) => {
+        const waiting = Number(r.waiting), recent = Number(r.recent), riders = Number(r.riders);
+        // Demand weights unfulfilled orders over recent volume; a zone is hotter when few riders cover it.
+        const score = waiting * 3 + recent;
+        const ratio = score / (riders + 1);
+        const level = score === 0 ? "QUIET" : ratio >= 6 ? "HOT" : ratio >= 2.5 ? "BUSY" : "STEADY";
+        return { zone: r.zone, waiting, recent, riders, level };
+      })
+      .sort((a, b) => (b.waiting * 3 + b.recent) - (a.waiting * 3 + a.recent) || a.zone.localeCompare(b.zone));
+    const hotspots = await sql.query<{ lat: string; lng: string }>(
+      `SELECT (e.payload->'snapshot'->'dropLocation'->>'lat') AS lat, (e.payload->'snapshot'->'dropLocation'->>'lng') AS lng
+         FROM ordering.order_view o JOIN ordering.order_event e ON e.order_id = o.order_id AND e.type = 'ORDER_DRAFTED'
+        WHERE o.type = ANY($1) AND o.created_at >= $2 AND e.payload->'snapshot'->'dropLocation' IS NOT NULL
+        ORDER BY o.created_at DESC LIMIT 200`,
+      [RIDER_ORDER_TYPES, since],
+    );
+    return {
+      now: at.toISOString(),
+      window_minutes: 45,
+      zones,
+      hotspots: hotspots.map((h) => ({ lat: Number(h.lat), lng: Number(h.lng) })).filter((h) => Number.isFinite(h.lat) && Number.isFinite(h.lng)),
+    };
   }
 
   /** The rider's earned balance: riderReceives on every delivered order, minus what they have cashed out. */
@@ -526,8 +703,8 @@ export class DispatchService {
         cancelled++;
       }
 
-      const waiting = await sql.query<{ order_id: string; branch_lat: string; branch_lng: string; commune: string | null; drop: Point | null; earn: string | null; currency: string }>(
-        `SELECT o.order_id, b.lat::text AS branch_lat, b.lng::text AS branch_lng, b.commune,
+      const waiting = await sql.query<{ order_id: string; branch_lat: string; branch_lng: string; commune: string | null; store_type: string | null; drop: Point | null; earn: string | null; currency: string }>(
+        `SELECT o.order_id, b.lat::text AS branch_lat, b.lng::text AS branch_lng, b.commune, b.store_type,
                 d.payload->'snapshot'->'dropLocation' AS drop,
                 d.payload->'snapshot'->'money'->'riderReceives'->>'minor' AS earn, o.currency
            FROM ordering.order_view o
@@ -543,8 +720,8 @@ export class DispatchService {
       );
       if (!waiting.length) return { expired: expired.length, cancelled, offered: 0 };
 
-      const riders = await sql.query<{ rider_id: string; lat: string; lng: string }>(
-        `SELECT p.rider_id, p.lat::text, p.lng::text FROM dispatch.rider_presence p
+      const riders = await sql.query<{ rider_id: string; lat: string; lng: string; vehicle: string }>(
+        `SELECT p.rider_id, p.lat::text, p.lng::text, p.vehicle FROM dispatch.rider_presence p
           WHERE p.online AND p.lat IS NOT NULL AND p.updated_at >= $1
             AND NOT EXISTS (SELECT 1 FROM dispatch.offer f WHERE f.rider_id = p.rider_id AND f.status = 'OFFERED')
             AND (SELECT count(*) FROM ordering.order_view o WHERE o.rider_id = p.rider_id::text AND o.state = ANY($2)) < $3`,
@@ -552,15 +729,23 @@ export class DispatchService {
       );
       const principals = new Map<string, Principal>();
       for (const r of riders) principals.set(r.rider_id, await loadPrincipal(sql, r.rider_id));
+      // Riders who have booked a shift covering this moment, by zone: preferred (but not required) for that zone.
+      const onShiftByZone = await this.#onShiftByZone(sql, at);
       const taken = new Set<string>();
       let offered = 0;
       for (const w of waiting) {
         const branch = { lat: Number(w.branch_lat), lng: Number(w.branch_lng) };
         const asked = new Set((await sql.query<{ rider_id: string }>("SELECT rider_id FROM dispatch.offer WHERE order_id = $1", [w.order_id])).map((r) => r.rider_id));
+        const onShift = (w.commune && onShiftByZone.get(w.commune)) || new Set<string>();
+        // §18.3: a non-restaurant/non-pharmacy order is bulkier, so a rider whose vehicle is at least the needed
+        // size is privileged. It is a preference, not a hard gate — if none is online, a smaller rider still goes,
+        // so the order is never stranded.
+        const neededTier = DELIVERY_MODE_SIZE_TIER[requiredDeliveryMode(w.store_type)];
         const best = riders
           .filter((r) => !taken.has(r.rider_id) && !asked.has(r.rider_id) && this.#canRide(principals.get(r.rider_id)!, country, w.commune))
-          .map((r) => ({ r, meters: road({ lat: Number(r.lat), lng: Number(r.lng) }, branch) }))
-          .sort((a, b) => a.meters - b.meters)[0];
+          .map((r) => ({ r, meters: road({ lat: Number(r.lat), lng: Number(r.lng) }, branch), capable: (DELIVERY_MODE_SIZE_TIER[r.vehicle as Vehicle] ?? 0) >= neededTier }))
+          // Big enough for the load first, then an on-shift rider in this zone, then the nearest.
+          .sort((a, b) => (a.capable === b.capable ? 0 : a.capable ? -1 : 1) || (onShift.has(a.r.rider_id) ? 0 : 1) - (onShift.has(b.r.rider_id) ? 0 : 1) || a.meters - b.meters)[0];
         if (!best) continue;
         const dropMeters = w.drop ? road(branch, w.drop) : 0;
         await sql.query(
@@ -634,6 +819,9 @@ export class DispatchService {
         [tz, at],
       );
       const deliveredToday = new Map(today.map((t) => [t.rider_id, Number(t.n)]));
+      const onShiftByZone = await this.#onShiftByZone(sql, at);
+      const onShiftNow = new Set<string>();
+      for (const set of onShiftByZone.values()) for (const id of set) onShiftNow.add(id);
       const cash = new Map<string, string>();
       for (const r of riders) cash.set(r.id, (await cashInHand(sql, r.id)).cash);
       const ccy = this.#profile(country).money.settlement_currency;
@@ -654,6 +842,7 @@ export class DispatchService {
           return {
             id: r.id, name: r.name, phone: r.phone, zones: r.zones, vehicle: r.vehicle ?? "MOTO",
             status: job ? "BUSY" : offer ? "OFFERED" : online && fresh(r.updated_at) ? "AVAILABLE" : online ? "SIGNAL_LOST" : "OFFLINE",
+            on_shift: onShiftNow.has(r.id),
             position: r.lat && r.lng ? { lat: Number(r.lat), lng: Number(r.lng) } : null,
             last_seen: r.updated_at ? new Date(r.updated_at).toISOString() : null,
             online_minutes: online && r.online_since ? minutes(r.online_since) : 0,

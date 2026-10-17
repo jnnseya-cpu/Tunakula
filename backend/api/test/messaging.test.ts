@@ -56,7 +56,7 @@ test("a channel with no configured sender fails cleanly", async () => {
 test("the messaging bridge sends SMS/WhatsApp and logs the rest", async () => {
   const sender = messagingSender(twilio({ status: 201, body: JSON.stringify({ sid: "SM9" }) }));
   const event = { key: "order.delivered", title: "", subject: "Livrée", severity: "success", mandatory: false, audience: ["customer"], channels: ["inapp"] } as const;
-  const base = { subject: "Livrée", event, data: {} };
+  const base = { country: "CD", subject: "Livrée", event, data: {} };
 
   const wa = await sender.send({ channel: "whatsapp", to: { userId: "u", phone: "+243810000001" }, ...base });
   assert.deepEqual(wa, { status: "sent", ref: "SM9" });

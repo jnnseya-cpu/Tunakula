@@ -9,8 +9,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Gate, Shell, useConsole } from "../../components/shell";
 import { api } from "../../lib/api";
 import { money } from "../../lib/format";
+import { blankDish, DishFields, dishPayload, foodPhotoUrl, OptionsEditor, type DishFormValue } from "../../components/dish-form";
 
 interface Branch { id: string; name: string; status: string; items: number }
+interface LinkedBranch { id: string; name: string; linked: number; markup_bps: number }
 interface MoneyWire { amount_minor: string; currency: string }
 interface ApiOption { id: string; name: string; price: string }
 interface ApiVariation { id: string; name: string; type: "SINGLE" | "MULTI"; required: boolean; min: number; max: number; options: ApiOption[] }
@@ -19,27 +21,17 @@ interface Item {
   prices: Record<string, MoneyWire>; category: string | null; veg: boolean | null;
   tags: string[]; allergens: string[]; available: boolean; recommended: boolean;
   variations: ApiVariation[]; addons: ApiOption[];
-  dietary?: string[]; nutrition?: Record<string, number>; age_restricted?: boolean;
+  dietary?: string[]; nutrition?: Record<string, number>; age_restricted?: boolean; image_id?: string | null;
+  availability_hours?: Record<string, [string, string][]>; available_now?: boolean; unit_label?: string | null;
 }
-const DIETARY = ["VEGETARIAN", "VEGAN", "HALAL", "KOSHER", "GLUTEN_FREE", "DAIRY_FREE", "NUT_FREE", "ORGANIC", "SPICY"] as const;
-const DIETARY_LABEL: Record<string, [string, string]> = {
-  VEGETARIAN: ["Végétarien", "Vegetarian"], VEGAN: ["Végétalien", "Vegan"], HALAL: ["Halal", "Halal"], KOSHER: ["Casher", "Kosher"],
-  GLUTEN_FREE: ["Sans gluten", "Gluten-free"], DAIRY_FREE: ["Sans lactose", "Dairy-free"], NUT_FREE: ["Sans fruits à coque", "Nut-free"], ORGANIC: ["Bio", "Organic"], SPICY: ["Épicé", "Spicy"],
-};
 interface Config { money: { currencies: { settlement: string; accepted: { code: string }[] } } }
-
-interface FormVariation { name: string; type: "SINGLE" | "MULTI"; required: boolean; options: { name: string; price: string }[] }
-interface FormAddon { name: string; price: string }
-
-const CATEGORIES = ["Restaurant", "Cuisine Locale", "Fast Food", "Boisson", "Dessert", "Végétarienne", "Accompagnements", "Fruits et Légumes", "Viande et Poisson", "Boulangeries", "Pizzérias", "Taco", "Menu Enfant", "Supermarché", "Épiceries", "Essentiel", "Promo"];
 
 export default function MenuPage() {
   return <Shell title="menu"><Gate cap="catalogue"><Menu /></Gate></Shell>;
 }
 
 const nameOf = (names: Record<string, string>, lang: string) => names[lang] || names.fr || names.en || Object.values(names)[0] || "";
-const blankForm = () => ({ id: "", name_fr: "", name_en: "", desc_fr: "", category: "", price: "", veg: "" as "" | "veg" | "non", recommended: false, age_restricted: false, tags: "", allergens: "", dietary: [] as string[], kcal: "", protein_g: "", carbs_g: "", fat_g: "", variations: [] as FormVariation[], addons: [] as FormAddon[] });
-type Form = ReturnType<typeof blankForm>;
+type Form = DishFormValue;
 
 function Menu() {
   const { country, lang } = useConsole();
@@ -54,10 +46,14 @@ function Menu() {
   const [form, setForm] = useState<Form | null>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [copyTarget, setCopyTarget] = useState("");
+  const [copyPct, setCopyPct] = useState("");
+  const [copies, setCopies] = useState<LinkedBranch[]>([]);
 
   useEffect(() => {
+    const wanted = new URLSearchParams(window.location.search).get("branch");
     api<{ data: Branch[] }>("/v1/admin/branches", { country })
-      .then((r) => { setBranches(r.data); if (r.data[0]) setBranchId((b) => b || r.data[0]!.id); })
+      .then((r) => { setBranches(r.data); const pick = (wanted && r.data.some((b) => b.id === wanted)) ? wanted : r.data[0]?.id; if (pick) setBranchId((b) => b || pick); })
       .catch((e: Error) => setError(e.message));
     api<Config>(`/v1/countries/${country}/config`, { country }).then((c) => setSettlement(c.money.currencies.settlement)).catch(() => undefined);
   }, [country]);
@@ -65,6 +61,7 @@ function Menu() {
   const load = useCallback(() => {
     if (!branchId) return;
     api<{ items: Item[] }>(`/v1/branches/${branchId}/menu`, { country }).then((r) => setItems(r.items)).catch((e: Error) => setError(e.message));
+    api<{ branches: LinkedBranch[] }>(`/v1/branches/${branchId}/menu/copies`, { country }).then((r) => setCopies(r.branches)).catch(() => setCopies([]));
   }, [branchId, country]);
   useEffect(() => { void load(); }, [load]);
 
@@ -80,13 +77,15 @@ function Menu() {
 
   const edit = (it: Item) => setForm({
     id: it.id, name_fr: it.names.fr ?? "", name_en: it.names.en ?? "", desc_fr: it.description?.fr ?? "",
-    category: it.category ?? "", price: it.prices[settlement] ? decimal(it.prices[settlement]!.amount_minor, settlement) : "",
+    category: it.category ?? "", price: it.prices[settlement] ? decimal(it.prices[settlement]!.amount_minor, settlement) : "", unit_label: it.unit_label ?? "",
     veg: it.veg === true ? "veg" : it.veg === false ? "non" : "", recommended: it.recommended, age_restricted: it.age_restricted ?? false, tags: it.tags.join(", "), allergens: it.allergens.join(", "),
     dietary: [...(it.dietary ?? [])],
     kcal: it.nutrition?.kcal !== undefined ? String(it.nutrition.kcal) : "", protein_g: it.nutrition?.protein_g !== undefined ? String(it.nutrition.protein_g) : "",
     carbs_g: it.nutrition?.carbs_g !== undefined ? String(it.nutrition.carbs_g) : "", fat_g: it.nutrition?.fat_g !== undefined ? String(it.nutrition.fat_g) : "",
     variations: (it.variations ?? []).map((v) => ({ name: v.name, type: v.type, required: v.required, options: v.options.map((o) => ({ name: o.name, price: decimal(o.price, settlement) })) })),
     addons: (it.addons ?? []).map((a) => ({ name: a.name, price: decimal(a.price, settlement) })),
+    image_id: it.image_id ?? "",
+    availability_hours: it.availability_hours ?? {},
   });
 
   const branchName = branches?.find((b) => b.id === branchId)?.name ?? "menu";
@@ -138,32 +137,31 @@ function Menu() {
     } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   };
 
+  const pushMenu = async (targetId: string, targetName: string, confirmMsg: string, pct?: string) => {
+    if (!window.confirm(confirmMsg)) return;
+    setBusy(true); setNotice(null); setError(null);
+    try {
+      const r = await api<{ added: number; updated: number; markup_pct: number }>(`/v1/branches/${branchId}/menu/copy-to`, { method: "POST", country, body: { target_branch_id: targetId, ...(pct && pct.trim() !== "" ? { price_adjust_pct: Number(pct) } : {}) } });
+      const parts = [r.added ? L(`${r.added} ajoutés`, `${r.added} added`) : "", r.updated ? L(`${r.updated} mis à jour`, `${r.updated} updated`) : ""].filter(Boolean).join(", ") || L("rien à changer", "nothing to change");
+      const price = r.markup_pct ? ` · ${r.markup_pct > 0 ? "+" : ""}${r.markup_pct}%` : "";
+      setNotice(L(`« ${targetName} » : ${parts}${price}.`, `"${targetName}": ${parts}${price}.`));
+      setCopyTarget(""); setCopyPct("");
+      load();
+    } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
+  };
+  const copyMenu = () => {
+    if (!copyTarget) return;
+    const targetName = branches?.find((b) => b.id === copyTarget)?.name ?? "";
+    const pctMsg = copyPct.trim() ? L(` (prix ${Number(copyPct) >= 0 ? "+" : ""}${copyPct}%)`, ` (prices ${Number(copyPct) >= 0 ? "+" : ""}${copyPct}%)`) : "";
+    void pushMenu(copyTarget, targetName, L(`Copier ${items?.length ?? 0} plats vers « ${targetName} »${pctMsg} ?`, `Copy ${items?.length ?? 0} dishes to "${targetName}"${pctMsg}?`), copyPct);
+  };
+  const syncMenu = (c: LinkedBranch) => void pushMenu(c.id, c.name, L(`Synchroniser la carte vers « ${c.name} » ? Les plats liés seront mis à jour${c.markup_bps ? ` (prix ${c.markup_bps > 0 ? "+" : ""}${c.markup_bps / 100}%)` : ""} ; la disponibilité locale est conservée.`, `Sync the menu to "${c.name}"? Linked dishes are updated${c.markup_bps ? ` (prices ${c.markup_bps > 0 ? "+" : ""}${c.markup_bps / 100}%)` : ""}; local availability is kept.`));
+
   const save = async () => {
     if (!form) return;
     setBusy(true); setError(null);
-    const names: Record<string, string> = {};
-    if (form.name_fr.trim()) names.fr = form.name_fr.trim();
-    if (form.name_en.trim()) names.en = form.name_en.trim();
-    const body = {
-      names,
-      ...(form.desc_fr.trim() ? { description: { fr: form.desc_fr.trim() } } : { description: {} }),
-      prices: { [settlement]: form.price.trim() },
-      category: form.category.trim() || null,
-      veg: form.veg === "veg" ? true : form.veg === "non" ? false : null,
-      recommended: form.recommended,
-      age_restricted: form.age_restricted,
-      tags: form.tags.split(",").map((t) => t.trim()).filter(Boolean),
-      allergens: form.allergens.split(",").map((t) => t.trim()).filter(Boolean),
-      dietary: form.dietary,
-      nutrition: Object.fromEntries((["kcal", "protein_g", "carbs_g", "fat_g"] as const).flatMap((k) => (form[k].trim() ? [[k, Number(form[k])]] : []))),
-      variations: form.variations.filter((v) => v.name.trim() && v.options.some((o) => o.name.trim())).map((v) => ({
-        name: v.name.trim(), type: v.type, required: v.required,
-        options: v.options.filter((o) => o.name.trim()).map((o) => ({ name: o.name.trim(), price: o.price.trim() || "0" })),
-      })),
-      addons: form.addons.filter((a) => a.name.trim()).map((a) => ({ name: a.name.trim(), price: a.price.trim() || "0" })),
-    };
     try {
-      await api(`/v1/branches/${branchId}/items${form.id ? `/${form.id}` : ""}`, { method: "POST", country, body });
+      await api(`/v1/branches/${branchId}/items${form.id ? `/${form.id}` : ""}`, { method: "POST", country, body: dishPayload(form, settlement) });
       setForm(null); load();
     } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   };
@@ -188,17 +186,39 @@ function Menu() {
         <label className="btn" aria-disabled={busy}>{L("Importer", "Import")}
           <input type="file" accept=".csv,text/csv" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) void doImport(f); e.target.value = ""; }} />
         </label>
-        <button type="button" className="btn primary" onClick={() => setForm(blankForm())}>{L("Ajouter un plat", "Add a dish")}</button>
+        <button type="button" className="btn primary" onClick={() => setForm(blankDish())}>{L("Ajouter un plat", "Add a dish")}</button>
+        {branches.length > 1 ? (
+          <span className="menu-copy">
+            <select className="select" value={copyTarget} onChange={(e) => setCopyTarget(e.target.value)} aria-label={L("Copier la carte vers", "Copy menu to")}>
+              <option value="">{L("Copier la carte vers…", "Copy menu to…")}</option>
+              {branches.filter((b) => b.id !== branchId).map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+            </select>
+            {copyTarget ? <input className="input" inputMode="decimal" value={copyPct} onChange={(e) => setCopyPct(e.target.value)} placeholder={L("prix %", "price %")} title={L("Ajuster les prix, ex. 10 pour +10 %", "Adjust prices, e.g. 10 for +10%")} style={{ width: 74 }} /> : null}
+            <button type="button" className="btn" disabled={!copyTarget || busy || !items?.length} onClick={copyMenu}>{L("Copier", "Copy")}</button>
+          </span>
+        ) : null}
       </div>
       {notice ? <div className="banner ok">{notice}</div> : null}
 
+      {copies.length ? (
+        <div className="menu-synced">
+          <span className="ms-label">{L("Cartes liées à cet établissement :", "Branches synced from here:")}</span>
+          {copies.map((c) => (
+            <span key={c.id} className="ms-chip">
+              {c.name} <span className="muted">· {c.linked}{c.markup_bps ? ` · ${c.markup_bps > 0 ? "+" : ""}${c.markup_bps / 100}%` : ""}</span>
+              <button type="button" className="btn ghost sm" disabled={busy} onClick={() => syncMenu(c)}>{L("Synchroniser", "Sync")}</button>
+            </span>
+          ))}
+        </div>
+      ) : null}
+
       {!items ? <div className="muted">…</div> : (
         <table className="tbl menu-tbl">
-          <thead><tr><th>#</th><th>{L("Nom", "Name")}</th><th>{L("Catégorie", "Category")}</th><th>{L("Prix", "Price")}</th><th>{L("Recommandé", "Recommended")}</th><th>{L("Disponible", "Available")}</th><th></th></tr></thead>
+          <thead><tr><th></th><th>{L("Nom", "Name")}</th><th>{L("Catégorie", "Category")}</th><th>{L("Prix", "Price")}</th><th>{L("Recommandé", "Recommended")}</th><th>{L("Disponible", "Available")}</th><th></th></tr></thead>
           <tbody>
-            {shown.map((it, i) => (
+            {shown.map((it) => (
               <tr key={it.id}>
-                <td className="num muted">{i + 1}</td>
+                <td>{it.image_id ? <img className="menu-thumb" src={foodPhotoUrl(it.image_id, country)} alt="" /> : <span className="menu-thumb-empty" aria-hidden>🍽️</span>}</td>
                 <td>{nameOf(it.names, lang)}{it.veg === true ? <span className="dot veg" title="veg" /> : null}</td>
                 <td className="muted">{it.category ?? "—"}</td>
                 <td className="num">{it.prices[settlement] ? money(lang, it.prices[settlement]!.amount_minor, settlement) : "—"}</td>
@@ -216,37 +236,7 @@ function Menu() {
         <div className="menu-form-wrap" role="dialog" aria-modal="true">
           <div className="menu-form card">
             <div className="card-head"><div><h2>{form.id ? L("Modifier le plat", "Edit dish") : L("Nouveau plat", "New dish")}</h2></div><button type="button" className="btn ghost sm" onClick={() => setForm(null)}>✕</button></div>
-            <div className="ff">
-              <label>{L("Nom (FR)", "Name (FR)")}<input className="input" value={form.name_fr} onChange={(e) => setForm({ ...form, name_fr: e.target.value })} /></label>
-              <label>{L("Nom (EN)", "Name (EN)")}<input className="input" value={form.name_en} onChange={(e) => setForm({ ...form, name_en: e.target.value })} /></label>
-              <label className="wide">{L("Description (FR)", "Description (FR)")}<textarea className="input" rows={2} value={form.desc_fr} onChange={(e) => setForm({ ...form, desc_fr: e.target.value })} /></label>
-              <label>{L("Catégorie", "Category")}<input className="input" list="cats" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} /><datalist id="cats">{CATEGORIES.map((c) => <option key={c} value={c} />)}</datalist></label>
-              <label>{L("Prix", "Price")} ({settlement})<input className="input" inputMode="decimal" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} /></label>
-              <label>{L("Type", "Type")}<select className="select" value={form.veg} onChange={(e) => setForm({ ...form, veg: e.target.value as Form["veg"] })}><option value="">—</option><option value="veg">{L("Végétarien", "Veg")}</option><option value="non">{L("Non végétarien", "Non-veg")}</option></select></label>
-              <label className="chk"><input type="checkbox" checked={form.recommended} onChange={(e) => setForm({ ...form, recommended: e.target.checked })} /> {L("Recommandé", "Recommended")}</label>
-              <label className="chk"><input type="checkbox" checked={form.age_restricted} onChange={(e) => setForm({ ...form, age_restricted: e.target.checked })} /> {L("Réservé aux 18+ (alcool)", "Age-restricted (18+)")}</label>
-              <label>{L("Balises (séparées par des virgules)", "Tags (comma-separated)")}<input className="input" value={form.tags} onChange={(e) => setForm({ ...form, tags: e.target.value })} /></label>
-              <label>{L("Allergènes (virgules)", "Allergens (commas)")}<input className="input" value={form.allergens} onChange={(e) => setForm({ ...form, allergens: e.target.value })} /></label>
-              <div className="wide">
-                <span className="ff-label">{L("Régimes", "Dietary")}</span>
-                <div className="chips">
-                  {DIETARY.map((d) => {
-                    const on = form.dietary.includes(d);
-                    return <button type="button" key={d} className={`chip ${on ? "on" : ""}`} aria-pressed={on} onClick={() => setForm({ ...form, dietary: on ? form.dietary.filter((x) => x !== d) : [...form.dietary, d] })}>{DIETARY_LABEL[d]?.[lang === "fr" ? 0 : 1] ?? d}</button>;
-                  })}
-                </div>
-              </div>
-              <div className="wide">
-                <span className="ff-label">{L("Valeurs nutritionnelles (par portion)", "Nutrition (per serving)")}</span>
-                <div className="nutri">
-                  {(["kcal", "protein_g", "carbs_g", "fat_g"] as const).map((k) => (
-                    <label key={k} className="nutri-f">{k === "kcal" ? "kcal" : k === "protein_g" ? L("Protéines g", "Protein g") : k === "carbs_g" ? L("Glucides g", "Carbs g") : L("Lipides g", "Fat g")}
-                      <input className="input" inputMode="decimal" value={form[k]} onChange={(e) => setForm({ ...form, [k]: e.target.value.replace(/[^0-9.]/g, "") })} />
-                    </label>
-                  ))}
-                </div>
-              </div>
-            </div>
+            <DishFields form={form} setForm={setForm} settlement={settlement} lang={lang} country={country} L={L} />
 
             <OptionsEditor form={form} setForm={setForm} settlement={settlement} L={L} />
 
@@ -257,49 +247,6 @@ function Menu() {
           </div>
         </div>
       ) : null}
-    </div>
-  );
-}
-
-function OptionsEditor({ form, setForm, settlement, L }: { form: Form; setForm: (f: Form) => void; settlement: string; L: (fr: string, en: string) => string }) {
-  const setVar = (i: number, patch: Partial<FormVariation>) => setForm({ ...form, variations: form.variations.map((v, k) => k === i ? { ...v, ...patch } : v) });
-  const setOpt = (vi: number, oi: number, patch: Partial<{ name: string; price: string }>) =>
-    setVar(vi, { options: form.variations[vi]!.options.map((o, k) => k === oi ? { ...o, ...patch } : o) });
-  return (
-    <div className="opt-ed">
-      <div className="opt-sec">
-        <div className="opt-head"><h3>{L("Variations", "Variations")} <span className="muted">({L("taille, choix…", "size, choice…")})</span></h3>
-          <button type="button" className="btn ghost sm" onClick={() => setForm({ ...form, variations: [...form.variations, { name: "", type: "SINGLE", required: false, options: [{ name: "", price: "" }] }] })}>+ {L("Variation", "Variation")}</button></div>
-        {form.variations.map((v, vi) => (
-          <div className="opt-grp" key={vi}>
-            <div className="opt-grp-top">
-              <input className="input" placeholder={L("Nom (ex. Taille)", "Name (e.g. Size)")} value={v.name} onChange={(e) => setVar(vi, { name: e.target.value })} />
-              <select className="select" value={v.type} onChange={(e) => setVar(vi, { type: e.target.value as "SINGLE" | "MULTI" })}><option value="SINGLE">{L("Choix unique", "Single")}</option><option value="MULTI">{L("Choix multiple", "Multiple")}</option></select>
-              <label className="chk"><input type="checkbox" checked={v.required} onChange={(e) => setVar(vi, { required: e.target.checked })} /> {L("Requis", "Required")}</label>
-              <button type="button" className="btn ghost sm" onClick={() => setForm({ ...form, variations: form.variations.filter((_, k) => k !== vi) })}>✕</button>
-            </div>
-            {v.options.map((o, oi) => (
-              <div className="opt-row" key={oi}>
-                <input className="input" placeholder={L("Option (ex. Grande)", "Option (e.g. Large)")} value={o.name} onChange={(e) => setOpt(vi, oi, { name: e.target.value })} />
-                <input className="input price" inputMode="decimal" placeholder={`+ ${settlement}`} value={o.price} onChange={(e) => setOpt(vi, oi, { price: e.target.value })} />
-                <button type="button" className="btn ghost sm" onClick={() => setVar(vi, { options: v.options.filter((_, k) => k !== oi) })}>✕</button>
-              </div>
-            ))}
-            <button type="button" className="btn ghost sm" onClick={() => setVar(vi, { options: [...v.options, { name: "", price: "" }] })}>+ {L("Option", "Option")}</button>
-          </div>
-        ))}
-      </div>
-      <div className="opt-sec">
-        <div className="opt-head"><h3>{L("Add-ons", "Add-ons")} <span className="muted">({L("extras payants", "paid extras")})</span></h3>
-          <button type="button" className="btn ghost sm" onClick={() => setForm({ ...form, addons: [...form.addons, { name: "", price: "" }] })}>+ {L("Add-on", "Add-on")}</button></div>
-        {form.addons.map((a, ai) => (
-          <div className="opt-row" key={ai}>
-            <input className="input" placeholder={L("Nom (ex. Fromage)", "Name (e.g. Cheese)")} value={a.name} onChange={(e) => setForm({ ...form, addons: form.addons.map((x, k) => k === ai ? { ...x, name: e.target.value } : x) })} />
-            <input className="input price" inputMode="decimal" placeholder={`+ ${settlement}`} value={a.price} onChange={(e) => setForm({ ...form, addons: form.addons.map((x, k) => k === ai ? { ...x, price: e.target.value } : x) })} />
-            <button type="button" className="btn ghost sm" onClick={() => setForm({ ...form, addons: form.addons.filter((_, k) => k !== ai) })}>✕</button>
-          </div>
-        ))}
-      </div>
     </div>
   );
 }

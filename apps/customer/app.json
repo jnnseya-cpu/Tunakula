@@ -1,0 +1,47 @@
+{
+  "expo": {
+    "name": "Tunakula",
+    "slug": "tunakula-customer",
+    "scheme": "tunakula",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "backgroundColor": "#fff7ee",
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#fff7ee"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.tunakula.customer",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Tunakula uses your location to show nearby restaurants and shops and to deliver your order to the right place."
+      }
+    },
+    "android": {
+      "package": "com.tunakula.customer",
+      "adaptiveIcon": {
+        "backgroundColor": "#ff7a18"
+      },
+      "permissions": ["ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION"]
+    },
+    "plugins": [
+      "expo-secure-store",
+      "expo-location",
+      [
+        "expo-notifications",
+        {
+          "color": "#ff7a18"
+        }
+      ]
+    ],
+    "extra": {
+      "apiUrl": "https://api.tunakula.com",
+      "country": "CD",
+      "eas": {
+        "projectId": "set-by-eas-init"
+      }
+    }
+  }
+}

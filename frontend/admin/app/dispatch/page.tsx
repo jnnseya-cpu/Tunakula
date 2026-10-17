@@ -16,7 +16,9 @@ interface Rider {
   id: string; name: string; phone: string | null; zones: string[]; vehicle: string; status: "AVAILABLE" | "OFFERED" | "BUSY" | "OFFLINE" | "SIGNAL_LOST";
   position: { lat: number; lng: number } | null; last_seen: string | null; online_minutes: number;
   job: { order_id: string; ref: string; state: string } | null; delivered_today: number; cash_in_hand: { amount_minor: string; currency: string };
+  on_shift?: boolean;
 }
+interface HeatZone { zone: string; waiting: number; recent: number; riders: number; level: "HOT" | "BUSY" | "STEADY" | "QUIET" }
 interface Order {
   order_id: string; ref: string; state: string; pickup: { name: string; lat: number; lng: number }; drop: { lat: number; lng: number } | null;
   rider: { id: string; name: string } | null; offer: { rider_id: string; rider_name: string; seconds_left: number } | null;
@@ -55,12 +57,14 @@ function Dispatch() {
   const [cashIn, setCashIn] = useState<Rider | null>(null);
   const [filter, setFilter] = useState<"active" | "all">("active");
   const [incidents, setIncidents] = useState<Incident[]>([]);
+  const [heat, setHeat] = useState<HeatZone[]>([]);
 
   const load = useCallback(async () => {
     try {
       setBoard(await api<Board>("/v1/ops/dispatch", { country }));
       setError(null);
       api<{ incidents: Incident[] }>("/v1/ops/incidents", { country }).then((r) => setIncidents(r.incidents)).catch(() => undefined);
+      api<{ zones: HeatZone[] }>("/v1/ops/heatmap", { country }).then((r) => setHeat(r.zones.filter((z) => z.level !== "QUIET"))).catch(() => undefined);
     } catch (e) { setError((e as Error).message); }
   }, [country]);
   const resolveIncident = async (id: string, status: "ACKNOWLEDGED" | "RESOLVED") => {
@@ -93,6 +97,16 @@ function Dispatch() {
         <div className={`tile ${late.length ? "bad" : ""}`}><div className="label">{L("Cuisines en retard", "Kitchens running late")}</div><div className="value">{late.length}</div></div>
         <div className="tile"><div className="label">{L("Signal perdu", "Signal lost")}</div><div className="value">{count("SIGNAL_LOST")}</div></div>
       </div>
+      {heat.length ? (
+        <div className="dsp-heat">
+          <span className="dsp-heat-label">{L("Zones chaudes", "Busy zones")}</span>
+          {heat.map((z) => (
+            <span key={z.zone} className={`dsp-heat-chip ${z.level.toLowerCase()}`} title={`${z.waiting} ${L("en attente", "waiting")} · ${z.recent} ${L("récentes", "recent")} · ${z.riders} ${L("livreurs", "riders")}`}>
+              {z.zone} <b>{z.waiting}</b>
+            </span>
+          ))}
+        </div>
+      ) : null}
       {error ? <div className="banner error">{error}</div> : null}
       {incidents.length ? (
         <div className="banner error dsp-safety">
@@ -157,7 +171,7 @@ function Dispatch() {
             <tbody>
               {board.riders.map((r) => (
                 <tr key={r.id} className={selected === `r:${r.id}` ? "sel" : ""} onClick={() => setSelected(`r:${r.id}`)}>
-                  <td><b>{r.name}</b><div className="muted small">{r.phone} · {r.vehicle.toLowerCase()}</div></td>
+                  <td><b>{r.name}</b>{r.on_shift ? <span className="shift-badge" title={L("En service (créneau réservé)", "On a booked shift")}>{L("en service", "on shift")}</span> : null}<div className="muted small">{r.phone} · {r.vehicle.toLowerCase()}</div></td>
                   <td><span className={`st ${r.status.toLowerCase()}`}>{L(STATUS[r.status][0], STATUS[r.status][1])}</span></td>
                   <td className="muted">{r.zones.length > 3 ? `${r.zones.slice(0, 3).join(", ")} +${r.zones.length - 3}` : r.zones.join(", ")}</td>
                   <td>{r.job ? <>#{r.job.ref} · {L(...(STATE[r.job.state] ?? [r.job.state, r.job.state]))}</> : "—"}</td>

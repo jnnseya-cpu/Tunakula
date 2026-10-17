@@ -5,6 +5,7 @@ import { Suspense, useEffect, useState } from "react";
 import { Gate, Shell, useConsole } from "../../../components/shell";
 import { api, type Money } from "../../../lib/api";
 import { money } from "../../../lib/format";
+import { BusinessProfile } from "../../../components/branch-profile";
 
 interface Item { id: string; names: Record<string, string>; prices: Record<string, Money>; tags: string[]; allergens: string[]; available: boolean }
 interface Menu { branch: { id: string; name: string; commune: string | null; status: string }; items: Item[] }
@@ -19,7 +20,6 @@ function MerchantMenu() {
   const [menu, setMenu] = useState<Menu | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [form, setForm] = useState({ fr: "", en: "", usd: "", cdf: "", allergens: "" });
   const L = (fr: string, en: string) => (lang === "fr" ? fr : en);
 
   const load = () => api<Menu>(`/v1/branches/${id}/menu`, { country }).then((m) => { setMenu(m); setError(null); }).catch((e: Error) => setError(e.message));
@@ -31,25 +31,17 @@ function MerchantMenu() {
       void load();
     } catch (e) { setNotice((e as Error).message); }
   };
-  const add = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const prices: Record<string, string> = {};
-    if (form.usd) prices["USD"] = form.usd;
-    if (form.cdf) prices["CDF"] = form.cdf;
-    try {
-      await api(`/v1/branches/${id}/items`, { method: "POST", country, body: { names: { fr: form.fr, ...(form.en ? { en: form.en } : {}) }, prices, allergens: form.allergens.split(",").map((a) => a.trim()).filter(Boolean) } });
-      setForm({ fr: "", en: "", usd: "", cdf: "", allergens: "" });
-      setNotice(L("Article ajouté.", "Item added.")); void load();
-    } catch (err) { setNotice((err as Error).message); }
-  };
-
   if (error) return <div className="banner error">{error}</div>;
   if (!menu) return <div className="muted">…</div>;
   return (
     <>
       <p><Link className="link-btn" href="/merchants/">← {L("Restaurants et commerces", "Merchants")}</Link></p>
+      <BusinessProfile branchId={id} country={country} lang={lang} L={L} />
       <section className="card">
-        <div className="card-head"><div><h2>{menu.branch.name}</h2><p>{menu.branch.commune ?? ""} · {menu.items.length} {L("articles", "items")}</p></div></div>
+        <div className="card-head">
+          <div><h2>{menu.branch.name}</h2><p>{menu.branch.commune ?? ""} · {menu.items.length} {L("articles", "items")}</p></div>
+          <Link className="btn primary" href={`/menu/?branch=${id}`}>{L("Gérer la carte", "Manage menu")}</Link>
+        </div>
         <div className="table-wrap">
           <table className="data">
             <thead><tr><th>{L("Article", "Item")}</th><th className="num">USD</th><th className="num">CDF</th><th>{L("Allergènes", "Allergens")}</th><th>{L("Disponible", "Available")}</th></tr></thead>
@@ -67,18 +59,7 @@ function MerchantMenu() {
           </table>
         </div>
       </section>
-      <section className="card">
-        <div className="card-head"><div><h2>{L("Ajouter un article", "Add an item")}</h2><p>{L("Prix du comptoir, en unités normales (ex. 12.50). Un prix USD est obligatoire.", "Counter prices in normal units (e.g. 12.50). A USD price is required.")}</p></div></div>
-        <form className="filters" onSubmit={add}>
-          <input className="input" required placeholder={L("Nom (français)", "Name (French)")} value={form.fr} onChange={(e) => setForm({ ...form, fr: e.target.value })} />
-          <input className="input" placeholder={L("Nom (anglais)", "Name (English)")} value={form.en} onChange={(e) => setForm({ ...form, en: e.target.value })} />
-          <input className="input" required inputMode="decimal" placeholder="USD" value={form.usd} onChange={(e) => setForm({ ...form, usd: e.target.value })} style={{ width: 100 }} />
-          <input className="input" inputMode="decimal" placeholder="CDF" value={form.cdf} onChange={(e) => setForm({ ...form, cdf: e.target.value })} style={{ width: 110 }} />
-          <input className="input" placeholder={L("Allergènes (virgules)", "Allergens (commas)")} value={form.allergens} onChange={(e) => setForm({ ...form, allergens: e.target.value })} />
-          <button className="btn primary" type="submit">{L("Ajouter", "Add")}</button>
-        </form>
-        {notice ? <div className="banner" style={{ marginTop: 10 }}>{notice}</div> : null}
-      </section>
+      {notice ? <div className="banner" style={{ marginBottom: 12 }}>{notice}</div> : null}
       <Hours branchId={id} country={country} L={L} />
       <Reservations branchId={id} country={country} lang={lang} L={L} />
       <Reviews branchId={id} country={country} lang={lang} L={L} />
@@ -208,12 +189,22 @@ interface Review { id: string; restaurant_rating: number; rider_rating: number |
 function Reviews({ branchId, country, lang, L }: { branchId: string; country: string; lang: string; L: (fr: string, en: string) => string }) {
   const [rows, setRows] = useState<Review[] | null>(null);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [badges, setBadges] = useState<Record<string, string>>({});
+  const [drafting, setDrafting] = useState<string>("");
   const [notice, setNotice] = useState<string | null>(null);
   const load = () => api<{ reviews: Review[] }>(`/v1/admin/branches/${branchId}/reviews`, { country }).then((r) => setRows(r.reviews)).catch(() => setRows([]));
   useEffect(() => { void load(); }, [branchId, country]); // eslint-disable-line react-hooks/exhaustive-deps
   const reply = async (id: string) => {
     try { await api(`/v1/admin/reviews/${id}/reply`, { method: "POST", country, body: { reply: drafts[id] ?? "" } }); setNotice(L("Réponse publiée.", "Reply posted.")); void load(); }
     catch (e) { setNotice((e as Error).message); }
+  };
+  const draftWithAi = async (id: string) => {
+    setDrafting(id); setNotice(null);
+    try {
+      // No lang sent → the reply is drafted in the reviewer's own language.
+      const r = await api<{ draft: string; source: string }>(`/v1/admin/reviews/${id}/draft-reply`, { method: "POST", country, body: {} });
+      setDrafts((d) => ({ ...d, [id]: r.draft })); setBadges((b) => ({ ...b, [id]: r.source }));
+    } catch (e) { setNotice((e as Error).message); } finally { setDrafting(""); }
   };
   const stars = (n: number) => "★".repeat(n) + "☆".repeat(5 - n);
   return (
@@ -227,8 +218,10 @@ function Reviews({ branchId, country, lang, L }: { branchId: string; country: st
           {r.comment ? <p className="review-comment">{r.comment}</p> : null}
           {r.reply ? <p className="review-reply"><b>{L("Votre réponse :", "Your reply:")}</b> {r.reply}</p> : (
             <div className="review-reply-form">
-              <input className="input" placeholder={L("Répondre…", "Reply…")} value={drafts[r.id] ?? ""} onChange={(e) => setDrafts({ ...drafts, [r.id]: e.target.value })} />
+              <input className="input" placeholder={L("Répondre…", "Reply…")} value={drafts[r.id] ?? ""} onChange={(e) => { setDrafts({ ...drafts, [r.id]: e.target.value }); }} />
+              <button type="button" className="btn ghost" disabled={!!drafting} onClick={() => draftWithAi(r.id)}>{drafting === r.id ? "…" : L("✨ Rédiger (IA)", "✨ Draft with AI")}</button>
               <button type="button" className="btn" disabled={!(drafts[r.id] ?? "").trim()} onClick={() => reply(r.id)}>{L("Répondre", "Reply")}</button>
+              {badges[r.id] ? <span className={`pill ${badges[r.id] === "ai" ? "good" : ""}`}>{badges[r.id] === "ai" ? L("IA", "AI") : L("Modèle", "Template")}</span> : null}
             </div>
           )}
         </div>

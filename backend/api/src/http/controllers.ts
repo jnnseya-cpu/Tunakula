@@ -1,6 +1,6 @@
 /** /v1 endpoints (§25.2). Controllers are thin: parse, authenticate, delegate, shape the response. */
-import { Body, Controller, Delete, Get, HttpCode, Inject, Param, Post, Query, Req } from "@nestjs/common";
-import type { FastifyRequest } from "fastify";
+import { Body, Controller, Delete, Get, HttpCode, Inject, Param, Post, Query, Req, Res } from "@nestjs/common";
+import type { FastifyReply, FastifyRequest } from "fastify";
 import { randomUUID } from "node:crypto";
 import { currencies, currencyFlag, Money } from "@tunakula/ts-money";
 import type { PaymentMethodType } from "@tunakula/ts-contracts";
@@ -14,18 +14,38 @@ import type { OnboardingService } from "../app/onboarding.ts";
 import type { MembershipService } from "../app/membership.ts";
 import type { GroupOrderService } from "../app/group.ts";
 import type { CouponService } from "../app/coupons.ts";
+import type { BroadcastService, BroadcastAudience } from "../app/broadcast.ts";
 import type { ReviewService } from "../app/reviews.ts";
 import type { AddressService } from "../app/addresses.ts";
 import type { ReservationService, BookingStatus } from "../app/reservations.ts";
 import type { RefundService } from "../app/refunds.ts";
 import type { WalletService } from "../app/wallet.ts";
 import type { ReferralService } from "../app/referrals.ts";
+import type { LoyaltyService } from "../app/loyalty.ts";
+import type { CashbackService } from "../app/cashback.ts";
+import type { ChatService } from "../app/chat.ts";
+import type { BannerService } from "../app/banners.ts";
+import type { SiteContentService } from "../app/site-content.ts";
+import type { ChefService } from "../app/chef.ts";
+import type { AssistantService } from "../app/assistant.ts";
+import type { GrowthService } from "../app/growth.ts";
+import type { MerchantCopilotService } from "../app/merchant-copilot.ts";
+import type { MenuWriterService } from "../app/menu-writer.ts";
+import type { UpsellService } from "../app/upsell.ts";
+import type { RiderCopilotService } from "../app/rider-copilot.ts";
+import type { IntegrationsService } from "../app/integrations.ts";
+import type { SubscriptionService } from "../app/subscriptions.ts";
+import type { PosService } from "../app/pos.ts";
+import type { KioskService } from "../app/kiosk.ts";
+import type { MerchantPlanService } from "../app/merchant-plans.ts";
+import type { PushService } from "../app/push.ts";
 import type { MerchantOnboardingService } from "../app/merchant-onboarding.ts";
 import type { NotificationService } from "../app/comms.ts";
 import { serialiseQuote, type CommerceService, type PlaceOrderInput, type QuoteInput } from "../app/commerce.ts";
 import { badRequest, notFound } from "../app/errors.ts";
 import type { PaymentService } from "../app/payments.ts";
 import { loadPrincipal } from "../app/principal.ts";
+import { isTerminal, snapshotChanged, sseFrame, SSE_HEARTBEAT, type TrackSnapshot } from "../app/order-stream.ts";
 import type { TokenService } from "../app/tokens.ts";
 import type { Db } from "../db/db.ts";
 import type { CountryConfigRegistry } from "../modules/config/config-registry.ts";
@@ -74,10 +94,11 @@ export class AuthController {
 
   @Post("verify")
   @HttpCode(200)
-  async verify(@Body() body: { phone?: string; code?: string; display_name?: string; home_country?: string }) {
+  async verify(@Body() body: { phone?: string; code?: string; display_name?: string; home_country?: string; locale?: string }) {
     const r = await this.auth.verifyCode(body?.phone ?? "", body?.code ?? "", {
       ...(body?.display_name ? { displayName: body.display_name } : {}),
       ...(body?.home_country ? { homeCountry: body.home_country } : {}),
+      ...(body?.locale ? { locale: body.locale } : {}),
     });
     return { token: r.token, expires_at: r.expiresAt.toISOString(), user_id: r.userId, new_account: r.created };
   }
@@ -90,7 +111,16 @@ export class CatalogueController {
     @Inject(TOKENS.tokens) private readonly tokens: TokenService,
     @Inject(TOKENS.catalogue) private readonly catalogue: CatalogueService,
     @Inject(TOKENS.eta) private readonly eta: EtaService,
+    @Inject(TOKENS.upsell) private readonly upsell: UpsellService,
   ) {}
+
+  /** Public: suggest one complementary dish for the current cart, with a short AI pitch. Grounded, read-only. */
+  @Post("branches/:id/upsell")
+  @HttpCode(200)
+  upsellForCart(@Req() req: FastifyRequest, @Param("id") id: string, @Body() body: { item_ids?: string[]; lang?: string }) {
+    const ids = Array.isArray(body?.item_ids) ? body.item_ids.map(String).slice(0, 50) : [];
+    return this.upsell.suggest(country(req), id, ids, body?.lang === "en" ? "en" : "fr");
+  }
 
   /** Storefronts near a point, nearest first, each with road distance in km, delivery time and fee. */
   @Get("branches/nearby")
@@ -111,11 +141,37 @@ export class CatalogueController {
     return this.catalogue.menu(country(req), id);
   }
 
-  @Post("branches")
-  async createBranch(@Req() req: FastifyRequest, @Body() body: { name: string; restaurant_group_id: string; city?: string; commune?: string; lat: number; lng: number }) {
+  /** Public: serve a food photo for <img>. Country comes from ?c= so a plain image URL works (no header). */
+  @Get("menu-images/:id")
+  async menuImage(@Param("id") id: string, @Query("c") c: string, @Res() reply: FastifyReply) {
+    await this.#serveImage(id, c, reply);
+  }
+
+  /** Public: serve any public image (food photo, logo or cover) for <img>, country in ?c=. */
+  @Get("images/:id")
+  async publicImage(@Param("id") id: string, @Query("c") c: string, @Res() reply: FastifyReply) {
+    await this.#serveImage(id, c, reply);
+  }
+
+  async #serveImage(id: string, c: string, reply: FastifyReply) {
+    if (typeof c !== "string" || !/^[A-Z]{2}$/.test(c)) throw badRequest("COUNTRY_REQUIRED", "Send the market as ?c=CD");
+    const img = await this.catalogue.publicImage(c, id);
+    await reply.header("content-type", img.content_type).header("cache-control", "public, max-age=86400").send(img.bytes);
+  }
+
+  /** Merchant: set a branch's business profile (address, contact, about, cuisines, order minimum, logo, cover). */
+  @Post("branches/:id/profile")
+  @HttpCode(200)
+  async setProfile(@Req() req: FastifyRequest, @Param("id") id: string, @Body() body: ProfileBody) {
     const principal = await this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
-    const b = await this.catalogue.createBranch(country(req), principal, { name: body?.name, restaurantGroupId: body?.restaurant_group_id, ...(body?.city ? { city: body.city } : {}), ...(body?.commune ? { commune: body.commune } : {}), lat: body?.lat, lng: body?.lng });
-    return { id: b.id, name: b.name, city: b.city, commune: b.commune, status: b.status };
+    return this.catalogue.updateProfile(country(req), principal, id, body ?? {});
+  }
+
+  @Post("branches")
+  async createBranch(@Req() req: FastifyRequest, @Body() body: { name: string; restaurant_group_id: string; city?: string; commune?: string; lat: number; lng: number; store_type?: string; delivery_lead_days?: number }) {
+    const principal = await this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+    const b = await this.catalogue.createBranch(country(req), principal, { name: body?.name, restaurantGroupId: body?.restaurant_group_id, ...(body?.city ? { city: body.city } : {}), ...(body?.commune ? { commune: body.commune } : {}), lat: body?.lat, lng: body?.lng, ...(body?.store_type ? { storeType: String(body.store_type) } : {}), ...(body?.delivery_lead_days !== undefined ? { deliveryLeadDays: Number(body.delivery_lead_days) } : {}) });
+    return { id: b.id, name: b.name, city: b.city, commune: b.commune, status: b.status, store_type: b.store_type ?? "RESTAURANT", delivery_lead_days: b.delivery_lead_days ?? 0 };
   }
 
   @Post("branches/:id/items")
@@ -139,6 +195,22 @@ export class CatalogueController {
     return this.catalogue.importMenu(country(req), principal, id, body?.rows ?? []);
   }
 
+  /** Copy or sync this branch's whole menu into another branch of the same owner. */
+  @Post("branches/:id/menu/copy-to")
+  @HttpCode(200)
+  async copyMenu(@Req() req: FastifyRequest, @Param("id") id: string, @Body() body: { target_branch_id?: string; price_adjust_pct?: number | string | null }) {
+    const principal = await this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+    const pct = body?.price_adjust_pct === undefined || body.price_adjust_pct === null || body.price_adjust_pct === "" ? undefined : Number(body.price_adjust_pct);
+    return this.catalogue.copyMenuTo(country(req), principal, id, String(body?.target_branch_id ?? ""), pct);
+  }
+
+  /** The branches already seeded from this one, so the owner can sync later edits down to them. */
+  @Get("branches/:id/menu/copies")
+  async menuCopies(@Req() req: FastifyRequest, @Param("id") id: string) {
+    const principal = await this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+    return this.catalogue.menuCopies(country(req), principal, id);
+  }
+
   @Post("branches/:id/items/:item/availability")
   @HttpCode(200)
   async availability(@Req() req: FastifyRequest, @Param("id") id: string, @Param("item") item: string, @Body() body: { available: boolean }) {
@@ -146,11 +218,74 @@ export class CatalogueController {
     if (typeof body?.available !== "boolean") throw badRequest("AVAILABLE_REQUIRED", "Send { \"available\": true | false }");
     return this.catalogue.setAvailability(country(req), principal, id, item, body.available);
   }
+
+  /** Public: the areas a branch delivers to (centre, radius, any area fee/minimum) — for the storefront. */
+  @Get("branches/:id/delivery-zones")
+  async zones(@Req() req: FastifyRequest, @Param("id") id: string) {
+    return this.catalogue.zones(country(req), id);
+  }
+
+  /** Merchant: all of a branch's delivery zones (active and off) for the console editor. */
+  @Get("branches/:id/delivery-zones/manage")
+  async adminZones(@Req() req: FastifyRequest, @Param("id") id: string) {
+    const principal = await this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+    return this.catalogue.adminZones(country(req), principal, id);
+  }
+
+  @Post("branches/:id/delivery-zones")
+  async createZone(@Req() req: FastifyRequest, @Param("id") id: string, @Body() body: ZoneBody) {
+    const principal = await this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+    return this.catalogue.createZone(country(req), principal, id, body ?? {});
+  }
+
+  @Post("branches/:id/delivery-zones/:zone")
+  @HttpCode(200)
+  async updateZone(@Req() req: FastifyRequest, @Param("id") id: string, @Param("zone") zone: string, @Body() body: ZoneBody) {
+    const principal = await this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+    return this.catalogue.updateZone(country(req), principal, id, zone, body ?? {});
+  }
+
+  @Delete("branches/:id/delivery-zones/:zone")
+  @HttpCode(200)
+  async deleteZone(@Req() req: FastifyRequest, @Param("id") id: string, @Param("zone") zone: string) {
+    const principal = await this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+    return this.catalogue.deleteZone(country(req), principal, id, zone);
+  }
+
+  /** Merchant: a branch's happy-hour promotions. */
+  @Get("branches/:id/promotions")
+  async promotions(@Req() req: FastifyRequest, @Param("id") id: string) {
+    const principal = await this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+    return this.catalogue.promotions(country(req), principal, id);
+  }
+
+  @Post("branches/:id/promotions")
+  async createPromotion(@Req() req: FastifyRequest, @Param("id") id: string, @Body() body: PromotionBody) {
+    const principal = await this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+    return this.catalogue.createPromotion(country(req), principal, id, body ?? {});
+  }
+
+  @Post("branches/:id/promotions/:promo")
+  @HttpCode(200)
+  async updatePromotion(@Req() req: FastifyRequest, @Param("id") id: string, @Param("promo") promo: string, @Body() body: PromotionBody) {
+    const principal = await this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+    return this.catalogue.updatePromotion(country(req), principal, id, promo, body ?? {});
+  }
+
+  @Delete("branches/:id/promotions/:promo")
+  @HttpCode(200)
+  async deletePromotion(@Req() req: FastifyRequest, @Param("id") id: string, @Param("promo") promo: string) {
+    const principal = await this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+    return this.catalogue.deletePromotion(country(req), principal, id, promo);
+  }
 }
 
-type ItemBody = { names: Record<string, string>; description?: Record<string, string>; prices: Record<string, string>; category?: string | null; veg?: boolean | null; tags?: string[]; allergens?: string[]; recommended?: boolean; variations?: unknown; addons?: unknown };
+type ItemBody = { names: Record<string, string>; description?: Record<string, string>; prices: Record<string, string>; category?: string | null; veg?: boolean | null; tags?: string[]; allergens?: string[]; recommended?: boolean; variations?: unknown; addons?: unknown; image_id?: string | null; unit_label?: string | null };
+type ProfileBody = { address?: string | null; phone?: string | null; email?: string | null; description?: Record<string, string>; cuisines?: string[]; min_order?: string | null; logo_id?: string | null; cover_id?: string | null; store_type?: string };
+type ZoneBody = { name?: string; centre_lat?: number | string; centre_lng?: number | string; radius_m?: number | string; flat_fee?: string | number | null; min_order?: string | number | null; active?: boolean };
+type PromotionBody = { name?: string; scope?: "ITEM" | "CATEGORY" | "BRANCH"; target_item_id?: string | null; target_category?: string | null; percent?: number | string; hours?: unknown; active?: boolean };
 type QuoteItemBody = { item_id: string; quantity: number; options?: { group: string; choices: string[] }[]; addons?: string[]; note?: string };
-type QuoteBody = { branch_id: string; items: QuoteItemBody[]; order_type: QuoteInput["orderType"]; delivery?: { lat: number; lng: number; rural?: boolean }; tip?: string; coupon_code?: string };
+type QuoteBody = { branch_id: string; items: QuoteItemBody[]; order_type: QuoteInput["orderType"]; delivery?: { lat: number; lng: number; rural?: boolean }; tip?: string; coupon_code?: string; scheduled_for?: string };
 
 const toQuoteInput = (b: QuoteBody): QuoteInput => {
   if (!b || typeof b.branch_id !== "string" || !Array.isArray(b.items)) throw badRequest("BODY_INVALID", "Send branch_id, items and order_type");
@@ -161,6 +296,7 @@ const toQuoteInput = (b: QuoteBody): QuoteInput => {
     ...(b.delivery ? { delivery: b.delivery } : {}),
     ...(b.tip ? { tip: b.tip } : {}),
     ...(b.coupon_code ? { couponCode: String(b.coupon_code) } : {}),
+    ...(b.scheduled_for ? { scheduledFor: String(b.scheduled_for) } : {}),
   };
 };
 
@@ -187,7 +323,7 @@ export class OrdersController {
   }
 
   @Post("orders")
-  async place(@Req() req: FastifyRequest, @Body() body: QuoteBody & { payment_mode: PlaceOrderInput["paymentMode"]; expected_total: PlaceOrderInput["expectedTotal"]; recipient?: PlaceOrderInput["recipient"]; gifted?: boolean; contactless?: boolean; age_confirmed?: boolean; kitchen_note?: string; scheduled_for?: string; address?: { landmark?: string; voice_note_url?: string } }) {
+  async place(@Req() req: FastifyRequest, @Body() body: QuoteBody & { payment_mode: PlaceOrderInput["paymentMode"]; expected_total: PlaceOrderInput["expectedTotal"]; wallet_apply_minor?: string; recipient?: PlaceOrderInput["recipient"]; gifted?: boolean; contactless?: boolean; age_confirmed?: boolean; kitchen_note?: string; scheduled_for?: string; address?: { landmark?: string; voice_note_url?: string } }) {
     const uid = userId(req, this.tokens);
     const principal = await this.db.tx({}, (sql) => loadPrincipal(sql, uid));
     const key = req.headers["idempotency-key"] as string;
@@ -195,6 +331,7 @@ export class OrdersController {
       ...toQuoteInput(body),
       paymentMode: body.payment_mode ?? "PREPAID",
       expectedTotal: body.expected_total,
+      ...(body.wallet_apply_minor !== undefined && body.wallet_apply_minor !== null && String(body.wallet_apply_minor) !== "" ? { walletApplyMinor: String(body.wallet_apply_minor) } : {}),
       ...(body.recipient ? { recipient: body.recipient } : {}),
       ...(body.gifted ? { gifted: true } : {}),
       ...(body.contactless ? { contactless: true } : {}),
@@ -213,6 +350,71 @@ export class OrdersController {
     const { order, timeline, branch } = await this.commerce.get(c, principal, id);
     const rider = order.riderId ? await this.dispatch.riderForCustomer(c, order.riderId, order.state, order.snapshot.dropLocation) : null;
     return { ...orderView(order), branch, rider, drop: order.snapshot.dropLocation ?? null, timeline: timeline.map((t) => ({ state: t.state, at: new Date(t.at).toISOString() })) };
+  }
+
+  /**
+   * Live order tracking over Server-Sent Events. The browser's EventSource cannot set headers, so this
+   * route takes the auth token and the market as query params (?token=&c=). It holds the connection open
+   * and pushes an `update` event whenever the order's state or the rider's position changes, a `done`
+   * event at a terminal state, and a heartbeat comment to keep the socket alive. Closes on disconnect.
+   */
+  @Get("orders/:id/stream")
+  async stream(@Req() req: FastifyRequest, @Res() reply: FastifyReply, @Param("id") id: string) {
+    const q = (req.query ?? {}) as { token?: string; c?: string };
+    const header = req.headers["authorization"];
+    const bearer = typeof header === "string" && header.startsWith("Bearer ") ? header.slice(7) : undefined;
+    const token = q.token ?? bearer;
+    const claims = token ? this.tokens.verify(token) : undefined;
+    const rawC = q.c ?? req.headers["x-country"];
+    if (!claims || typeof rawC !== "string" || !/^[A-Z]{2}$/.test(rawC)) {
+      reply.status(claims ? 400 : 401).send();
+      return;
+    }
+    const c = rawC;
+    const principal = await this.db.tx({}, (sql) => loadPrincipal(sql, claims.sub));
+
+    const res = reply.raw;
+    res.writeHead(200, {
+      "content-type": "text/event-stream",
+      "cache-control": "no-cache, no-transform",
+      connection: "keep-alive",
+      "x-accel-buffering": "no", // tell nginx/Caddy not to buffer the stream
+    });
+    res.write(": connected\n\n");
+
+    let prev: TrackSnapshot | null = null;
+    let closed = false;
+    const cleanup = () => {
+      if (closed) return;
+      closed = true;
+      clearInterval(poll);
+      clearInterval(beat);
+    };
+    const tick = async () => {
+      if (closed) return;
+      try {
+        const { order } = await this.commerce.get(c, principal, id);
+        const rider = order.riderId ? await this.dispatch.riderForCustomer(c, order.riderId, order.state, order.snapshot.dropLocation) : null;
+        const snap: TrackSnapshot = { state: order.state, rider };
+        if (snapshotChanged(prev, snap)) {
+          res.write(sseFrame("update", snap));
+          prev = snap;
+        }
+        if (isTerminal(order.state)) {
+          res.write(sseFrame("done", { state: order.state }));
+          cleanup();
+          res.end();
+        }
+      } catch {
+        res.write(sseFrame("end", { reason: "unavailable" }));
+        cleanup();
+        res.end();
+      }
+    };
+    const poll = setInterval(() => void tick(), 4000);
+    const beat = setInterval(() => { if (!closed) res.write(SSE_HEARTBEAT); }, 25000);
+    req.raw.on("close", cleanup);
+    await tick(); // push the current state immediately
   }
 
   @Get("me/orders")
@@ -288,6 +490,7 @@ export class MeController {
     @Inject(TOKENS.db) private readonly db: Db,
     @Inject(TOKENS.tokens) private readonly tokens: TokenService,
     @Inject(TOKENS.admin) private readonly admin: AdminService,
+    @Inject(TOKENS.auth) private readonly auth: AuthService,
   ) {}
 
   @Get()
@@ -295,6 +498,13 @@ export class MeController {
     const principal = await this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
     const c = req.headers["x-country"];
     return this.admin.me(principal, typeof c === "string" && /^[A-Z]{2}$/.test(c) ? c : undefined);
+  }
+
+  /** Remember the language the signed-in person uses the app in, so the AI agents write to them in it. */
+  @Post("locale")
+  @HttpCode(200)
+  async setLocale(@Req() req: FastifyRequest, @Body() body: { locale?: string }) {
+    return this.auth.setLocale(userId(req, this.tokens), body?.locale ?? "");
   }
 }
 
@@ -305,7 +515,14 @@ export class RiderController {
     @Inject(TOKENS.db) private readonly db: Db,
     @Inject(TOKENS.tokens) private readonly tokens: TokenService,
     @Inject(TOKENS.dispatch) private readonly dispatch: DispatchService,
+    @Inject(TOKENS.riderCopilot) private readonly copilot: RiderCopilotService,
   ) {}
+
+  @Get("coach")
+  async coach(@Req() req: FastifyRequest, @Query("lang") lang?: string) {
+    const principal = await this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+    return this.copilot.coach(country(req), principal, lang === "en" ? "en" : "fr");
+  }
 
   @Post("presence")
   @HttpCode(200)
@@ -366,6 +583,33 @@ export class RiderController {
     const principal = await this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
     return this.dispatch.respond(principal, country(req), id, false, body?.reason);
   }
+
+  /** The rider's availability shifts. */
+  @Get("shifts")
+  async shifts(@Req() req: FastifyRequest) {
+    const principal = await this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+    return this.dispatch.myShifts(principal, country(req));
+  }
+
+  @Post("shifts")
+  async bookShift(@Req() req: FastifyRequest, @Body() body: { zone?: string; starts_at?: string; ends_at?: string }) {
+    const principal = await this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+    return this.dispatch.bookShift(principal, country(req), body ?? {});
+  }
+
+  @Post("shifts/:id/cancel")
+  @HttpCode(200)
+  async cancelShift(@Req() req: FastifyRequest, @Param("id") id: string) {
+    const principal = await this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+    return this.dispatch.cancelShift(principal, country(req), id);
+  }
+
+  /** Where demand is high right now, so the rider can position themselves. */
+  @Get("heatmap")
+  async heatmap(@Req() req: FastifyRequest) {
+    const principal = await this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+    return this.dispatch.riderHeatmap(principal, country(req));
+  }
 }
 
 /** Operations: the dispatch board, (re)assigning riders, cash hand-ins, refunds and rider applications. */
@@ -402,6 +646,18 @@ export class OpsController {
   @Get("incidents")
   async incidents(@Req() req: FastifyRequest) {
     return this.dispatch.incidents(await this.#me(req), country(req));
+  }
+
+  /** The upcoming rider shifts, for the dispatch board. */
+  @Get("shifts")
+  async shifts(@Req() req: FastifyRequest) {
+    return this.dispatch.shifts(await this.#me(req), country(req));
+  }
+
+  /** The demand heatmap (busy areas) for operations. */
+  @Get("heatmap")
+  async heatmap(@Req() req: FastifyRequest) {
+    return this.dispatch.opsHeatmap(await this.#me(req), country(req));
   }
 
   @Get("quests")
@@ -503,15 +759,55 @@ export class AdminController {
     @Inject(TOKENS.db) private readonly db: Db,
     @Inject(TOKENS.tokens) private readonly tokens: TokenService,
     @Inject(TOKENS.admin) private readonly admin: AdminService,
+    @Inject(TOKENS.merchantPlans) private readonly merchantPlans: MerchantPlanService,
   ) {}
 
   #principal(req: FastifyRequest) {
     return this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
   }
 
+  @Get("merchant-plans")
+  async merchantPlanOverview(@Req() req: FastifyRequest) {
+    return this.merchantPlans.overview(country(req), await this.#principal(req));
+  }
+
+  @Post("merchant-plans")
+  @HttpCode(200)
+  async saveMerchantPlan(@Req() req: FastifyRequest, @Body() body: Record<string, unknown>) {
+    return this.merchantPlans.savePlan(country(req), await this.#principal(req), body ?? {});
+  }
+
+  @Post("merchant-plans/assign")
+  @HttpCode(200)
+  async assignMerchantPlan(@Req() req: FastifyRequest, @Body() body: { group_id?: string; plan_code?: string }) {
+    return this.merchantPlans.assign(country(req), await this.#principal(req), body ?? {});
+  }
+
   @Get("analytics")
   async analytics(@Req() req: FastifyRequest, @Query("days") days?: string) {
     return this.admin.analytics(await this.#principal(req), country(req), Number(days ?? 30));
+  }
+
+  /** A CSV export of the market's orders over the last ?days (default 30), scoped to what the caller can see. */
+  @Get("exports/orders.csv")
+  async ordersCsv(@Req() req: FastifyRequest, @Res() reply: FastifyReply, @Query("days") days?: string) {
+    const out = await this.admin.ordersCsv(await this.#principal(req), country(req), Number(days ?? 30));
+    await reply
+      .header("content-type", "text/csv; charset=utf-8")
+      .header("content-disposition", `attachment; filename="${out.filename}"`)
+      .header("cache-control", "no-store")
+      .send(out.csv);
+  }
+
+  /** A CSV export of rider payouts over the last ?days (default 30). Finance only (ledger:read). */
+  @Get("exports/payouts.csv")
+  async payoutsCsv(@Req() req: FastifyRequest, @Res() reply: FastifyReply, @Query("days") days?: string) {
+    const out = await this.admin.payoutsCsv(await this.#principal(req), country(req), Number(days ?? 30));
+    await reply
+      .header("content-type", "text/csv; charset=utf-8")
+      .header("content-disposition", `attachment; filename="${out.filename}"`)
+      .header("cache-control", "no-store")
+      .send(out.csv);
   }
 
   @Get("orders")
@@ -536,6 +832,17 @@ export class AdminController {
   @Get("ledger")
   async ledger(@Req() req: FastifyRequest) {
     return this.admin.ledger(await this.#principal(req), country(req));
+  }
+
+  @Get("payouts")
+  async payouts(@Req() req: FastifyRequest, @Query("from") from?: string, @Query("to") to?: string) {
+    return this.admin.payouts(await this.#principal(req), country(req), { ...(from ? { from } : {}), ...(to ? { to } : {}) });
+  }
+
+  @Post("payouts/merchants")
+  async recordMerchantPayout(@Req() req: FastifyRequest, @Body() body: { restaurant_group_id?: string; amount_minor?: string; method?: string; reference?: string }) {
+    const key = (req.headers["idempotency-key"] as string) ?? crypto.randomUUID();
+    return this.admin.recordMerchantPayout(await this.#principal(req), country(req), body ?? {}, key);
   }
 
   @Get("audit")
@@ -844,6 +1151,74 @@ export class CouponController {
   }
 }
 
+/** Merchant-created promo codes: a merchant runs their own codes for their storefront (merchant-funded, no admin needed). */
+@Controller("v1/merchant/branches")
+export class MerchantCouponController {
+  constructor(
+    @Inject(TOKENS.db) private readonly db: Db,
+    @Inject(TOKENS.tokens) private readonly tokens: TokenService,
+    @Inject(TOKENS.coupons) private readonly coupons: CouponService,
+  ) {}
+
+  #p(req: FastifyRequest) {
+    return this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+  }
+
+  @Get(":id/coupons")
+  async list(@Req() req: FastifyRequest, @Param("id") id: string) {
+    return this.coupons.listForMerchant(country(req), await this.#p(req), id);
+  }
+
+  @Post(":id/coupons")
+  async create(@Req() req: FastifyRequest, @Param("id") id: string, @Body() body: Record<string, unknown>) {
+    return this.coupons.saveForMerchant(country(req), await this.#p(req), id, undefined, body ?? {});
+  }
+
+  @Post(":id/coupons/:cid")
+  @HttpCode(200)
+  async update(@Req() req: FastifyRequest, @Param("id") id: string, @Param("cid") cid: string, @Body() body: Record<string, unknown>) {
+    return this.coupons.saveForMerchant(country(req), await this.#p(req), id, cid, body ?? {});
+  }
+}
+
+const aud = (v?: string): BroadcastAudience => (v === "customer" || v === "rider" || v === "restaurant" ? v : "all");
+
+/** One-click broadcasts: an admin sends an offer or message to an audience over chosen channels. */
+@Controller("v1/admin/broadcasts")
+export class BroadcastController {
+  constructor(
+    @Inject(TOKENS.db) private readonly db: Db,
+    @Inject(TOKENS.tokens) private readonly tokens: TokenService,
+    @Inject(TOKENS.broadcast) private readonly broadcast: BroadcastService,
+  ) {}
+
+  #p(req: FastifyRequest) {
+    return this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+  }
+
+  @Get()
+  async list(@Req() req: FastifyRequest) {
+    return this.broadcast.list(country(req), await this.#p(req));
+  }
+
+  @Get("preview")
+  async preview(@Req() req: FastifyRequest, @Query("audience") audience?: string, @Query("segment") segment?: string) {
+    return this.broadcast.preview(country(req), await this.#p(req), { audience: aud(audience), ...(segment ? { segment } : {}) });
+  }
+
+  @Post()
+  @HttpCode(200)
+  async send(@Req() req: FastifyRequest, @Body() body: { audience?: string; segment?: string; user_ids?: string[]; channels?: string[]; message?: string }) {
+    return this.broadcast.send(country(req), await this.#p(req), {
+      audience: aud(body?.audience),
+      ...(body?.segment ? { segment: body.segment } : {}),
+      ...(Array.isArray(body?.user_ids) ? { userIds: body.user_ids.map(String) } : {}),
+      channels: Array.isArray(body?.channels) ? body.channels.map(String) : [],
+      message: String(body?.message ?? ""),
+    });
+  }
+}
+
 /** Saved delivery addresses for the signed-in customer. */
 @Controller("v1/me/addresses")
 export class AddressController {
@@ -944,6 +1319,13 @@ export class ReviewController {
   @HttpCode(200)
   async reply(@Req() req: FastifyRequest, @Param("id") id: string, @Body() body: { reply?: string }) {
     return this.reviews.reply(country(req), await this.#p(req), id, body?.reply ?? "");
+  }
+
+  @Post("admin/reviews/:id/draft-reply")
+  @HttpCode(200)
+  async draftReply(@Req() req: FastifyRequest, @Param("id") id: string, @Body() body: { lang?: string }) {
+    // No explicit lang → the service writes in the reviewer's own language.
+    return this.reviews.draftReply(country(req), await this.#p(req), id, body?.lang === "en" ? "en" : body?.lang === "fr" ? "fr" : undefined);
   }
 }
 
@@ -1114,6 +1496,577 @@ export class ReferralController {
   }
 }
 
+/** Loyalty points: a customer earns points on delivered orders and redeems them for wallet credit; admins set the rates. */
+@Controller("v1")
+export class LoyaltyController {
+  constructor(
+    @Inject(TOKENS.db) private readonly db: Db,
+    @Inject(TOKENS.tokens) private readonly tokens: TokenService,
+    @Inject(TOKENS.loyalty) private readonly loyalty: LoyaltyService,
+  ) {}
+
+  #p(req: FastifyRequest) {
+    return this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+  }
+
+  /** The customer's points balance, what a point is worth, and the current rules. */
+  @Get("me/loyalty")
+  async summary(@Req() req: FastifyRequest) {
+    return this.loyalty.summary(country(req), await this.#p(req));
+  }
+
+  /** The customer's recent points movements. */
+  @Get("me/loyalty/transactions")
+  async history(@Req() req: FastifyRequest) {
+    return this.loyalty.history(country(req), await this.#p(req));
+  }
+
+  /** Redeem points for wallet credit. */
+  @Post("me/loyalty/redeem")
+  @HttpCode(200)
+  async redeem(@Req() req: FastifyRequest, @Body() body: { points?: number }) {
+    const key = req.headers["idempotency-key"] as string;
+    return this.loyalty.redeem(country(req), await this.#p(req), Math.round(Number(body?.points ?? 0)), key);
+  }
+
+  /** Admin: read the market's loyalty settings. */
+  @Get("admin/loyalty")
+  async config(@Req() req: FastifyRequest) {
+    return this.loyalty.adminConfig(country(req), await this.#p(req));
+  }
+
+  /** Admin: set the market's loyalty settings. */
+  @Post("admin/loyalty")
+  @HttpCode(200)
+  async setConfig(@Req() req: FastifyRequest, @Body() body: { enabled?: boolean; earn_bps?: number; redeem_minor_per_point?: number; min_redeem_points?: number }) {
+    return this.loyalty.setConfig(country(req), await this.#p(req), body ?? {});
+  }
+}
+
+/** Repeat / subscription orders: a customer turns a cart into a recurring wallet-funded order. */
+@Controller("v1")
+export class SubscriptionController {
+  constructor(
+    @Inject(TOKENS.db) private readonly db: Db,
+    @Inject(TOKENS.tokens) private readonly tokens: TokenService,
+    @Inject(TOKENS.subscriptions) private readonly subs: SubscriptionService,
+  ) {}
+
+  #p(req: FastifyRequest) {
+    return this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+  }
+
+  @Get("me/subscriptions")
+  async list(@Req() req: FastifyRequest) {
+    return this.subs.list(country(req), await this.#p(req));
+  }
+
+  @Post("me/subscriptions")
+  async create(@Req() req: FastifyRequest, @Body() body: unknown) {
+    return this.subs.create(country(req), await this.#p(req), (body ?? {}) as never);
+  }
+
+  @Post("me/subscriptions/:id")
+  @HttpCode(200)
+  async setStatus(@Req() req: FastifyRequest, @Param("id") id: string, @Body() body: { action?: string }) {
+    return this.subs.setStatus(country(req), await this.#p(req), id, body?.action ?? "");
+  }
+}
+
+/** Built-in POS: branch staff take a cash counter order (takeaway or dine-in) that lands on the kitchen board. */
+type PosBody = {
+  branch_id?: string; items?: QuoteItemBody[]; order_type?: string; table_id?: string; device_id?: string;
+  customer_phone?: string; customer_name?: string; kitchen_note?: string;
+  expected_total?: { amount_minor: string; currency: string };
+};
+const toPosInput = (b: PosBody) => ({
+  ...(b?.branch_id ? { branchId: String(b.branch_id) } : {}),
+  ...(Array.isArray(b?.items) ? { items: b.items.map((i) => ({ itemId: i.item_id, quantity: i.quantity, ...(Array.isArray(i.options) ? { options: i.options } : {}), ...(Array.isArray(i.addons) ? { addons: i.addons } : {}), ...(typeof i.note === "string" && i.note.trim() ? { note: i.note } : {}) })) } : {}),
+  ...(b?.order_type ? { orderType: String(b.order_type) } : {}),
+  ...(b?.table_id ? { tableId: String(b.table_id) } : {}),
+  ...(b?.device_id ? { deviceId: String(b.device_id) } : {}),
+  ...(b?.customer_phone ? { customerPhone: String(b.customer_phone) } : {}),
+  ...(b?.customer_name ? { customerName: String(b.customer_name) } : {}),
+  ...(typeof b?.kitchen_note === "string" && b.kitchen_note.trim() ? { kitchenNote: b.kitchen_note } : {}),
+  ...(b?.expected_total ? { expectedTotal: b.expected_total } : {}),
+});
+
+/** Web push: a signed-in customer turns device notifications on/off; the comms engine's push channel delivers to them. */
+@Controller("v1")
+export class PushController {
+  constructor(
+    @Inject(TOKENS.db) private readonly db: Db,
+    @Inject(TOKENS.tokens) private readonly tokens: TokenService,
+    @Inject(TOKENS.push) private readonly push: PushService,
+  ) {}
+  #p(req: FastifyRequest) {
+    return this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+  }
+
+  @Get("me/push")
+  async status(@Req() req: FastifyRequest) {
+    return this.push.status(country(req), await this.#p(req));
+  }
+
+  @Post("me/push-subscription")
+  @HttpCode(200)
+  async subscribe(@Req() req: FastifyRequest, @Body() body: { endpoint?: string; keys?: { p256dh?: string; auth?: string }; user_agent?: string }) {
+    return this.push.subscribe(country(req), await this.#p(req), body ?? {});
+  }
+
+  @Post("me/push-subscription/remove")
+  @HttpCode(200)
+  async unsubscribe(@Req() req: FastifyRequest, @Body() body: { endpoint?: string }) {
+    return this.push.unsubscribe(country(req), await this.#p(req), body?.endpoint ?? "");
+  }
+
+  // Native apps (React Native / Expo): one Expo push token per device install.
+  @Post("me/push-devices")
+  @HttpCode(200)
+  async registerDevice(@Req() req: FastifyRequest, @Body() body: { token?: string; app?: string; platform?: string; device_label?: string }) {
+    return this.push.registerDevice(country(req), await this.#p(req), body ?? {});
+  }
+
+  @Post("me/push-devices/remove")
+  @HttpCode(200)
+  async removeDevice(@Req() req: FastifyRequest, @Body() body: { token?: string }) {
+    return this.push.removeDevice(country(req), await this.#p(req), body?.token ?? "");
+  }
+}
+
+@Controller("v1")
+export class PosController {
+  constructor(
+    @Inject(TOKENS.db) private readonly db: Db,
+    @Inject(TOKENS.tokens) private readonly tokens: TokenService,
+    @Inject(TOKENS.pos) private readonly pos: PosService,
+  ) {}
+
+  #p(req: FastifyRequest) {
+    return this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+  }
+
+  @Post("pos/quote")
+  @HttpCode(200)
+  async quote(@Req() req: FastifyRequest, @Body() body: PosBody) {
+    return serialiseQuote(await this.pos.quote(country(req), await this.#p(req), toPosInput(body)));
+  }
+
+  @Post("pos/orders")
+  async place(@Req() req: FastifyRequest, @Body() body: PosBody) {
+    const key = req.headers["idempotency-key"] as string;
+    const r = await this.pos.place(country(req), await this.#p(req), toPosInput(body), key);
+    return { order_id: r.orderId, state: r.state, recipient_code: r.recipientCode, order_type: r.orderType, ...(r.customerPhone ? { customer_phone: r.customerPhone } : {}), quote: serialiseQuote(r.quote) };
+  }
+}
+
+type KioskBody = PosBody & { pay_method?: string };
+const toKioskInput = (b: KioskBody) => ({ ...toPosInput(b), ...(b?.pay_method ? { payMethod: String(b.pay_method) } : {}) });
+
+/** Self-service kiosk (HUB channel): a customer orders for themselves on an in-store screen. */
+@Controller("v1")
+export class KioskController {
+  constructor(
+    @Inject(TOKENS.db) private readonly db: Db,
+    @Inject(TOKENS.tokens) private readonly tokens: TokenService,
+    @Inject(TOKENS.kiosk) private readonly kiosk: KioskService,
+  ) {}
+
+  #p(req: FastifyRequest) {
+    return this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+  }
+
+  @Post("kiosk/quote")
+  @HttpCode(200)
+  async quote(@Req() req: FastifyRequest, @Body() body: KioskBody) {
+    return serialiseQuote(await this.kiosk.quote(country(req), await this.#p(req), toKioskInput(body)));
+  }
+
+  @Post("kiosk/orders")
+  async place(@Req() req: FastifyRequest, @Body() body: KioskBody) {
+    const key = req.headers["idempotency-key"] as string;
+    const r = await this.kiosk.place(country(req), await this.#p(req), toKioskInput(body), key);
+    return { order_id: r.orderId, state: r.state, recipient_code: r.recipientCode, order_type: r.orderType, pay_method: r.payMethod, ...(r.customerPhone ? { customer_phone: r.customerPhone } : {}), ...((r as { nextAction?: unknown }).nextAction ? { next_action: (r as { nextAction?: unknown }).nextAction } : {}), quote: serialiseQuote(r.quote) };
+  }
+}
+
+/** Marketing banners: live ones for the customer app, CRUD for a market admin. */
+@Controller("v1")
+export class BannerController {
+  constructor(
+    @Inject(TOKENS.db) private readonly db: Db,
+    @Inject(TOKENS.tokens) private readonly tokens: TokenService,
+    @Inject(TOKENS.banners) private readonly banners: BannerService,
+  ) {}
+
+  #p(req: FastifyRequest) {
+    return this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+  }
+
+  @Get("banners")
+  async live(@Req() req: FastifyRequest) {
+    return this.banners.live(country(req));
+  }
+
+  @Get("admin/banners")
+  async list(@Req() req: FastifyRequest) {
+    return this.banners.list(country(req), await this.#p(req));
+  }
+
+  @Post("admin/banners")
+  async create(@Req() req: FastifyRequest, @Body() body: unknown) {
+    return this.banners.create(country(req), await this.#p(req), (body ?? {}) as never);
+  }
+
+  @Post("admin/banners/:id")
+  @HttpCode(200)
+  async update(@Req() req: FastifyRequest, @Param("id") id: string, @Body() body: unknown) {
+    return this.banners.update(country(req), await this.#p(req), id, (body ?? {}) as never);
+  }
+
+  @Delete("admin/banners/:id")
+  @HttpCode(200)
+  async remove(@Req() req: FastifyRequest, @Param("id") id: string) {
+    return this.banners.remove(country(req), await this.#p(req), id);
+  }
+}
+
+/** Storefront CMS: the live landing content for the customer app, and the market-admin editor. */
+@Controller("v1")
+export class SiteContentController {
+  constructor(
+    @Inject(TOKENS.db) private readonly db: Db,
+    @Inject(TOKENS.tokens) private readonly tokens: TokenService,
+    @Inject(TOKENS.siteContent) private readonly siteContent: SiteContentService,
+  ) {}
+
+  #p(req: FastifyRequest) {
+    return this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+  }
+
+  @Get("site-content")
+  async live(@Req() req: FastifyRequest) {
+    return this.siteContent.live(country(req));
+  }
+
+  @Get("admin/site-content")
+  async get(@Req() req: FastifyRequest) {
+    return this.siteContent.get(country(req), await this.#p(req));
+  }
+
+  @Post("admin/site-content")
+  @HttpCode(200)
+  async save(@Req() req: FastifyRequest, @Body() body: unknown) {
+    return this.siteContent.save(country(req), await this.#p(req), body);
+  }
+}
+
+/** Integration credentials entered from the admin panel (status only; values are never returned). */
+@Controller("v1")
+export class IntegrationsController {
+  constructor(
+    @Inject(TOKENS.db) private readonly db: Db,
+    @Inject(TOKENS.tokens) private readonly tokens: TokenService,
+    @Inject(TOKENS.integrations) private readonly integrations: IntegrationsService,
+  ) {}
+
+  #p(req: FastifyRequest) {
+    return this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+  }
+
+  @Get("admin/integrations")
+  async status(@Req() req: FastifyRequest) {
+    return this.integrations.status(country(req), await this.#p(req));
+  }
+
+  @Post("admin/integrations/:id")
+  @HttpCode(200)
+  async set(@Req() req: FastifyRequest, @Param("id") id: string, @Body() body: Record<string, unknown>) {
+    return this.integrations.set(country(req), await this.#p(req), id, body ?? {});
+  }
+}
+
+/** AI customer-service assistant: the customer asks and reads their conversations; support handles escalations. */
+@Controller("v1")
+export class SupportController {
+  constructor(
+    @Inject(TOKENS.db) private readonly db: Db,
+    @Inject(TOKENS.tokens) private readonly tokens: TokenService,
+    @Inject(TOKENS.assistant) private readonly assistant: AssistantService,
+  ) {}
+
+  #p(req: FastifyRequest) {
+    return this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+  }
+
+  @Post("support/ask")
+  @HttpCode(200)
+  async ask(@Req() req: FastifyRequest, @Body() body: { text?: string; lang?: string; order_id?: string; conversation_id?: string }) {
+    return this.assistant.ask(country(req), await this.#p(req), { text: body?.text ?? "", ...(body?.lang ? { lang: body.lang } : {}), ...(body?.order_id ? { orderId: body.order_id } : {}), ...(body?.conversation_id ? { conversationId: body.conversation_id } : {}) });
+  }
+
+  @Get("support/conversations")
+  async mine(@Req() req: FastifyRequest) {
+    return this.assistant.myConversations(country(req), await this.#p(req));
+  }
+
+  @Get("support/conversations/:id")
+  async transcript(@Req() req: FastifyRequest, @Param("id") id: string) {
+    return this.assistant.transcript(country(req), await this.#p(req), id);
+  }
+
+  @Get("ops/support/escalations")
+  async escalations(@Req() req: FastifyRequest) {
+    return this.assistant.escalations(country(req), await this.#p(req));
+  }
+
+  @Post("ops/support/conversations/:id/reply")
+  @HttpCode(200)
+  async reply(@Req() req: FastifyRequest, @Param("id") id: string, @Body() body: { text?: string; resolve?: boolean }) {
+    return this.assistant.respond(country(req), await this.#p(req), id, body?.text ?? "", body?.resolve ?? false);
+  }
+}
+
+/** Merchant copilot: grounded, ranked insights for one of the merchant's branches. */
+@Controller("v1")
+export class MerchantCopilotController {
+  constructor(
+    @Inject(TOKENS.db) private readonly db: Db,
+    @Inject(TOKENS.tokens) private readonly tokens: TokenService,
+    @Inject(TOKENS.merchantCopilot) private readonly copilot: MerchantCopilotService,
+    @Inject(TOKENS.menuWriter) private readonly menuWriter: MenuWriterService,
+  ) {}
+
+  #p(req: FastifyRequest) {
+    return this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+  }
+
+  @Get("admin/branches/:id/copilot")
+  async insights(@Req() req: FastifyRequest, @Param("id") id: string, @Query("lang") lang?: string) {
+    return this.copilot.insights(country(req), await this.#p(req), id, lang === "en" ? "en" : "fr");
+  }
+
+  @Post("admin/branches/:id/items/:itemId/draft")
+  @HttpCode(200)
+  async draft(@Req() req: FastifyRequest, @Param("id") id: string, @Param("itemId") itemId: string, @Body() body: { task?: string; to_lang?: string }) {
+    return this.menuWriter.suggest(country(req), await this.#p(req), id, itemId, { task: body?.task ?? "DESCRIBE", ...(body?.to_lang ? { toLang: body.to_lang } : {}) });
+  }
+}
+
+/** Growth agent: a customer's "for you" picks, and the ops re-engagement console. */
+@Controller("v1")
+export class GrowthController {
+  constructor(
+    @Inject(TOKENS.db) private readonly db: Db,
+    @Inject(TOKENS.tokens) private readonly tokens: TokenService,
+    @Inject(TOKENS.growth) private readonly growth: GrowthService,
+  ) {}
+
+  #p(req: FastifyRequest) {
+    return this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+  }
+
+  @Get("me/recommendations")
+  async recommendations(@Req() req: FastifyRequest, @Query("lang") lang?: string) {
+    return this.growth.recommendations(country(req), await this.#p(req), lang ?? "fr");
+  }
+
+  /** Public storefront discovery: trending (order volume) and best-reviewed dishes for the market. */
+  @Get("discovery")
+  discovery(@Req() req: FastifyRequest, @Query("lang") lang?: string) {
+    return this.growth.discover(country(req), lang === "en" ? "en" : "fr");
+  }
+
+  @Get("me/standing")
+  async standing(@Req() req: FastifyRequest) {
+    return this.growth.myStanding(country(req), await this.#p(req));
+  }
+
+  @Get("ops/growth/audience")
+  async audience(@Req() req: FastifyRequest, @Query("segment") segment?: string) {
+    return this.growth.audience(country(req), await this.#p(req), segment);
+  }
+
+  @Post("ops/growth/win-back")
+  @HttpCode(200)
+  async winBack(@Req() req: FastifyRequest, @Body() body: { customer_id?: string; credit_minor?: string; currency?: string }) {
+    return this.growth.winBack(country(req), await this.#p(req), { customerId: body?.customer_id ?? "", ...(body?.credit_minor ? { creditMinor: body.credit_minor } : {}), ...(body?.currency ? { currency: body.currency } : {}) });
+  }
+
+  @Get("ops/growth/autonomy")
+  async autonomy(@Req() req: FastifyRequest) {
+    return this.growth.autonomy(country(req), await this.#p(req));
+  }
+
+  @Post("ops/growth/autonomy")
+  @HttpCode(200)
+  async setAutonomy(@Req() req: FastifyRequest, @Body() body: { enabled?: boolean; segments?: string[]; per_customer_cap_minor?: string; daily_budget_minor?: string; max_customers_per_run?: number; currency?: string }) {
+    return this.growth.setAutonomy(country(req), await this.#p(req), body ?? {});
+  }
+
+  @Post("ops/growth/sweep")
+  @HttpCode(200)
+  async sweep(@Req() req: FastifyRequest, @Body() body: { dry_run?: boolean }) {
+    return this.growth.runSweep(country(req), await this.#p(req), { dryRun: body?.dry_run !== false });
+  }
+}
+
+/** Book-a-chef: public discovery, customer bookings, the chef console, and ops review. */
+@Controller("v1")
+export class ChefController {
+  constructor(
+    @Inject(TOKENS.db) private readonly db: Db,
+    @Inject(TOKENS.tokens) private readonly tokens: TokenService,
+    @Inject(TOKENS.chef) private readonly chef: ChefService,
+  ) {}
+
+  #p(req: FastifyRequest) {
+    return this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+  }
+
+  // Public discovery
+  @Get("chefs")
+  async list(@Req() req: FastifyRequest, @Query("cuisine") cuisine?: string, @Query("commune") commune?: string, @Query("kind") kind?: string) {
+    return this.chef.list(country(req), { ...(cuisine ? { cuisine } : {}), ...(commune ? { commune } : {}), ...(kind ? { kind } : {}) });
+  }
+
+  @Get("chefs/:id")
+  async get(@Req() req: FastifyRequest, @Param("id") id: string) {
+    return this.chef.get(country(req), id);
+  }
+
+  @Post("chefs/quote")
+  @HttpCode(200)
+  async quote(@Req() req: FastifyRequest, @Body() body: { service_id?: string; party_size?: number; hours?: number }) {
+    return this.chef.quote(country(req), { serviceId: body?.service_id, partySize: body?.party_size, hours: body?.hours });
+  }
+
+  // Customer bookings
+  @Post("chef-bookings")
+  async requestBooking(@Req() req: FastifyRequest, @Body() body: { service_id?: string; scheduled_for?: string; party_size?: number; hours?: number; location_label?: string; lat?: number; lng?: number; note?: string }) {
+    return this.chef.requestBooking(country(req), await this.#p(req), { serviceId: body?.service_id, scheduledFor: body?.scheduled_for, partySize: body?.party_size, hours: body?.hours, locationLabel: body?.location_label, lat: body?.lat, lng: body?.lng, note: body?.note });
+  }
+
+  @Get("me/chef-bookings")
+  async myBookings(@Req() req: FastifyRequest) {
+    return this.chef.myBookings(country(req), await this.#p(req));
+  }
+
+  @Post("chef-bookings/:id/cancel")
+  @HttpCode(200)
+  async cancel(@Req() req: FastifyRequest, @Param("id") id: string) {
+    return this.chef.cancel(country(req), await this.#p(req), id);
+  }
+
+  // Chef console
+  @Post("chef/apply")
+  async apply(@Req() req: FastifyRequest, @Body() body: { display_name?: string; bio?: string; cuisines?: string[]; communes?: string[]; photo_ref?: string }) {
+    return this.chef.apply(country(req), await this.#p(req), { displayName: body?.display_name, bio: body?.bio, cuisines: body?.cuisines, communes: body?.communes, photoRef: body?.photo_ref });
+  }
+
+  @Get("chef/me")
+  async me(@Req() req: FastifyRequest) {
+    return this.chef.me(country(req), await this.#p(req));
+  }
+
+  @Post("chef/services")
+  async saveService(@Req() req: FastifyRequest, @Body() body: { id?: string; kind?: string; title?: string; description?: string; pricing_model?: string; rate?: string; currency?: string; min_guests?: number; max_guests?: number | null; remote?: boolean; active?: boolean; sort?: number }) {
+    return this.chef.saveService(country(req), await this.#p(req), { id: body?.id, kind: body?.kind, title: body?.title, description: body?.description, pricingModel: body?.pricing_model, rate: body?.rate, currency: body?.currency, minGuests: body?.min_guests, maxGuests: body?.max_guests, remote: body?.remote, active: body?.active, sort: body?.sort });
+  }
+
+  @Get("chef/bookings")
+  async inbox(@Req() req: FastifyRequest) {
+    return this.chef.inbox(country(req), await this.#p(req));
+  }
+
+  @Post("chef/bookings/:id/respond")
+  @HttpCode(200)
+  async respond(@Req() req: FastifyRequest, @Param("id") id: string, @Body() body: { accept?: boolean; reason?: string }) {
+    return this.chef.respond(country(req), await this.#p(req), id, body?.accept === true, body?.reason);
+  }
+
+  @Post("chef/bookings/:id/complete")
+  @HttpCode(200)
+  async complete(@Req() req: FastifyRequest, @Param("id") id: string) {
+    return this.chef.complete(country(req), await this.#p(req), id);
+  }
+
+  // Ops review
+  @Get("ops/chefs/pending")
+  async pending(@Req() req: FastifyRequest) {
+    return this.chef.pending(country(req), await this.#p(req));
+  }
+
+  @Post("ops/chefs/:id/decide")
+  @HttpCode(200)
+  async decide(@Req() req: FastifyRequest, @Param("id") id: string, @Body() body: { approve?: boolean }) {
+    return this.chef.decide(country(req), await this.#p(req), id, body?.approve === true);
+  }
+}
+
+/** In-order chat between the customer and the rider on a live order. */
+@Controller("v1")
+export class ChatController {
+  constructor(
+    @Inject(TOKENS.db) private readonly db: Db,
+    @Inject(TOKENS.tokens) private readonly tokens: TokenService,
+    @Inject(TOKENS.chat) private readonly chat: ChatService,
+  ) {}
+
+  #p(req: FastifyRequest) {
+    return this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+  }
+
+  @Get("orders/:id/messages")
+  async thread(@Req() req: FastifyRequest, @Param("id") id: string) {
+    return this.chat.thread(country(req), await this.#p(req), id);
+  }
+
+  @Post("orders/:id/messages")
+  async send(@Req() req: FastifyRequest, @Param("id") id: string, @Body() body: { body?: string }) {
+    return this.chat.send(country(req), await this.#p(req), id, body?.body ?? "");
+  }
+}
+
+/** Cashback campaigns: a time-boxed "X% back to your wallet" promotion the customer sees and a market admin runs. */
+@Controller("v1")
+export class CashbackController {
+  constructor(
+    @Inject(TOKENS.db) private readonly db: Db,
+    @Inject(TOKENS.tokens) private readonly tokens: TokenService,
+    @Inject(TOKENS.cashback) private readonly cashback: CashbackService,
+  ) {}
+
+  #p(req: FastifyRequest) {
+    return this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+  }
+
+  /** The cashback offer a customer can earn right now (public). */
+  @Get("cashback")
+  async offer(@Req() req: FastifyRequest) {
+    return this.cashback.offer(country(req));
+  }
+
+  /** Admin: list the market's cashback campaigns. */
+  @Get("admin/cashback")
+  async list(@Req() req: FastifyRequest) {
+    return this.cashback.list(country(req), await this.#p(req));
+  }
+
+  /** Admin: create a cashback campaign. */
+  @Post("admin/cashback")
+  async create(@Req() req: FastifyRequest, @Body() body: unknown) {
+    return this.cashback.create(country(req), await this.#p(req), (body ?? {}) as never);
+  }
+
+  /** Admin: update or switch a cashback campaign. */
+  @Post("admin/cashback/:id")
+  @HttpCode(200)
+  async update(@Req() req: FastifyRequest, @Param("id") id: string, @Body() body: unknown) {
+    return this.cashback.update(country(req), await this.#p(req), id, (body ?? {}) as never);
+  }
+}
+
 /** Self-serve merchant onboarding: a guided wizard to register a business, add a branch + menu, and publish. */
 @Controller("v1/merchant")
 export class MerchantOnboardingController {
@@ -1153,6 +2106,22 @@ export class MerchantOnboardingController {
   @HttpCode(200)
   async publish(@Req() req: FastifyRequest, @Param("id") id: string) {
     return this.onboarding.publish(country(req), await this.#p(req), id);
+  }
+
+  /** The brand owner's invite code — share it so franchisees can join the brand. Created on first ask. */
+  @Post("brand/invite")
+  @HttpCode(200)
+  async invite(@Req() req: FastifyRequest) {
+    return this.onboarding.brandInvite(country(req), await this.#p(req));
+  }
+
+  /** A franchisee joins an existing brand with its code, creating their own branch under it. */
+  @Post("join")
+  async join(@Req() req: FastifyRequest, @Body() body: { code?: string; name?: string; lat?: number; lng?: number; commune?: string }) {
+    return this.onboarding.join(country(req), await this.#p(req), {
+      code: String(body?.code ?? ""), name: String(body?.name ?? ""), lat: Number(body?.lat), lng: Number(body?.lng),
+      ...(body?.commune ? { commune: String(body.commune) } : {}),
+    });
   }
 }
 

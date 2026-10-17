@@ -12,6 +12,8 @@ export const LEDGER_ACCOUNTS = [
   "restaurant_payable",
   "rider_payable",
   "fleet_payable",
+  // Owed to a private chef for a booking they completed (0% commission, like every provider).
+  "chef_payable",
   "commission_revenue",
   "subscription_revenue",
   // Rider incentives/quest bonuses the platform funds (a cost, debited when a bonus is earned).

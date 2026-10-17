@@ -110,8 +110,10 @@ export interface OrderSnapshot {
     readonly platformReceives: MoneyJSON;
     /** Membership benefit the platform funded on this order (free delivery / service-charge discount), §Plus. */
     readonly membershipDiscount?: MoneyJSON;
-    /** Coupon/promo discount the platform funded on this order. */
+    /** Coupon/promo discount on this order. */
     readonly couponDiscount?: MoneyJSON;
+    /** Who funded the coupon: the platform (promotion_expense) or the merchant (reduced payout). Defaults to PLATFORM. */
+    readonly couponFundedBy?: "PLATFORM" | "MERCHANT";
     /** Referral first-order discount the platform funded on this order. */
     readonly referralDiscount?: MoneyJSON;
   };
@@ -134,6 +136,12 @@ export interface OrderSnapshot {
   readonly scheduledFor?: string;
   /** The order was paid from the customer's wallet; settlement draws from the customer_wallet ledger account. */
   readonly walletFunded?: boolean;
+  /**
+   * Split payment: this much of the total is drawn from the customer's wallet, the rest on `paymentMode`
+   * (card/mobile-money or cash). Settlement credits customer_wallet for this amount and the other cash
+   * account for the remainder. Absent on a single-method order (including a full-wallet one, which uses walletFunded).
+   */
+  readonly walletApplied?: MoneyJSON;
   readonly geofenceRadiusM: number;
 }
 

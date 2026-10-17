@@ -17,6 +17,12 @@ import { createApi } from "../src/http/app.ts";
 import { TOKENS } from "../src/http/common.ts";
 import { DispatchService, KITCHEN_TIMEOUT_MIN } from "../src/app/dispatch.ts";
 import type { WalletService } from "../src/app/wallet.ts";
+import type { LoyaltyService } from "../src/app/loyalty.ts";
+import type { CashbackService } from "../src/app/cashback.ts";
+import type { SubscriptionService } from "../src/app/subscriptions.ts";
+import type { MerchantPlanService } from "../src/app/merchant-plans.ts";
+import { webPushSender } from "../src/app/push.ts";
+import webpush from "web-push";
 import type { ReferralService } from "../src/app/referrals.ts";
 import type { CommerceService } from "../src/app/commerce.ts";
 import type { PaymentService } from "../src/app/payments.ts";
@@ -384,6 +390,47 @@ describe("§18 quote and place", () => {
     assert.ok(r.body.delivery.charged_km >= 1);
     const sum = r.body.price_lines.reduce((s: bigint, l: { amount: { amount_minor: string } }) => s + BigInt(l.amount.amount_minor), 0n);
     assert.equal(sum.toString(), r.body.total.amount_minor);
+  });
+
+  test("§18.3 store type sets the delivery mode: a non-restaurant order is priced for a bigger vehicle (+25%)", async () => {
+    const feeOf = (r: Res) => BigInt(r.body.price_lines.find((l: { code: string }) => l.code === "DELIVERY_FEE").amount.amount_minor);
+    // The restaurant branch is the reference (bike/motorcycle).
+    const feeRef = feeOf(await call("POST", "/v1/carts/quote", { country: "CD", body: cart() }));
+    // Make the same branch a grocery — same location, same goods — so only the store type changes.
+    await inspect("CD", "UPDATE catalogue.branch SET store_type = 'GROCERY' WHERE id = $1", [branchId]);
+    try {
+      const feeBig = feeOf(await call("POST", "/v1/carts/quote", { country: "CD", body: cart() }));
+      assert.ok(feeBig > feeRef, `grocery fee ${feeBig} should exceed restaurant fee ${feeRef}`);
+      // +25% (car, tier 1, default size surcharge), within cent rounding.
+      const ratio = Number(feeBig) / Number(feeRef);
+      assert.ok(ratio > 1.24 && ratio < 1.26, `grocery/restaurant ratio ${ratio} should be ~1.25`);
+    } finally {
+      await inspect("CD", "UPDATE catalogue.branch SET store_type = 'RESTAURANT' WHERE id = $1", [branchId]);
+    }
+  });
+
+  test("boutique: the merchant sets direct/indirect; an indirect order must be scheduled ≥ the lead ahead, priced for a van", async () => {
+    const feeOf = (r: Res) => BigInt(r.body.price_lines.find((l: { code: string }) => l.code === "DELIVERY_FEE").amount.amount_minor);
+    const feeRef = feeOf(await call("POST", "/v1/carts/quote", { country: "CD", body: cart() })); // restaurant reference
+    // The owner makes the shop an indirect boutique that needs 3 days' notice.
+    const saved = await call("POST", `/v1/branches/${branchId}/profile`, { token: restaurantOwner.token, country: "CD", body: { store_type: "BOUTIQUE", delivery_lead_days: 3 } });
+    assert.equal(saved.status, 200, JSON.stringify(saved.body));
+    assert.equal(saved.body.store_type, "BOUTIQUE");
+    assert.equal(saved.body.delivery_lead_days, 3);
+    try {
+      // An immediate delivery is refused — the boutique needs notice.
+      assert.equal((await call("POST", "/v1/carts/quote", { country: "CD", body: cart() })).body.code, "LEAD_TIME_REQUIRED");
+      // One day ahead is still too soon.
+      const soon = new Date(Date.now() + 1 * 86_400_000).toISOString();
+      assert.equal((await call("POST", "/v1/carts/quote", { country: "CD", body: { ...cart(), order_type: "SCHEDULED", scheduled_for: soon } })).body.code, "LEAD_TIME_TOO_SOON");
+      // Four days ahead is accepted, and priced for a van (+50% over the restaurant reference).
+      const ok = await call("POST", "/v1/carts/quote", { country: "CD", body: { ...cart(), order_type: "SCHEDULED", scheduled_for: new Date(Date.now() + 4 * 86_400_000).toISOString() } });
+      assert.equal(ok.status, 200, JSON.stringify(ok.body));
+      const ratio = Number(feeOf(ok)) / Number(feeRef);
+      assert.ok(ratio > 1.49 && ratio < 1.51, `boutique/restaurant ratio ${ratio} should be ~1.5 (van)`);
+    } finally {
+      await call("POST", `/v1/branches/${branchId}/profile`, { token: restaurantOwner.token, country: "CD", body: { store_type: "RESTAURANT", delivery_lead_days: 0 } });
+    }
   });
 
   test("placing with a stale total returns PRICE_CHANGED and the fresh quote", async () => {
@@ -1799,6 +1846,98 @@ describe("coupons / promo codes", () => {
     const list = await call("GET", "/v1/admin/coupons", { token: admin.token, country: "CD" });
     assert.ok(list.body.coupons.some((x: { code: string }) => x.code === "ONCE"));
   });
+
+  test("a coupon can be scoped to one merchant, funded by the platform or the merchant", async () => {
+    // A second storefront, to prove merchant-scoping keeps a code off other merchants' orders.
+    const other = (await call("POST", "/v1/branches", { token: admin.token, country: "CD", body: { name: "Other Kitchen", restaurant_group_id: "rg-other", city: "kinshasa", commune: "gombe", ...KINSHASA } })).body.id;
+
+    // Guards: a merchant-funded code must name a merchant, and a merchant cannot fund free delivery.
+    assert.equal((await call("POST", "/v1/admin/coupons", { token: admin.token, country: "CD", body: { code: "NOFUND", kind: "FIXED", value_minor: "100", funded_by: "MERCHANT", days: 30 } })).body.code, "MERCHANT_REQUIRED");
+    assert.equal((await call("POST", "/v1/admin/coupons", { token: admin.token, country: "CD", body: { code: "NOFREE", kind: "FREE_DELIVERY", branch_id: branchId, funded_by: "MERCHANT", days: 30 } })).body.code, "FUNDING_INVALID");
+
+    // A code scoped to another merchant does not apply at this one.
+    await call("POST", "/v1/admin/coupons", { token: admin.token, country: "CD", body: { code: "OTHERONLY", kind: "FIXED", value_minor: "100", branch_id: other, funded_by: "PLATFORM", days: 30 } });
+    assert.equal((await call("POST", "/v1/carts/quote", { token: customer.token, country: "CD", body: { ...cart(), coupon_code: "OTHERONLY" } })).body.code, "COUPON_WRONG_MERCHANT");
+
+    // A merchant-funded code scoped to this merchant: $2 off, funded by the merchant (not the platform).
+    const made = await call("POST", "/v1/admin/coupons", { token: admin.token, country: "CD", body: { code: "SHOP2", kind: "FIXED", value_minor: "200", branch_id: branchId, funded_by: "MERCHANT", days: 30 } });
+    assert.equal(made.status, 201, JSON.stringify(made.body));
+    assert.equal(made.body.branch_id, branchId);
+    assert.equal(made.body.funded_by, "MERCHANT");
+
+    const q = await call("POST", "/v1/carts/quote", { token: customer.token, country: "CD", body: { ...cart(), coupon_code: "SHOP2" } });
+    assert.equal(q.body.coupon.discount.amount_minor, "200");
+    const placed = await call("POST", "/v1/orders", { token: customer.token, country: "CD", body: { ...cart(), coupon_code: "SHOP2", payment_mode: "CASH_ON_DELIVERY", expected_total: q.body.payable } });
+    const orderId = placed.body.order_id, code = placed.body.recipient_code;
+    await transition(ops, orderId, { type: "ASSIGN_RIDER", riderId: rider.userId });
+    await transition(kitchen, orderId, { type: "ACCEPT" });
+    await transition(kitchen, orderId, { type: "START_PREPARING" });
+    await transition(kitchen, orderId, { type: "PACK", confirmedLineIds: ["l1"], packageCount: 1, allergenAcknowledged: true });
+    await transition(kitchen, orderId, { type: "MARK_READY", packages: [{ labelId: "M-1", sealId: "MS-1" }], packPhotoRef: "photo://pack" });
+    await transition(rider, orderId, { type: "PICK_UP", scannedLabelIds: ["M-1"], restaurantConfirmed: true, sealsIntact: true, location: KINSHASA });
+    assert.equal((await transition(rider, orderId, { type: "DELIVER", scannedLabelId: "M-1", location: DROP, sealIntact: true, verification: { method: "CODE", code }, proofPhotoRef: "photo://door" })).body.state, "DELIVERED");
+
+    // The merchant funds it: NO promotion_expense, the restaurant payout is reduced by $2, books balance.
+    const entries = await inspect("CD", "SELECT e.account, e.amount_minor::text AS amount, e.currency FROM money.ledger_entry e JOIN money.journal j ON j.id = e.journal_id WHERE j.idempotency_key = $1 ORDER BY e.line", [`order:${orderId}:settlement`]);
+    assert.ok(!entries.some((e) => e.account === "promotion_expense"), "the platform funds nothing for a merchant-funded coupon");
+    const base = await inspect("CD", "SELECT e.amount_minor::text AS amount FROM money.ledger_entry e JOIN money.journal j ON j.id = e.journal_id WHERE j.idempotency_key = $1 AND e.account = 'restaurant_payable'", [`order:${orderId}:settlement`]);
+    assert.ok(base.length === 1, "one restaurant payout line");
+    const byCcy = new Map<string, bigint>();
+    for (const e of entries) byCcy.set(e.currency, (byCcy.get(e.currency) ?? 0n) + BigInt(e.amount));
+    for (const [, s] of byCcy) assert.equal(s, 0n, "the settlement journal balances");
+    const [red] = await inspect("CD", "SELECT amount_minor::text AS a FROM promotions.coupon_redemption WHERE order_id = $1", [orderId]);
+    assert.equal(red.a, "200", "the redemption records the $2 discount");
+  });
+
+  test("a merchant creates their own promo code for their storefront, with or without an admin", async () => {
+    // The merchant's own code is scoped to their branch, funded by them, and cannot be free delivery.
+    assert.equal((await call("POST", `/v1/merchant/branches/${branchId}/coupons`, { token: restaurantOwner.token, country: "CD", body: { code: "CHEZNOUS", kind: "FREE_DELIVERY" } })).body.code, "FUNDING_INVALID");
+    const made = await call("POST", `/v1/merchant/branches/${branchId}/coupons`, { token: restaurantOwner.token, country: "CD", body: { code: "CHEZNOUS", kind: "PERCENT", value_bps: 1000, days: 30 } });
+    assert.equal(made.status, 201, JSON.stringify(made.body));
+    assert.equal(made.body.branch_id, branchId);
+    assert.equal(made.body.funded_by, "MERCHANT");
+    // A plain customer cannot create a code for the storefront.
+    assert.equal((await call("POST", `/v1/merchant/branches/${branchId}/coupons`, { token: customer.token, country: "CD", body: { code: "HACK2", kind: "PERCENT", value_bps: 5000 } })).status, 403);
+    // It lists for the merchant and a customer can apply it at checkout.
+    const list = await call("GET", `/v1/merchant/branches/${branchId}/coupons`, { token: restaurantOwner.token, country: "CD" });
+    assert.ok(list.body.coupons.some((x: { code: string }) => x.code === "CHEZNOUS"));
+    const q = await call("POST", "/v1/carts/quote", { token: customer.token, country: "CD", body: { ...cart(), coupon_code: "CHEZNOUS" } });
+    assert.ok(BigInt(q.body.coupon.discount.amount_minor) > 0n, "the merchant's own code discounts the order");
+  });
+});
+
+describe("broadcasts (one-click offers to an audience)", () => {
+  test("an admin previews an audience and sends over chosen channels; a non-admin cannot", async () => {
+    // A customer cannot broadcast.
+    assert.equal((await call("GET", "/v1/admin/broadcasts/preview?audience=customer", { token: customer.token, country: "CD" })).status, 403);
+    assert.equal((await call("POST", "/v1/admin/broadcasts", { token: customer.token, country: "CD", body: { audience: "customer", channels: ["inapp"], message: "hi" } })).status, 403);
+    // Preview resolves a real audience (the customer has ordered earlier in the suite).
+    const prev = await call("GET", "/v1/admin/broadcasts/preview?audience=customer", { token: admin.token, country: "CD" });
+    assert.equal(prev.status, 200, JSON.stringify(prev.body));
+    assert.ok(prev.body.count >= 1, "there are customers to reach");
+    // Guards: a message with no channel, and an empty message, are refused.
+    assert.equal((await call("POST", "/v1/admin/broadcasts", { token: admin.token, country: "CD", body: { audience: "customer", channels: [], message: "Offer!" } })).body.code, "CHANNEL_REQUIRED");
+    assert.equal((await call("POST", "/v1/admin/broadcasts", { token: admin.token, country: "CD", body: { audience: "customer", channels: ["inapp"], message: "  " } })).body.code, "MESSAGE_REQUIRED");
+    // One click: send an in-app offer to all customers.
+    const sent = await call("POST", "/v1/admin/broadcasts", { token: admin.token, country: "CD", body: { audience: "customer", channels: ["inapp"], message: "20% off this weekend with code WEEKEND20" } });
+    assert.equal(sent.status, 200, JSON.stringify(sent.body));
+    assert.ok(sent.body.recipients >= 1, "it reached at least one recipient");
+    assert.ok((sent.body.sent + sent.body.logged) >= 1, "at least one in-app delivery landed");
+    // The customer sees it in their in-app inbox.
+    const inbox = await call("GET", "/v1/notifications", { token: customer.token, country: "CD" });
+    assert.ok(inbox.body.data.some((n: { subject?: string }) => /WEEKEND20/.test(n.subject ?? "")), "the broadcast reached the customer's inbox");
+    // An explicit selection targets just those users.
+    const one = await call("POST", "/v1/admin/broadcasts", { token: admin.token, country: "CD", body: { user_ids: [customer.userId], channels: ["inapp"], message: "Just for you" } });
+    assert.equal(one.body.recipients, 1, "a hand-picked selection reaches exactly those users");
+    // Every send is recorded in the history, with its delivery tally.
+    const hist = await call("GET", "/v1/admin/broadcasts", { token: admin.token, country: "CD" });
+    assert.equal(hist.status, 200, JSON.stringify(hist.body));
+    const row = hist.body.broadcasts.find((b: { message: string }) => /WEEKEND20/.test(b.message));
+    assert.ok(row, "the broadcast appears in the history");
+    assert.ok(row.recipients >= 1 && row.delivered >= 1, "with its recipient and delivery counts");
+    assert.deepEqual(row.channels, ["inapp"]);
+    assert.equal((await call("GET", "/v1/admin/broadcasts", { token: customer.token, country: "CD" })).status, 403, "a non-admin cannot read the history");
+  });
 });
 
 describe("reviews and ratings", () => {
@@ -1848,6 +1987,47 @@ describe("reviews and ratings", () => {
     assert.equal(after.body.reviews.find((r: { id: string }) => r.id === reviewId).reply, "Merci beaucoup! See you soon.");
   });
 
+  test("public discovery surfaces trending dishes and best-reviewed kitchens from real activity", async () => {
+    const d = await call("GET", "/v1/discovery", { country: "CD" });
+    assert.equal(d.status, 200, JSON.stringify(d.body));
+    // Trending ranks real order volume; the delivered orders above put dishes here.
+    assert.ok(Array.isArray(d.body.trending) && d.body.trending.length >= 1, "trending has dishes");
+    assert.ok(d.body.trending.every((t: { item_id: string; branch_id: string }) => typeof t.item_id === "string" && typeof t.branch_id === "string"));
+    assert.ok(d.body.trending.some((t: { qty?: number }) => typeof t.qty === "number" && (t.qty ?? 0) >= 1), "trending carries an order-volume signal");
+    // Best-reviewed ranks branches by rating; the 5-star review above puts this branch here.
+    assert.ok(Array.isArray(d.body.top_rated) && d.body.top_rated.length >= 1, "top_rated has dishes");
+    const reviewed = d.body.top_rated.find((t: { branch_id: string }) => t.branch_id === branchId);
+    assert.ok(reviewed, "the reviewed branch appears in best reviewed");
+    assert.ok(reviewed.rating >= 1 && reviewed.rating <= 5, "it carries its average rating");
+    assert.ok((reviewed.ratings ?? 0) >= 1, "and its review count");
+    // Discovery is country-scoped; an unknown market is refused.
+    assert.equal((await call("GET", "/v1/discovery", { country: "ZZ" })).status >= 400, true);
+  });
+
+  test("the merchant drafts an AI reply — grounded, offline (template); a non-owner cannot, unknown 404", async () => {
+    // A plain customer cannot draft a reply for a branch they don't manage.
+    assert.equal((await call("POST", `/v1/admin/reviews/${reviewId}/draft-reply`, { token: customer.token, country: "CD", body: {} })).status, 403);
+    // The owner drafts one. Offline, the deterministic writer produces it; the 5-star review gets a warm thank-you.
+    const d = await call("POST", `/v1/admin/reviews/${reviewId}/draft-reply`, { token: restaurantOwner.token, country: "CD", body: { lang: "en" } });
+    assert.equal(d.status, 200, JSON.stringify(d.body));
+    assert.equal(d.body.source, "template");
+    assert.ok(typeof d.body.draft === "string" && d.body.draft.length > 0, "a draft came back");
+    assert.match(d.body.draft, /thank/i, "a 5-star review earns a thank-you");
+    // Drafting changes nothing — the posted reply is untouched.
+    const unchanged = await call("GET", `/v1/branches/${branchId}/reviews`, { country: "CD" });
+    assert.equal(unchanged.body.reviews.find((r: { id: string }) => r.id === reviewId).reply, "Merci beaucoup! See you soon.");
+    // An unknown review is a 404.
+    assert.equal((await call("POST", "/v1/admin/reviews/00000000-0000-7000-8000-000000000000/draft-reply", { token: restaurantOwner.token, country: "CD", body: {} })).status, 404);
+  });
+
+  test("with no explicit language, a review reply is drafted in the reviewer's own language", async () => {
+    // The reviewer remembers English as their app language.
+    assert.equal((await call("POST", "/v1/me/locale", { token: customer.token, country: "CD", body: { locale: "en" } })).status, 200);
+    const d = await call("POST", `/v1/admin/reviews/${reviewId}/draft-reply`, { token: restaurantOwner.token, country: "CD", body: {} });
+    assert.equal(d.status, 200, JSON.stringify(d.body));
+    assert.match(d.body.draft, /thank you/i, "English reviewer → English reply, no explicit lang needed");
+  });
+
   test("an undelivered order cannot be reviewed", async () => {
     const q = await call("POST", "/v1/carts/quote", { token: customer.token, country: "CD", body: cart() });
     const placed = await call("POST", "/v1/orders", { token: customer.token, country: "CD", body: { ...cart(), payment_mode: "PREPAID", expected_total: q.body.total } });
@@ -1859,6 +2039,60 @@ describe("reviews and ratings", () => {
     const card = s.body.scorecards.find((c: { branch_id: string }) => c.branch_id === branchId);
     assert.ok(card.rating >= 1 && card.rating <= 5, "the scorecard shows the average rating");
     assert.ok(card.reviews >= 1);
+  });
+});
+
+describe("storefront upsell (AI cross-sell copy)", () => {
+  test("suggests one complementary, available dish with a grounded pitch — never one already in the cart", async () => {
+    const menu = await call("GET", `/v1/branches/${branchId}/menu`, { country: "CD" });
+    const available = menu.body.items.filter((i: { available: boolean }) => i.available);
+    assert.ok(available.length >= 2, "the branch has at least two available dishes");
+    const inCart = available[0];
+    const u = await call("POST", `/v1/branches/${branchId}/upsell`, { country: "CD", body: { item_ids: [inCart.id], lang: "en" } });
+    assert.equal(u.status, 200, JSON.stringify(u.body));
+    assert.ok(u.body.suggestion, "a suggestion came back");
+    assert.notEqual(u.body.suggestion.item_id, inCart.id, "never suggests a dish already in the cart");
+    assert.equal(u.body.suggestion.source, "template", "offline, the deterministic writer phrases it");
+    assert.ok(typeof u.body.suggestion.pitch === "string" && u.body.suggestion.pitch.length > 0, "a pitch was written");
+    // The suggested dish is a real, available menu item (not invented).
+    const match = menu.body.items.find((i: { id: string }) => i.id === u.body.suggestion.item_id);
+    assert.ok(match && match.available, "the suggestion is a real, available dish");
+  });
+
+  test("an empty cart gets no suggestion", async () => {
+    const u = await call("POST", `/v1/branches/${branchId}/upsell`, { country: "CD", body: { item_ids: [] } });
+    assert.equal(u.status, 200);
+    assert.equal(u.body.suggestion, null);
+  });
+});
+
+describe("admin exports (orders CSV)", () => {
+  test("a privileged admin downloads a scoped orders CSV; a plain customer cannot", async () => {
+    const r = await api.inject({ method: "GET", url: "/v1/admin/exports/orders.csv?days=90", headers: { authorization: `Bearer ${admin.token}`, "x-country": "CD" } });
+    assert.equal(r.statusCode, 200);
+    assert.match(String(r.headers["content-type"]), /text\/csv/);
+    assert.match(String(r.headers["content-disposition"]), /attachment; filename="tunakula-orders-CD-.*\.csv"/);
+    const lines = r.body.trim().split("\r\n");
+    assert.equal(lines[0], "Date (UTC),Order ID,Branch,Commune,State,Type,Payment mode,Payment method,Total,Currency,Customer");
+    assert.ok(lines.length >= 2, "at least one order row is exported");
+    assert.match(lines[1]!, /USD/, "each row carries its currency");
+    // A plain customer cannot export the market's orders.
+    const forbidden = await api.inject({ method: "GET", url: "/v1/admin/exports/orders.csv", headers: { authorization: `Bearer ${customer.token}`, "x-country": "CD" } });
+    assert.equal(forbidden.statusCode, 403);
+  });
+
+  test("finance downloads a rider-payouts CSV; a country admin (no ledger:read) cannot", async () => {
+    const finance = await signIn("+243810000840");
+    await grant({ userId: finance.userId, role: "COUNTRY_FINANCE", scope: { type: "COUNTRY", id: "CD" } });
+    const r = await api.inject({ method: "GET", url: "/v1/admin/exports/payouts.csv?days=90", headers: { authorization: `Bearer ${finance.token}`, "x-country": "CD" } });
+    assert.equal(r.statusCode, 200, r.body);
+    assert.match(String(r.headers["content-type"]), /text\/csv/);
+    assert.match(String(r.headers["content-disposition"]), /attachment; filename="tunakula-rider-payouts-CD-.*\.csv"/);
+    const lines = r.body.trim().split("\r\n");
+    assert.equal(lines[0], "Date (UTC),Payout ID,Rider,Amount,Currency,Method");
+    // A country admin lacks ledger:read, so cannot export payouts; a plain customer certainly cannot.
+    assert.equal((await api.inject({ method: "GET", url: "/v1/admin/exports/payouts.csv", headers: { authorization: `Bearer ${admin.token}`, "x-country": "CD" } })).statusCode, 403);
+    assert.equal((await api.inject({ method: "GET", url: "/v1/admin/exports/payouts.csv", headers: { authorization: `Bearer ${customer.token}`, "x-country": "CD" } })).statusCode, 403);
   });
 });
 
@@ -2216,6 +2450,89 @@ describe("wallet", () => {
     assert.equal(await balance(customer.token), before, "wallet made whole after cancellation");
     assert.equal((await call("GET", `/v1/orders/${placed.body.order_id}`, { token: customer.token, country: "CD" })).body.state, "REFUNDED");
   });
+
+  const settlementEntry = async (orderId: string, account: string) => {
+    const [row] = await inspect("CD", "SELECT e.amount_minor::text AS amount FROM money.ledger_entry e JOIN money.journal j ON j.id = e.journal_id WHERE j.idempotency_key = $1 AND e.account = $2", [`order:${orderId}:settlement`, account]);
+    return row ? BigInt(row.amount) : 0n;
+  };
+
+  test("split payment: wallet covers part, cash the rest; settlement draws from both and balances", async () => {
+    await call("POST", "/v1/me/wallet/topup", { token: customer.token, country: "CD", key: "topup-split-cod", body: { amount_minor: "10000", currency: "USD", method_type: "MOBILE_MONEY_PUSH", payer: { msisdn: "+243810000001" } } });
+    const before = await balance(customer.token);
+    const q = await call("POST", "/v1/carts/quote", { country: "CD", body: cart() });
+    const total = BigInt(q.body.total.amount_minor);
+    const apply = total / 2n; // some from the wallet, the rest in cash
+    const placed = await call("POST", "/v1/orders", { token: customer.token, country: "CD", body: { ...cart(), payment_mode: "CASH_ON_DELIVERY", wallet_apply_minor: apply.toString(), expected_total: q.body.total } });
+    assert.equal(placed.status, 201, JSON.stringify(placed.body));
+    // A cash order is live at once, so the wallet portion is committed immediately.
+    assert.equal(placed.body.state, "PLACED");
+    assert.equal(await balance(customer.token), before - apply, "wallet debited only by the applied portion");
+    const orderId = placed.body.order_id;
+    const code = placed.body.recipient_code;
+    await transition(ops, orderId, { type: "ASSIGN_RIDER", riderId: rider.userId });
+    await transition(kitchen, orderId, { type: "ACCEPT" });
+    await transition(kitchen, orderId, { type: "START_PREPARING" });
+    await transition(kitchen, orderId, { type: "PACK", confirmedLineIds: ["l1"], packageCount: 1, allergenAcknowledged: true });
+    await transition(kitchen, orderId, { type: "MARK_READY", packages: [{ labelId: "S-1", sealId: "S-1-S" }], packPhotoRef: "photo://pack" });
+    await transition(rider, orderId, { type: "PICK_UP", scannedLabelIds: ["S-1"], restaurantConfirmed: true, sealsIntact: true, location: KINSHASA });
+    const done = await transition(rider, orderId, { type: "DELIVER", scannedLabelId: "S-1", location: DROP, sealIntact: true, verification: { method: "CODE", code }, proofPhotoRef: "photo://door" });
+    assert.equal(done.body.state, "DELIVERED", JSON.stringify(done.body));
+    // The settlement split the money in across the two accounts.
+    assert.equal(await settlementEntry(orderId, "customer_wallet"), apply, "wallet portion drawn from customer_wallet");
+    assert.equal(await settlementEntry(orderId, "cod_cash_in_transit"), total - apply, "the rest collected as cash");
+    const [bal] = await inspect("CD", "SELECT currency, sum(amount_minor)::text AS s FROM money.ledger_entry WHERE currency = 'USD' GROUP BY currency");
+    assert.equal(bal.s, "0", "the ledger still balances");
+  });
+
+  test("split payment: wallet covers part, card the rest; the card is charged only the remainder", async () => {
+    await call("POST", "/v1/me/wallet/topup", { token: customer.token, country: "CD", key: "topup-split-card", body: { amount_minor: "10000", currency: "USD", method_type: "MOBILE_MONEY_PUSH", payer: { msisdn: "+243810000001" } } });
+    const before = await balance(customer.token);
+    const q = await call("POST", "/v1/carts/quote", { country: "CD", body: cart() });
+    const total = BigInt(q.body.total.amount_minor);
+    const apply = total / 3n;
+    const placed = await call("POST", "/v1/orders", { token: customer.token, country: "CD", body: { ...cart(), payment_mode: "PREPAID", wallet_apply_minor: apply.toString(), expected_total: q.body.total } });
+    assert.equal(placed.status, 201, JSON.stringify(placed.body));
+    // A prepaid order waits for the card charge, so the wallet is not touched yet.
+    assert.equal(placed.body.state, "PENDING_PAYMENT");
+    assert.equal(await balance(customer.token), before, "wallet untouched until the remainder is paid");
+    const orderId = placed.body.order_id;
+    const code = placed.body.recipient_code;
+    const pay = await call("POST", "/v1/payments/intents", { token: customer.token, country: "CD", body: { order_id: orderId, method_type: "MOBILE_MONEY_PUSH", payer: { msisdn: "+243810000001" } } });
+    assert.equal(pay.body.status, "SUCCEEDED", JSON.stringify(pay.body));
+    assert.equal(pay.body.amount.amount_minor, (total - apply).toString(), "the provider is charged only the remainder");
+    // The wallet portion is debited exactly once, on confirmation.
+    assert.equal(await balance(customer.token), before - apply, "wallet debited by the applied portion on confirmation");
+    await transition(ops, orderId, { type: "ASSIGN_RIDER", riderId: rider.userId });
+    await transition(kitchen, orderId, { type: "ACCEPT" });
+    await transition(kitchen, orderId, { type: "START_PREPARING" });
+    await transition(kitchen, orderId, { type: "PACK", confirmedLineIds: ["l1"], packageCount: 1, allergenAcknowledged: true });
+    await transition(kitchen, orderId, { type: "MARK_READY", packages: [{ labelId: "SC-1", sealId: "SC-1-S" }], packPhotoRef: "photo://pack" });
+    await transition(rider, orderId, { type: "PICK_UP", scannedLabelIds: ["SC-1"], restaurantConfirmed: true, sealsIntact: true, location: KINSHASA });
+    const done = await transition(rider, orderId, { type: "DELIVER", scannedLabelId: "SC-1", location: DROP, sealIntact: true, verification: { method: "CODE", code }, proofPhotoRef: "photo://door" });
+    assert.equal(done.body.state, "DELIVERED", JSON.stringify(done.body));
+    assert.equal(await settlementEntry(orderId, "customer_wallet"), apply, "wallet portion drawn from customer_wallet");
+    assert.equal(await settlementEntry(orderId, "psp_clearing"), total - apply, "the remainder cleared through the provider");
+    const [bal] = await inspect("CD", "SELECT currency, sum(amount_minor)::text AS s FROM money.ledger_entry WHERE currency = 'USD' GROUP BY currency");
+    assert.equal(bal.s, "0", "the ledger still balances");
+  });
+
+  test("a wallet amount at or above the total is refused (use wallet as the method instead)", async () => {
+    await call("POST", "/v1/me/wallet/topup", { token: customer.token, country: "CD", key: "topup-split-guard", body: { amount_minor: "20000", currency: "USD", method_type: "MOBILE_MONEY_PUSH", payer: { msisdn: "+243810000001" } } });
+    const q = await call("POST", "/v1/carts/quote", { country: "CD", body: cart() });
+    const total = BigInt(q.body.total.amount_minor);
+    const r = await call("POST", "/v1/orders", { token: customer.token, country: "CD", body: { ...cart(), payment_mode: "PREPAID", wallet_apply_minor: total.toString(), expected_total: q.body.total } });
+    assert.equal(r.body.code, "WALLET_APPLY_TOO_LARGE", JSON.stringify(r.body));
+  });
+
+  test("a split order needing more wallet than the balance holds is refused", async () => {
+    const lean = await signIn("+243810000085");
+    await call("POST", "/v1/me/wallet/topup", { token: lean.token, country: "CD", key: "topup-split-lean", body: { amount_minor: "100", currency: "USD", method_type: "MOBILE_MONEY_PUSH", payer: { msisdn: "+243810000085" } } });
+    const q = await call("POST", "/v1/carts/quote", { country: "CD", body: cart() });
+    const total = BigInt(q.body.total.amount_minor);
+    const r = await call("POST", "/v1/orders", { token: lean.token, country: "CD", body: { ...cart(), payment_mode: "CASH_ON_DELIVERY", wallet_apply_minor: (total / 2n).toString(), expected_total: q.body.total } });
+    assert.equal(r.body.code, "INSUFFICIENT_WALLET_BALANCE", JSON.stringify(r.body));
+    assert.equal((await call("GET", "/v1/me/orders", { token: lean.token, country: "CD" })).body.data.length, 0, "nothing placed");
+  });
 });
 
 describe("referrals", () => {
@@ -2352,5 +2669,1741 @@ describe("self-serve merchant onboarding", () => {
     const stranger = await signIn("+243810000201");
     const r = await call("POST", "/v1/merchant/branches", { token: stranger.token, country: "CD", body: { group_id: "rg-someone-else", name: "Pirate branch", lat: KIN2.lat, lng: KIN2.lng } });
     assert.equal(r.status, 403);
+  });
+
+  test("the console's branches view guides a brand-new merchant through the same screens (no separate wizard)", async () => {
+    const merchant = await signIn("+243810000202");
+    // A brand-new user is not refused: the console shows them the set-up path.
+    const empty = await call("GET", "/v1/admin/branches", { token: merchant.token, country: "CD" });
+    assert.equal(empty.status, 200, JSON.stringify(empty.body));
+    assert.equal(empty.body.has_business, false);
+    assert.equal(empty.body.can_create, false);
+    assert.equal(empty.body.data.length, 0);
+    // They register, then the same endpoint reports they now own a business.
+    const reg = await call("POST", "/v1/merchant/register", { token: merchant.token, country: "CD", body: { business_name: "Chez Espoir" } });
+    const groupId = reg.body.group_id;
+    const owned = await call("GET", "/v1/admin/branches", { token: merchant.token, country: "CD" });
+    assert.equal(owned.body.has_business, true);
+    assert.equal(owned.body.group_id, groupId);
+    // They add a branch from the console; it shows up in their branches list as a draft (unpublished).
+    const br = await call("POST", "/v1/merchant/branches", { token: merchant.token, country: "CD", body: { group_id: groupId, name: "Chez Espoir — Ngaliema", lat: KIN2.lat, lng: KIN2.lng, commune: "ngaliema" } });
+    const withBranch = await call("GET", "/v1/admin/branches", { token: merchant.token, country: "CD" });
+    const row = (withBranch.body.data as { id: string; published: boolean }[]).find((b) => b.id === br.body.branch_id);
+    assert.ok(row, "the new branch appears in the console");
+    assert.equal(row!.published, false, "it is a draft until published");
+  });
+
+  test("one account owns a separate, sealed business in each country, with branches in each", async () => {
+    const owner = await signIn("+243810000314");
+    // Register a brand in CD and add a branch there.
+    const cd = await call("POST", "/v1/merchant/register", { token: owner.token, country: "CD", body: { business_name: "Saveurs du Fleuve" } });
+    assert.ok(cd.body.group_id, JSON.stringify(cd.body));
+    const cdBranch = await call("POST", "/v1/merchant/branches", { token: owner.token, country: "CD", body: { group_id: cd.body.group_id, name: "Saveurs — Gombe", lat: KINSHASA.lat, lng: KINSHASA.lng, commune: "gombe" } });
+    assert.ok(cdBranch.body.branch_id, JSON.stringify(cdBranch.body));
+
+    // The SAME account opens a business in GB — a new, distinct brand, not a collision with the CD one.
+    const gb = await call("POST", "/v1/merchant/register", { token: owner.token, country: "GB", body: { business_name: "River Flavours" } });
+    assert.ok(gb.body.group_id, JSON.stringify(gb.body));
+    assert.notEqual(gb.body.group_id, cd.body.group_id, "a different brand id per country");
+    const gbBranch = await call("POST", "/v1/merchant/branches", { token: owner.token, country: "GB", body: { group_id: gb.body.group_id, name: "River — Soho", lat: 51.513, lng: -0.136, commune: "soho" } });
+    assert.ok(gbBranch.body.branch_id, JSON.stringify(gbBranch.body));
+
+    // Each country's console shows only that country's brand and branches — the markets stay sealed.
+    const cdView = await call("GET", "/v1/admin/branches", { token: owner.token, country: "CD" });
+    assert.equal(cdView.body.group_id, cd.body.group_id);
+    const cdIds = (cdView.body.data as { id: string }[]).map((b) => b.id);
+    assert.ok(cdIds.includes(cdBranch.body.branch_id), "CD shows its own branch");
+    assert.ok(!cdIds.includes(gbBranch.body.branch_id), "CD does not see the GB branch");
+
+    const gbView = await call("GET", "/v1/admin/branches", { token: owner.token, country: "GB" });
+    assert.equal(gbView.body.group_id, gb.body.group_id);
+    const gbIds = (gbView.body.data as { id: string }[]).map((b) => b.id);
+    assert.ok(gbIds.includes(gbBranch.body.branch_id), "GB shows its own branch");
+    assert.ok(!gbIds.includes(cdBranch.body.branch_id), "GB does not see the CD branch");
+
+    // Re-registering in CD is a resumable no-op that keeps the same brand (no second CD brand is created).
+    const again = await call("POST", "/v1/merchant/register", { token: owner.token, country: "CD", body: { business_name: "Saveurs du Fleuve" } });
+    assert.equal(again.body.group_id, cd.body.group_id, "resume reuses the existing CD brand");
+  });
+});
+
+describe("food photos", () => {
+  const jpeg = (seed: number) => Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(64, seed), Buffer.from([0xff, 0xd9])]).toString("base64");
+
+  test("a merchant uploads a food photo, attaches it, and it is served publicly on the menu", async () => {
+    const owner = await signIn("+243810000220");
+    const reg = await call("POST", "/v1/merchant/register", { token: owner.token, country: "CD", body: { business_name: "Chez Photo" } });
+    const br = await call("POST", "/v1/merchant/branches", { token: owner.token, country: "CD", body: { group_id: reg.body.group_id, name: "Chez Photo — Gombe", lat: -4.32, lng: 15.31, commune: "gombe" } });
+    const branchId = br.body.branch_id;
+
+    // Upload the photo to the shared media store under the public MENU_ITEM purpose.
+    const up = await call("POST", "/v1/media", { token: owner.token, country: "CD", body: { purpose: "MENU_ITEM", content_type: "image/jpeg", data_base64: jpeg(7) } });
+    assert.equal(up.status, 201, JSON.stringify(up.body));
+    const imageId = up.body.id;
+
+    // Attach it to a new dish.
+    const item = await call("POST", `/v1/branches/${branchId}/items`, { token: owner.token, country: "CD", body: { names: { fr: "Poulet à la moambe" }, prices: { USD: "12.50" }, image_id: imageId } });
+    assert.equal(item.status, 201, JSON.stringify(item.body));
+    assert.equal(item.body.image_id, imageId, "the item carries its photo id");
+
+    // The public menu read returns the photo id (guests can read it, no token).
+    const menu = await call("GET", `/v1/branches/${branchId}/menu`, { country: "CD" });
+    assert.equal(menu.body.items[0].image_id, imageId);
+
+    // The photo is served publicly as an image, country in the query so a plain <img> URL works.
+    const img = await api.inject({ method: "GET", url: `/v1/menu-images/${imageId}?c=CD` });
+    assert.equal(img.statusCode, 200);
+    assert.match(img.headers["content-type"] as string, /^image\/jpeg/);
+    assert.ok((img.headers["cache-control"] as string)?.includes("max-age"), "food photos are cacheable");
+  });
+
+  test("a private rider photo is never served through the public food-photo URL", async () => {
+    const applicant = await signIn("+243810000221");
+    const up = await call("POST", "/v1/media", { token: applicant.token, country: "CD", body: { purpose: "RIDER_ID", content_type: "image/jpeg", data_base64: jpeg(9) } });
+    const idPhoto = up.body.id;
+    // The public endpoint only serves MENU_ITEM media, so a rider ID is not found there.
+    const leak = await api.inject({ method: "GET", url: `/v1/menu-images/${idPhoto}?c=CD` });
+    assert.equal(leak.statusCode, 404, "a rider ID does not leak through the food-photo URL");
+    // And a dish cannot borrow a non-food image.
+    const owner = await signIn("+243810000222");
+    const reg = await call("POST", "/v1/merchant/register", { token: owner.token, country: "CD", body: { business_name: "Chez Try" } });
+    const br = await call("POST", "/v1/merchant/branches", { token: owner.token, country: "CD", body: { group_id: reg.body.group_id, name: "Chez Try — Limete", lat: -4.33, lng: 15.33 } });
+    const bad = await call("POST", `/v1/branches/${br.body.branch_id}/items`, { token: owner.token, country: "CD", body: { names: { fr: "Test" }, prices: { USD: "5.00" }, image_id: idPhoto } });
+    assert.equal(bad.body.code, "IMAGE_INVALID", JSON.stringify(bad.body));
+  });
+});
+
+describe("business profile", () => {
+  const png = (seed: number) => Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(32, seed)]).toString("base64");
+
+  test("a merchant sets address, contact, about, cuisines, order minimum, logo and cover", async () => {
+    const owner = await signIn("+243810000230");
+    const reg = await call("POST", "/v1/merchant/register", { token: owner.token, country: "CD", body: { business_name: "Chez Profil" } });
+    const br = await call("POST", "/v1/merchant/branches", { token: owner.token, country: "CD", body: { group_id: reg.body.group_id, name: "Chez Profil — Gombe", lat: -4.32, lng: 15.31, commune: "gombe" } });
+    const branchId = br.body.branch_id;
+
+    const logo = await call("POST", "/v1/media", { token: owner.token, country: "CD", body: { purpose: "BRANCH_LOGO", content_type: "image/png", data_base64: png(1) } });
+    const cover = await call("POST", "/v1/media", { token: owner.token, country: "CD", body: { purpose: "BRANCH_COVER", content_type: "image/png", data_base64: png(2) } });
+    assert.equal(logo.status, 201, JSON.stringify(logo.body));
+
+    const saved = await call("POST", `/v1/branches/${branchId}/profile`, { token: owner.token, country: "CD", body: {
+      address: "12 Avenue du Commerce, Gombe", phone: "+243810000230", email: "hello@chezprofil.cd",
+      description: { fr: "Cuisine congolaise maison.", en: "Home-style Congolese food." },
+      cuisines: ["Congolais", "Grillades"], min_order: "5.00", logo_id: logo.body.id, cover_id: cover.body.id,
+    } });
+    assert.equal(saved.status, 200, JSON.stringify(saved.body));
+    assert.equal(saved.body.address, "12 Avenue du Commerce, Gombe");
+    assert.equal(saved.body.phone, "+243810000230");
+    assert.deepEqual(saved.body.cuisines, ["congolais", "grillades"]);
+    assert.equal(saved.body.min_order_minor, "500");
+    assert.equal(saved.body.logo_id, logo.body.id);
+
+    // The storefront menu read carries the profile, and the logo/cover serve publicly.
+    const menu = await call("GET", `/v1/branches/${branchId}/menu`, { country: "CD" });
+    assert.equal(menu.body.branch.address, "12 Avenue du Commerce, Gombe");
+    assert.equal(menu.body.branch.logo_id, logo.body.id);
+    const img = await api.inject({ method: "GET", url: `/v1/images/${logo.body.id}?c=CD` });
+    assert.equal(img.statusCode, 200);
+
+    // A bad email is refused; a private photo cannot be used as a logo.
+    assert.equal((await call("POST", `/v1/branches/${branchId}/profile`, { token: owner.token, country: "CD", body: { email: "nope" } })).body.code, "EMAIL_INVALID");
+    const rider = await call("POST", "/v1/media", { token: owner.token, country: "CD", body: { purpose: "RIDER_ID", content_type: "image/png", data_base64: png(3) } });
+    assert.equal((await call("POST", `/v1/branches/${branchId}/profile`, { token: owner.token, country: "CD", body: { logo_id: rider.body.id } })).body.code, "IMAGE_INVALID");
+  });
+
+  test("only someone who manages the branch can edit its profile", async () => {
+    const owner = await signIn("+243810000231");
+    const reg = await call("POST", "/v1/merchant/register", { token: owner.token, country: "CD", body: { business_name: "Chez Garde" } });
+    const br = await call("POST", "/v1/merchant/branches", { token: owner.token, country: "CD", body: { group_id: reg.body.group_id, name: "Chez Garde — Limete", lat: -4.33, lng: 15.33 } });
+    const stranger = await signIn("+243810000232");
+    assert.equal((await call("POST", `/v1/branches/${br.body.branch_id}/profile`, { token: stranger.token, country: "CD", body: { address: "nope" } })).status, 403);
+  });
+});
+
+describe("brands and franchises", () => {
+  const branches = async (token: string) => {
+    const r = await call("GET", "/v1/admin/branches", { token, country: "CD" });
+    return r.body as { has_business: boolean; data: { id: string; name: string; published: boolean }[] };
+  };
+
+  test("a franchisee signs up individually and joins a brand with its code; each manages only their own branch", async () => {
+    // The brand owner registers, opens one branch, and gets an invite code.
+    const owner = await signIn("+243810000250");
+    const reg = await call("POST", "/v1/merchant/register", { token: owner.token, country: "CD", body: { business_name: "Chez Maman" } });
+    const ownerBranch = await call("POST", "/v1/merchant/branches", { token: owner.token, country: "CD", body: { group_id: reg.body.group_id, name: "Chez Maman — Gombe", lat: -4.31, lng: 15.28, commune: "gombe" } });
+    const invite = await call("POST", "/v1/merchant/brand/invite", { token: owner.token, country: "CD" });
+    assert.equal(invite.status, 200, JSON.stringify(invite.body));
+    assert.match(invite.body.invite_code, /^[A-Z2-9]{8}$/);
+    assert.equal(invite.body.name, "Chez Maman");
+    const code = invite.body.invite_code;
+
+    // A different person signs up and joins the brand with the code, getting their own branch under it.
+    const franchisee = await signIn("+243810000251");
+    const join = await call("POST", "/v1/merchant/join", { token: franchisee.token, country: "CD", body: { code, name: "Chez Maman — Lemba", lat: -4.34, lng: 15.33, commune: "lemba" } });
+    assert.equal(join.status, 201, JSON.stringify(join.body));
+    assert.equal(join.body.group_id, reg.body.group_id, "the franchisee's branch is under the same brand");
+    assert.equal(join.body.brand_name, "Chez Maman");
+    const franchiseeBranch = join.body.branch_id;
+
+    // The franchisee runs their own branch: adds a dish and publishes it.
+    await call("POST", `/v1/branches/${franchiseeBranch}/items`, { token: franchisee.token, country: "CD", body: { names: { fr: "Pondu" }, prices: { USD: "3.50" } } });
+    await call("POST", `/v1/branches/${franchiseeBranch}/profile`, { token: franchisee.token, country: "CD", body: { address: "Lemba, Kinshasa" } });
+    const pub = await call("POST", `/v1/merchant/branches/${franchiseeBranch}/publish`, { token: franchisee.token, country: "CD" });
+    assert.equal(pub.body.published, true, JSON.stringify(pub.body));
+
+    // The franchisee sees only their own branch; the brand owner sees both.
+    const fView = await branches(franchisee.token);
+    assert.equal(fView.has_business, false, "a franchisee does not own the brand");
+    assert.deepEqual(fView.data.map((b) => b.id), [franchiseeBranch], "a franchisee sees only their own branch");
+    const oView = await branches(owner.token);
+    assert.equal(oView.has_business, true);
+    const ownerIds = oView.data.map((b) => b.id).sort();
+    assert.deepEqual([ownerBranch.body.branch_id, franchiseeBranch].sort(), ownerIds, "the brand owner sees every branch");
+
+    // A franchisee cannot touch a sibling branch they do not run.
+    assert.equal((await call("POST", `/v1/branches/${ownerBranch.body.branch_id}/profile`, { token: franchisee.token, country: "CD", body: { address: "nope" } })).status, 403);
+  });
+
+  test("a bad code is refused, and someone who already runs a business cannot join another brand", async () => {
+    const joiner = await signIn("+243810000252");
+    assert.equal((await call("POST", "/v1/merchant/join", { token: joiner.token, country: "CD", body: { code: "NOPE2345", name: "X", lat: -4.3, lng: 15.3 } })).body.code, "INVALID_INVITE");
+    // Register a business, then try to join another brand — refused.
+    const owner = await signIn("+243810000253");
+    const reg = await call("POST", "/v1/merchant/register", { token: owner.token, country: "CD", body: { business_name: "Brand A" } });
+    const invite = await call("POST", "/v1/merchant/brand/invite", { token: owner.token, country: "CD" });
+    assert.equal((await call("POST", "/v1/merchant/join", { token: owner.token, country: "CD", body: { code: invite.body.invite_code, name: "Y", lat: -4.3, lng: 15.3 } })).body.code, "ALREADY_HAS_BUSINESS");
+    // A non-owner cannot mint an invite code.
+    assert.equal((await call("POST", "/v1/merchant/brand/invite", { token: joiner.token, country: "CD" })).status, 403);
+    assert.ok(reg.body.group_id);
+  });
+
+  test("an owner copies one branch's whole menu into another of their branches", async () => {
+    const jpeg = (seed: number) => Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(32, seed), Buffer.from([0xff, 0xd9])]).toString("base64");
+    const owner = await signIn("+243810000260");
+    const reg = await call("POST", "/v1/merchant/register", { token: owner.token, country: "CD", body: { business_name: "Multi Brand" } });
+    const a = (await call("POST", "/v1/merchant/branches", { token: owner.token, country: "CD", body: { group_id: reg.body.group_id, name: "Multi — Gombe", lat: -4.31, lng: 15.28 } })).body.branch_id;
+    const b = (await call("POST", "/v1/merchant/branches", { token: owner.token, country: "CD", body: { group_id: reg.body.group_id, name: "Multi — Lemba", lat: -4.34, lng: 15.33 } })).body.branch_id;
+    const img = await call("POST", "/v1/media", { token: owner.token, country: "CD", body: { purpose: "MENU_ITEM", content_type: "image/jpeg", data_base64: jpeg(5) } });
+    await call("POST", `/v1/branches/${a}/items`, { token: owner.token, country: "CD", body: { names: { fr: "Poulet moambe" }, prices: { USD: "12.50" }, image_id: img.body.id, variations: [{ name: "Taille", type: "SINGLE", required: true, options: [{ name: "Normale", price: "0" }, { name: "Familiale", price: "6.00" }] }] } });
+    await call("POST", `/v1/branches/${a}/items`, { token: owner.token, country: "CD", body: { names: { fr: "Pondu" }, prices: { USD: "3.50" } } });
+
+    // Copy A's menu into the (empty) branch B.
+    const copy = await call("POST", `/v1/branches/${a}/menu/copy-to`, { token: owner.token, country: "CD", body: { target_branch_id: b } });
+    assert.equal(copy.status, 200, JSON.stringify(copy.body));
+    assert.equal(copy.body.copied, 2);
+    const menuB = await call("GET", `/v1/branches/${b}/menu`, { country: "CD" });
+    const moambe = (menuB.body.items as { names: Record<string, string>; image_id: string | null; variations: unknown[] }[]).find((i) => i.names.fr === "Poulet moambe");
+    assert.ok(moambe, "the dish was copied");
+    assert.equal(moambe!.image_id, img.body.id, "the photo comes along");
+    assert.equal(moambe!.variations.length, 1, "variations come along");
+
+    // Copying into the same branch, or without a target, is refused.
+    assert.equal((await call("POST", `/v1/branches/${a}/menu/copy-to`, { token: owner.token, country: "CD", body: { target_branch_id: a } })).body.code, "SAME_BRANCH");
+    // Someone who does not manage the target cannot copy into it.
+    const stranger = await signIn("+243810000264");
+    assert.equal((await call("POST", `/v1/branches/${a}/menu/copy-to`, { token: stranger.token, country: "CD", body: { target_branch_id: b } })).status, 403);
+
+    // The source now lists the branch it seeded, so later edits can be synced down.
+    const copies = await call("GET", `/v1/branches/${a}/menu/copies`, { token: owner.token, country: "CD" });
+    assert.equal(copies.body.branches.length, 1);
+    assert.equal(copies.body.branches[0].id, b);
+    assert.equal(copies.body.branches[0].linked, 2);
+
+    // Edit the source (price change) and add a new source dish, then sync down.
+    const srcMenu = await call("GET", `/v1/branches/${a}/menu`, { country: "CD" });
+    const moambeId = (srcMenu.body.items as { id: string; names: Record<string, string> }[]).find((i) => i.names.fr === "Poulet moambe")!.id;
+    await call("POST", `/v1/branches/${a}/items/${moambeId}`, { token: owner.token, country: "CD", body: { names: { fr: "Poulet moambe" }, prices: { USD: "14.00" } } });
+    await call("POST", `/v1/branches/${a}/items`, { token: owner.token, country: "CD", body: { names: { fr: "Saka-saka" }, prices: { USD: "2.50" } } });
+
+    // On branch B, mark the moambe sold-out — sync must keep that local availability.
+    const bMenu1 = await call("GET", `/v1/branches/${b}/menu`, { country: "CD" });
+    const bMoambe = (bMenu1.body.items as { id: string; names: Record<string, string> }[]).find((i) => i.names.fr === "Poulet moambe")!.id;
+    await call("POST", `/v1/branches/${b}/items/${bMoambe}/availability`, { token: owner.token, country: "CD", body: { available: false } });
+
+    const sync = await call("POST", `/v1/branches/${a}/menu/copy-to`, { token: owner.token, country: "CD", body: { target_branch_id: b } });
+    assert.equal(sync.body.updated, 2, "the two existing copies are updated");
+    assert.equal(sync.body.added, 1, "the new dish is added");
+    const bMenu2 = await call("GET", `/v1/branches/${b}/menu`, { country: "CD" });
+    const bItems = bMenu2.body.items as { names: Record<string, string>; prices: Record<string, { amount_minor: string }>; available: boolean }[];
+    const moambe2 = bItems.find((i) => i.names.fr === "Poulet moambe")!;
+    assert.equal(moambe2.prices.USD!.amount_minor, "1400", "the price edit synced down");
+    assert.equal(moambe2.available, false, "the branch's own sold-out flag is kept");
+    assert.ok(bItems.some((i) => i.names.fr === "Saka-saka"), "the new dish synced down");
+    assert.equal(bItems.length, 3, "no duplicates — sync upserts by lineage");
+  });
+
+  test("copy with a price adjust (+10%) marks the target up, and later syncs keep the markup", async () => {
+    const owner = await signIn("+243810000265");
+    const reg = await call("POST", "/v1/merchant/register", { token: owner.token, country: "CD", body: { business_name: "Pricey Co" } });
+    const src = (await call("POST", "/v1/merchant/branches", { token: owner.token, country: "CD", body: { group_id: reg.body.group_id, name: "Src", lat: -4.31, lng: 15.28 } })).body.branch_id;
+    const dst = (await call("POST", "/v1/merchant/branches", { token: owner.token, country: "CD", body: { group_id: reg.body.group_id, name: "Pricier", lat: -4.34, lng: 15.33 } })).body.branch_id;
+    await call("POST", `/v1/branches/${src}/items`, { token: owner.token, country: "CD", body: { names: { fr: "Burger" }, prices: { USD: "10.00" }, addons: [{ name: "Fromage", price: "1.00" }] } });
+
+    // Copy with +10%: the target's goods and add-on prices are marked up.
+    const copy = await call("POST", `/v1/branches/${src}/menu/copy-to`, { token: owner.token, country: "CD", body: { target_branch_id: dst, price_adjust_pct: 10 } });
+    assert.equal(copy.body.markup_pct, 10);
+    let burger = (await call("GET", `/v1/branches/${dst}/menu`, { country: "CD" })).body.items[0];
+    assert.equal(burger.prices.USD.amount_minor, "1100", "goods +10%");
+    assert.equal(burger.addons[0].price, "110", "add-on +10% (minor units)");
+
+    // The source raises its price; a plain sync (no pct) keeps the stored +10%.
+    const srcItem = (await call("GET", `/v1/branches/${src}/menu`, { country: "CD" })).body.items[0];
+    await call("POST", `/v1/branches/${src}/items/${srcItem.id}`, { token: owner.token, country: "CD", body: { names: { fr: "Burger" }, prices: { USD: "20.00" }, addons: [{ name: "Fromage", price: "1.00" }] } });
+    const sync = await call("POST", `/v1/branches/${src}/menu/copy-to`, { token: owner.token, country: "CD", body: { target_branch_id: dst } });
+    assert.equal(sync.body.markup_pct, 10, "the markup is remembered");
+    burger = (await call("GET", `/v1/branches/${dst}/menu`, { country: "CD" })).body.items[0];
+    assert.equal(burger.prices.USD.amount_minor, "2200", "the raised price syncs down, still +10%");
+
+    // The linked-branches list reports the markup.
+    const copies = await call("GET", `/v1/branches/${src}/menu/copies`, { token: owner.token, country: "CD" });
+    assert.equal(copies.body.branches[0].markup_bps, 1000);
+  });
+});
+
+describe("loyalty points", () => {
+  const loyalty = () => api.get<LoyaltyService>(TOKENS.loyalty);
+  const walletUsd = async (token: string) => {
+    const r = await call("GET", "/v1/me/wallet", { token, country: "CD" });
+    const usd = r.body.balances.find((b: { currency: string }) => b.currency === "USD");
+    return usd ? BigInt(usd.amount_minor) : 0n;
+  };
+  // Drives one fresh cash order to DELIVERED for the given customer; returns the order total in minor units.
+  let llabel = 0;
+  const deliverOnce = async (who: { token: string; userId: string }) => {
+    const q = await call("POST", "/v1/carts/quote", { token: who.token, country: "CD", body: cart() });
+    const total = BigInt(q.body.total.amount_minor);
+    const placed = await call("POST", "/v1/orders", { token: who.token, country: "CD", body: { ...cart(), payment_mode: "CASH_ON_DELIVERY", expected_total: q.body.total } });
+    assert.equal(placed.status, 201, JSON.stringify(placed.body));
+    const orderId = placed.body.order_id, code = placed.body.recipient_code;
+    const lb = `LY-${++llabel}`;
+    await transition(ops, orderId, { type: "ASSIGN_RIDER", riderId: rider.userId });
+    await transition(kitchen, orderId, { type: "ACCEPT" });
+    await transition(kitchen, orderId, { type: "START_PREPARING" });
+    await transition(kitchen, orderId, { type: "PACK", confirmedLineIds: ["l1"], packageCount: 1, allergenAcknowledged: true });
+    await transition(kitchen, orderId, { type: "MARK_READY", packages: [{ labelId: lb, sealId: `${lb}-S` }], packPhotoRef: "photo://pack" });
+    await transition(rider, orderId, { type: "PICK_UP", scannedLabelIds: [lb], restaurantConfirmed: true, sealsIntact: true, location: KINSHASA });
+    const done = await transition(rider, orderId, { type: "DELIVER", scannedLabelId: lb, location: DROP, sealIntact: true, verification: { method: "CODE", code }, proofPhotoRef: "photo://door" });
+    assert.equal(done.body.state, "DELIVERED", JSON.stringify(done.body));
+    return total;
+  };
+
+  test("a delivered order earns points, which redeem for wallet credit; the admin sets the rates", async () => {
+    const shopper = await signIn("+243810000210");
+    await backdate(shopper.userId, 30); // COD needs an account older than the floor
+
+    // No points to start with; the summary reports the default rules (1% earn, 1 minor per point, min 100).
+    const start = await call("GET", "/v1/me/loyalty", { token: shopper.token, country: "CD" });
+    assert.equal(start.status, 200, JSON.stringify(start.body));
+    assert.equal(start.body.points, 0);
+    assert.equal(start.body.enabled, true);
+    assert.equal(start.body.earn_bps, 100);
+    assert.equal(start.body.min_redeem_points, 100);
+
+    // A delivered order earns floor(total_minor * earn_bps / 10000) points once the sweep runs.
+    const total = await deliverOnce(shopper);
+    const expected = Number((total * 100n) / 10000n);
+    assert.ok(expected > 0, "the order is large enough to earn at least one point");
+    const swept = await loyalty().awardSweep("CD");
+    assert.ok(swept.awarded >= 1, JSON.stringify(swept));
+    const earned = await call("GET", "/v1/me/loyalty", { token: shopper.token, country: "CD" });
+    assert.equal(earned.body.points, expected, "points equal 1% of the spend in minor units");
+    // The ledger records one EARN movement tied to the order.
+    const hist = await call("GET", "/v1/me/loyalty/transactions", { token: shopper.token, country: "CD" });
+    assert.equal(hist.body.transactions[0].kind, "EARN");
+    assert.equal(hist.body.transactions[0].points, expected);
+
+    // The sweep is idempotent: running it again awards nothing new.
+    await loyalty().awardSweep("CD");
+    assert.equal((await call("GET", "/v1/me/loyalty", { token: shopper.token, country: "CD" })).body.points, expected);
+
+    // Redeeming below the market minimum is refused.
+    const tooFew = await call("POST", "/v1/me/loyalty/redeem", { token: shopper.token, country: "CD", body: { points: 1 } });
+    assert.equal(tooFew.body.code, "BELOW_MIN_REDEEM", JSON.stringify(tooFew.body));
+
+    // The admin lowers the minimum (and the per-point value) so the shopper can redeem what they earned.
+    const forbiddenSet = await call("POST", "/v1/admin/loyalty", { token: shopper.token, country: "CD", body: { min_redeem_points: 5 } });
+    assert.equal(forbiddenSet.status, 403, "only a market admin sets the rates");
+    const cfg = await call("POST", "/v1/admin/loyalty", { token: admin.token, country: "CD", body: { min_redeem_points: 5, redeem_minor_per_point: 2 } });
+    assert.equal(cfg.status, 200, JSON.stringify(cfg.body));
+    assert.equal(cfg.body.min_redeem_points, 5);
+    assert.equal(cfg.body.redeem_minor_per_point, 2);
+    assert.equal((await call("GET", "/v1/admin/loyalty", { token: admin.token, country: "CD" })).body.min_redeem_points, 5);
+
+    // The shopper redeems all their points; the wallet is credited points × value and the points are spent.
+    const walletBefore = await walletUsd(shopper.token);
+    const key = "loyalty-redeem-1";
+    const redeem = await call("POST", "/v1/me/loyalty/redeem", { token: shopper.token, country: "CD", key, body: { points: expected } });
+    assert.equal(redeem.status, 200, JSON.stringify(redeem.body));
+    assert.equal(redeem.body.points_balance, 0, "all points spent");
+    assert.equal(redeem.body.credited.amount_minor, String(expected * 2), "credited points × per-point value");
+    assert.equal(await walletUsd(shopper.token), walletBefore + BigInt(expected * 2), "wallet made richer by the credit");
+    assert.equal((await call("GET", "/v1/me/loyalty", { token: shopper.token, country: "CD" })).body.points, 0);
+
+    // A repeat with the same idempotency key does not redeem again.
+    const again = await call("POST", "/v1/me/loyalty/redeem", { token: shopper.token, country: "CD", key, body: { points: expected } });
+    assert.equal(again.status, 200, JSON.stringify(again.body));
+    assert.equal(await walletUsd(shopper.token), walletBefore + BigInt(expected * 2), "no double credit on replay");
+
+    // With no points left, redeeming is refused for want of points.
+    const empty = await call("POST", "/v1/me/loyalty/redeem", { token: shopper.token, country: "CD", body: { points: 5 } });
+    assert.equal(empty.body.code, "INSUFFICIENT_POINTS", JSON.stringify(empty.body));
+
+    // The money books still balance after the redemption credit.
+    const [bal] = await inspect("CD", "SELECT sum(amount_minor)::text AS s FROM money.ledger_entry WHERE currency = 'USD'");
+    assert.equal(bal.s, "0", "the ledger still balances");
+
+    // Restore the market default so later assertions elsewhere are unaffected.
+    await call("POST", "/v1/admin/loyalty", { token: admin.token, country: "CD", body: { min_redeem_points: 100, redeem_minor_per_point: 1 } });
+  });
+});
+
+describe("delivery zones", () => {
+  // A dedicated branch so zones here never affect the shared branch other tests deliver to.
+  let zbranch: string;
+  const NEAR = { lat: -4.3215, lng: 15.2947 }; // ~1.4 km from KINSHASA, same as DROP
+  const FAR = { lat: -4.0000, lng: 15.0000 };   // tens of km away
+  const zcart = (drop: { lat: number; lng: number }) => ({ branch_id: zbranch, items: [{ item_id: zitem, quantity: 1 }], order_type: "DELIVERY", delivery: drop });
+  let zitem: string;
+
+  test("a branch delivers everywhere until it defines zones; then only inside them, at the zone's fee and minimum", async () => {
+    const br = await call("POST", "/v1/branches", { token: admin.token, country: "CD", body: { name: "Zoned Kitchen", restaurant_group_id: "rg-chez-maman", city: "kinshasa", commune: "gombe", ...KINSHASA } });
+    zbranch = br.body.id;
+    const it = await call("POST", `/v1/branches/${zbranch}/items`, { token: restaurantOwner.token, country: "CD", body: { names: { fr: "Liboke", en: "Fish parcel" }, prices: { USD: "8.00" } } });
+    zitem = it.body.id;
+
+    // With no zones, a delivery quote to the drop works and uses the distance ladder.
+    const open = await call("POST", "/v1/carts/quote", { country: "CD", body: zcart(NEAR) });
+    assert.equal(open.status, 200, JSON.stringify(open.body));
+    assert.notEqual(open.body.delivery.step, "ZONE_FLAT");
+
+    // A customer cannot define zones; only a branch manager can.
+    assert.equal((await call("POST", `/v1/branches/${zbranch}/delivery-zones`, { token: customer.token, country: "CD", body: { name: "x", centre_lat: NEAR.lat, centre_lng: NEAR.lng, radius_m: 2000 } })).status, 403);
+
+    // Define a zone that does NOT cover the drop. Now the drop is out of the service area.
+    const far = await call("POST", `/v1/branches/${zbranch}/delivery-zones`, { token: restaurantOwner.token, country: "CD", body: { name: "Far side", centre_lat: FAR.lat, centre_lng: FAR.lng, radius_m: 1000 } });
+    assert.equal(far.status, 201, JSON.stringify(far.body));
+    const outside = await call("POST", "/v1/carts/quote", { country: "CD", body: zcart(NEAR) });
+    assert.equal(outside.body.code, "OUTSIDE_SERVICE_AREA", JSON.stringify(outside.body));
+
+    // Add a zone that covers the drop with a flat $2.00 delivery fee. The quote now charges exactly that.
+    const near = await call("POST", `/v1/branches/${zbranch}/delivery-zones`, { token: restaurantOwner.token, country: "CD", body: { name: "Gombe core", centre_lat: NEAR.lat, centre_lng: NEAR.lng, radius_m: 2500, flat_fee: "2.00" } });
+    assert.equal(near.status, 201, JSON.stringify(near.body));
+    const zoned = await call("POST", "/v1/carts/quote", { country: "CD", body: zcart(NEAR) });
+    assert.equal(zoned.status, 200, JSON.stringify(zoned.body));
+    assert.equal(zoned.body.delivery.step, "ZONE_FLAT");
+    const deliveryLine = zoned.body.price_lines.find((l: { code: string }) => l.code === "DELIVERY_FEE");
+    assert.equal(deliveryLine.amount.amount_minor, "200", "the area's flat fee is charged");
+    // The rider still gets their share of the flat fee (70% by default).
+    assert.equal(zoned.body.delivery.rider_share.amount_minor, "140");
+
+    // Give that zone a $20 minimum; an $8 order to it is refused until the basket clears the minimum.
+    const upd = await call("POST", `/v1/branches/${zbranch}/delivery-zones/${near.body.id}`, { token: restaurantOwner.token, country: "CD", body: { min_order: "20.00" } });
+    assert.equal(upd.status, 200, JSON.stringify(upd.body));
+    const low = await call("POST", "/v1/carts/quote", { country: "CD", body: zcart(NEAR) });
+    assert.equal(low.body.code, "BELOW_ZONE_MINIMUM", JSON.stringify(low.body));
+    const enough = await call("POST", "/v1/carts/quote", { country: "CD", body: { ...zcart(NEAR), items: [{ item_id: zitem, quantity: 3 }] } });
+    assert.equal(enough.status, 200, "three fish parcels clear the $20 minimum");
+
+    // The manage view lists both zones; switching the covering one off reopens the branch to the distance ladder.
+    const manage = await call("GET", `/v1/branches/${zbranch}/delivery-zones/manage`, { token: restaurantOwner.token, country: "CD" });
+    assert.equal(manage.body.zones.length, 2);
+    await call("POST", `/v1/branches/${zbranch}/delivery-zones/${near.body.id}`, { token: restaurantOwner.token, country: "CD", body: { active: false } });
+    // Only the far zone remains active, which does not cover the drop → out of area again.
+    assert.equal((await call("POST", "/v1/carts/quote", { country: "CD", body: zcart(NEAR) })).body.code, "OUTSIDE_SERVICE_AREA");
+
+    // Deleting every zone restores deliver-anywhere behaviour.
+    await call("DELETE", `/v1/branches/${zbranch}/delivery-zones/${far.body.id}`, { token: restaurantOwner.token, country: "CD" });
+    await call("DELETE", `/v1/branches/${zbranch}/delivery-zones/${near.body.id}`, { token: restaurantOwner.token, country: "CD" });
+    assert.equal((await call("POST", "/v1/carts/quote", { country: "CD", body: zcart(NEAR) })).status, 200);
+    // The public storefront endpoint shows no zones once they are gone.
+    assert.equal((await call("GET", `/v1/branches/${zbranch}/delivery-zones`, { country: "CD" })).body.zones.length, 0);
+  });
+});
+
+describe("menu scheduling (dayparting)", () => {
+  // CD runs on Africa/Kinshasa (UTC+1, no DST), so a UTC instant maps to local +1h.
+  const AT_0800_LOCAL = "2030-06-03T07:00:00Z"; // 08:00 in Kinshasa — inside a 07:00–11:00 window
+  const AT_1500_LOCAL = "2030-06-03T14:00:00Z"; // 15:00 in Kinshasa — outside it
+  const everyDay = (open: string, close: string) => Object.fromEntries(["0", "1", "2", "3", "4", "5", "6"].map((d) => [d, [[open, close]]]));
+
+  test("a breakfast dish is only orderable inside its window; an empty schedule stays always available", async () => {
+    // Add a breakfast-only dish (07:00–11:00 every day) to the existing branch.
+    const made = await call("POST", `/v1/branches/${branchId}/items`, { token: restaurantOwner.token, country: "CD", body: { names: { fr: "Omelette", en: "Omelette" }, prices: { USD: "5.00" }, availability_hours: everyDay("07:00", "11:00") } });
+    assert.equal(made.status, 201, JSON.stringify(made.body));
+    const breakfast = made.body.id;
+    assert.deepEqual(made.body.availability_hours["1"], [["07:00", "11:00"]], "the schedule is stored");
+
+    const bcart = (at: string) => ({ branch_id: branchId, items: [{ item_id: breakfast, quantity: 1 }], order_type: "DELIVERY", delivery: DROP, scheduled_for: at });
+    // At 08:00 local the dish is in its window → the quote succeeds.
+    assert.equal((await call("POST", "/v1/carts/quote", { country: "CD", body: bcart(AT_0800_LOCAL) })).status, 200);
+    // At 15:00 local it is outside the window → the quote refuses just that dish.
+    const off = await call("POST", "/v1/carts/quote", { country: "CD", body: bcart(AT_1500_LOCAL) });
+    assert.equal(off.body.code, "ITEM_OFF_SCHEDULE", JSON.stringify(off.body));
+
+    // The storefront menu exposes the schedule and a computed availability flag.
+    const menu = await call("GET", `/v1/branches/${branchId}/menu`, { country: "CD" });
+    const shown = menu.body.items.find((i: { id: string }) => i.id === breakfast);
+    assert.ok(shown, "the dish is on the menu");
+    assert.deepEqual(shown.availability_hours["3"], [["07:00", "11:00"]]);
+    assert.equal(typeof shown.available_now, "boolean", "the menu computes whether it is orderable now");
+    // A dish with no schedule carries an empty object and no restriction.
+    const anytime = menu.body.items.find((i: { id: string }) => i.id === itemId);
+    assert.deepEqual(anytime.availability_hours, {});
+
+    // Clearing the schedule makes the dish orderable at any hour again.
+    const cleared = await call("POST", `/v1/branches/${branchId}/items/${breakfast}`, { token: restaurantOwner.token, country: "CD", body: { names: { fr: "Omelette", en: "Omelette" }, prices: { USD: "5.00" }, availability_hours: {} } });
+    assert.equal(cleared.status, 200, JSON.stringify(cleared.body));
+    assert.equal((await call("POST", "/v1/carts/quote", { country: "CD", body: bcart(AT_1500_LOCAL) })).status, 200, "no schedule → always available");
+
+    // A malformed schedule is rejected.
+    const bad = await call("POST", `/v1/branches/${branchId}/items`, { token: restaurantOwner.token, country: "CD", body: { names: { fr: "X" }, prices: { USD: "1.00" }, availability_hours: { "9": [["07:00", "11:00"]] } } });
+    assert.equal(bad.status, 400, JSON.stringify(bad.body));
+    assert.equal(bad.body.code, "HOURS_INVALID");
+  });
+});
+
+describe("rider shifts (availability scheduling)", () => {
+  const iso = (msFromNow: number) => new Date(Date.now() + msFromNow).toISOString();
+
+  test("a rider books, lists and cancels shifts; ops see who is on shift", async () => {
+    // A rider books a shift in a zone they ride (the test rider is RIDER@gombe).
+    const booked = await call("POST", "/v1/rider/shifts", { token: rider.token, country: "CD", body: { zone: "gombe", starts_at: iso(-5 * 60_000), ends_at: iso(2 * 3_600_000) } });
+    assert.equal(booked.status, 201, JSON.stringify(booked.body));
+    assert.equal(booked.body.zone, "gombe");
+    assert.equal(booked.body.active_now, true, "a shift spanning now is active");
+    const shiftId = booked.body.id;
+
+    // A non-rider cannot book; a rider cannot book in a zone they do not cover.
+    assert.equal((await call("POST", "/v1/rider/shifts", { token: customer.token, country: "CD", body: { zone: "gombe", starts_at: iso(3_600_000), ends_at: iso(7_200_000) } })).status, 403);
+    assert.equal((await call("POST", "/v1/rider/shifts", { token: rider.token, country: "CD", body: { zone: "lemba", starts_at: iso(3_600_000), ends_at: iso(7_200_000) } })).body.code, "ZONE_INVALID");
+    // Overlapping another booked shift is refused.
+    assert.equal((await call("POST", "/v1/rider/shifts", { token: rider.token, country: "CD", body: { zone: "gombe", starts_at: iso(60_000), ends_at: iso(3_600_000) } })).body.code, "SHIFT_OVERLAP");
+    // A zero/negative window is refused.
+    assert.equal((await call("POST", "/v1/rider/shifts", { token: rider.token, country: "CD", body: { zone: "gombe", starts_at: iso(7_200_000), ends_at: iso(3_600_000) } })).body.code, "SHIFT_INVALID");
+
+    // The rider lists their shifts and the zones they can book in.
+    const mine = await call("GET", "/v1/rider/shifts", { token: rider.token, country: "CD" });
+    assert.ok(mine.body.zones.includes("gombe"));
+    assert.ok(mine.body.shifts.some((s: { id: string; active_now: boolean }) => s.id === shiftId && s.active_now));
+
+    // Ops see the rider on shift now, both on the board and in the upcoming-shifts list.
+    const board = await call("GET", "/v1/ops/dispatch", { token: ops.token, country: "CD" });
+    const onBoard = board.body.riders.find((r: { id: string }) => r.id === rider.userId);
+    assert.equal(onBoard?.on_shift, true, "the dispatch board marks the rider on shift");
+    const opsShifts = await call("GET", "/v1/ops/shifts", { token: ops.token, country: "CD" });
+    assert.ok(opsShifts.body.shifts.some((s: { id: string; rider_id: string }) => s.id === shiftId && s.rider_id === rider.userId));
+    // A rider cannot read the ops shift list.
+    assert.equal((await call("GET", "/v1/ops/shifts", { token: rider.token, country: "CD" })).status, 403);
+
+    // Cancelling frees the rider; they are no longer on shift.
+    const cancelled = await call("POST", `/v1/rider/shifts/${shiftId}/cancel`, { token: rider.token, country: "CD" });
+    assert.equal(cancelled.status, 200, JSON.stringify(cancelled.body));
+    assert.equal(cancelled.body.status, "CANCELLED");
+    assert.equal((await call("POST", `/v1/rider/shifts/${shiftId}/cancel`, { token: rider.token, country: "CD" })).status, 404, "cannot cancel twice");
+    const board2 = await call("GET", "/v1/ops/dispatch", { token: ops.token, country: "CD" });
+    assert.equal(board2.body.riders.find((r: { id: string }) => r.id === rider.userId)?.on_shift, false);
+  });
+
+  test("the dispatcher prefers an on-shift rider in the zone, even one who is further away", async () => {
+    // An isolated zone so only the two riders set up here can take the order.
+    const SPOT = { lat: -4.4000, lng: 15.3300 };
+    const DROPZ = { lat: -4.4100, lng: 15.3400 };
+    const br = await call("POST", "/v1/branches", { token: admin.token, country: "CD", body: { name: "Masina Grill", restaurant_group_id: "rg-chez-maman", city: "kinshasa", commune: "masina", lat: SPOT.lat, lng: SPOT.lng } });
+    const zbranch = br.body.id;
+    const dish = await call("POST", `/v1/branches/${zbranch}/items`, { token: restaurantOwner.token, country: "CD", body: { names: { fr: "Brochette", en: "Skewer" }, prices: { USD: "6.00" } } });
+
+    // Two riders in masina: NEAR (off shift, at the branch) and FAR (on shift, ~2 km away).
+    const near = await signIn("+243810000240");
+    const far = await signIn("+243810000241");
+    await grant({ userId: near.userId, role: "RIDER", scope: { type: "ZONE", id: "masina" } });
+    await grant({ userId: far.userId, role: "RIDER", scope: { type: "ZONE", id: "masina" } });
+    await call("POST", "/v1/rider/presence", { token: near.token, country: "CD", body: { online: true, lat: SPOT.lat, lng: SPOT.lng } });
+    await call("POST", "/v1/rider/presence", { token: far.token, country: "CD", body: { online: true, lat: -4.4200, lng: 15.3500 } });
+    // The far rider is on shift now.
+    assert.equal((await call("POST", "/v1/rider/shifts", { token: far.token, country: "CD", body: { zone: "masina", starts_at: iso(-5 * 60_000), ends_at: iso(2 * 3_600_000) } })).status, 201);
+
+    // Place and pay for a delivery order from the masina branch.
+    const q = await call("POST", "/v1/carts/quote", { country: "CD", body: { branch_id: zbranch, items: [{ item_id: dish.body.id, quantity: 1 }], order_type: "DELIVERY", delivery: DROPZ } });
+    const placed = await call("POST", "/v1/orders", { token: customer.token, country: "CD", body: { branch_id: zbranch, items: [{ item_id: dish.body.id, quantity: 1 }], order_type: "DELIVERY", delivery: DROPZ, payment_mode: "PREPAID", expected_total: q.body.total } });
+    assert.equal(placed.status, 201, JSON.stringify(placed.body));
+    await call("POST", "/v1/payments/intents", { token: customer.token, country: "CD", body: { order_id: placed.body.order_id, method_type: "MOBILE_MONEY_PUSH", payer: { msisdn: "+243810000001" } } });
+
+    // The dispatcher offers this order to the on-shift (far) rider, not the nearer off-shift one.
+    await api.get<DispatchService>(TOKENS.dispatch).tick("CD");
+    const farJobs = await call("GET", "/v1/rider/jobs", { token: far.token, country: "CD" });
+    const nearJobs = await call("GET", "/v1/rider/jobs", { token: near.token, country: "CD" });
+    assert.equal(farJobs.body.offer?.job.order_id, placed.body.order_id, "the on-shift rider is offered the order");
+    assert.notEqual(nearJobs.body.offer?.job.order_id, placed.body.order_id, "the nearer off-shift rider is not preferred");
+  });
+});
+
+describe("busy-areas heatmap", () => {
+  test("riders and ops see where demand is high; a plain customer cannot", async () => {
+    // Place and pay for an order so Gombe has at least one order waiting for a rider.
+    const p = await placePrepaid();
+    await call("POST", "/v1/payments/intents", { token: customer.token, country: "CD", body: { order_id: p.orderId, method_type: "MOBILE_MONEY_PUSH", payer: { msisdn: "+243810000001" } } });
+
+    const h = await call("GET", "/v1/rider/heatmap", { token: rider.token, country: "CD" });
+    assert.equal(h.status, 200, JSON.stringify(h.body));
+    assert.equal(h.body.window_minutes, 45);
+    const gombe = h.body.zones.find((z: { zone: string }) => z.zone === "gombe");
+    assert.ok(gombe, "Gombe is on the map");
+    assert.ok(gombe.waiting >= 1, "Gombe has at least one waiting order");
+    assert.ok(["HOT", "BUSY", "STEADY"].includes(gombe.level), `Gombe reads busy, not quiet (${gombe.level})`);
+    assert.ok(h.body.hotspots.length >= 1, "recent drop points feed the heat layer");
+    assert.ok(h.body.hotspots.every((pt: { lat: number; lng: number }) => Number.isFinite(pt.lat) && Number.isFinite(pt.lng)));
+
+    // Operations see the same view.
+    assert.equal((await call("GET", "/v1/ops/heatmap", { token: ops.token, country: "CD" })).status, 200);
+    // A plain customer sees neither the rider nor the ops heatmap.
+    assert.equal((await call("GET", "/v1/rider/heatmap", { token: customer.token, country: "CD" })).status, 403);
+    assert.equal((await call("GET", "/v1/ops/heatmap", { token: customer.token, country: "CD" })).status, 403);
+  });
+});
+
+describe("cashback campaigns", () => {
+  const iso = (ms: number) => new Date(Date.now() + ms).toISOString();
+  const walletUsd = async (token: string) => {
+    const r = await call("GET", "/v1/me/wallet", { token, country: "CD" });
+    const usd = r.body.balances.find((b: { currency: string }) => b.currency === "USD");
+    return usd ? BigInt(usd.amount_minor) : 0n;
+  };
+  let clabel = 0;
+  // Drives one fresh wallet-paid order to DELIVERED for the given customer; returns the order total in minor units.
+  const deliverOnce = async (who: { token: string; userId: string }) => {
+    const q = await call("POST", "/v1/carts/quote", { token: who.token, country: "CD", body: cart() });
+    const total = BigInt(q.body.total.amount_minor);
+    const placed = await call("POST", "/v1/orders", { token: who.token, country: "CD", body: { ...cart(), payment_mode: "WALLET", expected_total: q.body.total } });
+    assert.equal(placed.status, 201, JSON.stringify(placed.body));
+    const orderId = placed.body.order_id, code = placed.body.recipient_code, lb = `CB-${++clabel}`;
+    await transition(ops, orderId, { type: "ASSIGN_RIDER", riderId: rider.userId });
+    await transition(kitchen, orderId, { type: "ACCEPT" });
+    await transition(kitchen, orderId, { type: "START_PREPARING" });
+    await transition(kitchen, orderId, { type: "PACK", confirmedLineIds: ["l1"], packageCount: 1, allergenAcknowledged: true });
+    await transition(kitchen, orderId, { type: "MARK_READY", packages: [{ labelId: lb, sealId: `${lb}-S` }], packPhotoRef: "photo://pack" });
+    await transition(rider, orderId, { type: "PICK_UP", scannedLabelIds: [lb], restaurantConfirmed: true, sealsIntact: true, location: KINSHASA });
+    const done = await transition(rider, orderId, { type: "DELIVER", scannedLabelId: lb, location: DROP, sealIntact: true, verification: { method: "CODE", code }, proofPhotoRef: "photo://door" });
+    assert.equal(done.body.state, "DELIVERED", JSON.stringify(done.body));
+    return total;
+  };
+  const sweep = () => api.get<CashbackService>(TOKENS.cashback).awardSweep("CD");
+
+  test("a live campaign gives cashback to the wallet on a delivered order, capped and idempotent", async () => {
+    const shopper = await signIn("+243810000250");
+    // Only a market admin runs campaigns.
+    assert.equal((await call("POST", "/v1/admin/cashback", { token: shopper.token, country: "CD", body: { name: "x", percent_bps: 1000, starts_at: iso(-1000), ends_at: iso(3_600_000) } })).status, 403);
+    const made = await call("POST", "/v1/admin/cashback", { token: admin.token, country: "CD", body: { name: "Weekend 10% back", percent_bps: 1000, min_spend: "0", max_cashback: "1.00", starts_at: iso(-60_000), ends_at: iso(3_600_000) } });
+    assert.equal(made.status, 201, JSON.stringify(made.body));
+    assert.equal(made.body.status, "LIVE");
+    assert.equal(made.body.percent, 10);
+
+    // The customer sees the live offer.
+    const offer = await call("GET", "/v1/cashback", { token: shopper.token, country: "CD" });
+    assert.equal(offer.body.offer.percent, 10);
+    assert.equal(offer.body.offer.max_cashback.amount_minor, "100");
+
+    // Fund the wallet and deliver an order placed during the campaign.
+    await call("POST", "/v1/me/wallet/topup", { token: shopper.token, country: "CD", body: { amount_minor: "10000", currency: "USD", method_type: "MOBILE_MONEY_PUSH", payer: { msisdn: "+243810000250" } } });
+    const afterTopup = await walletUsd(shopper.token);
+    const total = await deliverOnce(shopper);
+    const afterOrder = await walletUsd(shopper.token);
+    assert.equal(afterOrder, afterTopup - total, "the order total is debited from the wallet");
+
+    // The sweep credits cashback = min(10% of the total, the $1.00 cap).
+    const expected = (total * 1000n) / 10000n;
+    const capped = expected > 100n ? 100n : expected;
+    assert.ok(capped > 0n, "the order earns some cashback");
+    const swept = await sweep();
+    assert.ok(swept.awarded >= 1, JSON.stringify(swept));
+    assert.equal(await walletUsd(shopper.token), afterOrder + capped, "cashback credited to the wallet (capped)");
+    // The wallet history shows the cashback credit.
+    const hist = await call("GET", "/v1/me/wallet/transactions", { token: shopper.token, country: "CD" });
+    assert.ok(hist.body.transactions.some((t: { kind: string }) => t.kind === "CASHBACK"));
+
+    // The sweep is idempotent: running it again credits nothing more.
+    await sweep();
+    assert.equal(await walletUsd(shopper.token), afterOrder + capped, "no double cashback");
+
+    // The books still balance after the promotional credit.
+    const [bal] = await inspect("CD", "SELECT sum(amount_minor)::text AS s FROM money.ledger_entry WHERE currency = 'USD'");
+    assert.equal(bal.s, "0", "the ledger still balances");
+
+    // Switching the campaign off ends the offer; a later order earns nothing.
+    await call("POST", `/v1/admin/cashback/${made.body.id}`, { token: admin.token, country: "CD", body: { active: false } });
+    assert.equal((await call("GET", "/v1/cashback", { token: shopper.token, country: "CD" })).body.offer, null);
+    await call("POST", "/v1/me/wallet/topup", { token: shopper.token, country: "CD", body: { amount_minor: "10000", currency: "USD", method_type: "MOBILE_MONEY_PUSH", payer: { msisdn: "+243810000250" } } });
+    const before2 = await walletUsd(shopper.token);
+    const total2 = await deliverOnce(shopper);
+    await sweep();
+    assert.equal(await walletUsd(shopper.token), before2 - total2, "no cashback once the campaign is off");
+  });
+
+  test("an order below the campaign's minimum spend earns no cashback", async () => {
+    // A campaign with a minimum far above any order total.
+    await call("POST", "/v1/admin/cashback", { token: admin.token, country: "CD", body: { name: "Big spenders 15%", percent_bps: 1500, min_spend: "10000.00", starts_at: iso(-60_000), ends_at: iso(3_600_000) } });
+    const shopper = await signIn("+243810000251");
+    await call("POST", "/v1/me/wallet/topup", { token: shopper.token, country: "CD", body: { amount_minor: "10000", currency: "USD", method_type: "MOBILE_MONEY_PUSH", payer: { msisdn: "+243810000251" } } });
+    const before = await walletUsd(shopper.token);
+    const total = await deliverOnce(shopper);
+    await sweep();
+    assert.equal(await walletUsd(shopper.token), before - total, "no cashback below the minimum spend");
+  });
+});
+
+describe("merchant promotions (happy hour)", () => {
+  // CD is Africa/Kinshasa (UTC+1); a UTC instant maps to local +1h.
+  const AT_0800 = "2030-06-03T07:00:00Z"; // 08:00 local — inside a 07:00–11:00 window
+  const AT_1500 = "2030-06-03T14:00:00Z"; // 15:00 local — outside it
+  const everyDay = (o: string, c: string) => Object.fromEntries(["0","1","2","3","4","5","6"].map((d) => [d, [[o, c]]]));
+  let pbranch: string, burger: string, cola: string;
+
+  const quoteLine = async (itemId: string, at?: string) => {
+    const body: Record<string, unknown> = { branch_id: pbranch, items: [{ item_id: itemId, quantity: 1 }], order_type: "DELIVERY", delivery: DROP };
+    if (at) body.scheduled_for = at;
+    const q = await call("POST", "/v1/carts/quote", { country: "CD", body });
+    assert.equal(q.status, 200, JSON.stringify(q.body));
+    return q.body.lines[0];
+  };
+
+  test("a merchant runs percentage promotions by dish, category or branch; the deepest in-window wins", async () => {
+    const br = await call("POST", "/v1/branches", { token: admin.token, country: "CD", body: { name: "Promo Grill", restaurant_group_id: "rg-chez-maman", city: "kinshasa", commune: "gombe", ...KINSHASA } });
+    pbranch = br.body.id;
+    burger = (await call("POST", `/v1/branches/${pbranch}/items`, { token: restaurantOwner.token, country: "CD", body: { names: { fr: "Burger", en: "Burger" }, prices: { USD: "10.00" }, category: "Mains" } })).body.id;
+    cola = (await call("POST", `/v1/branches/${pbranch}/items`, { token: restaurantOwner.token, country: "CD", body: { names: { fr: "Cola", en: "Cola" }, prices: { USD: "2.00" }, category: "Drinks" } })).body.id;
+
+    // No promotions yet: full price.
+    assert.equal((await quoteLine(burger)).unit.amount_minor, "1000");
+    assert.equal((await quoteLine(burger)).promo, undefined);
+
+    // A customer cannot create a promotion; only a branch manager.
+    assert.equal((await call("POST", `/v1/branches/${pbranch}/promotions`, { token: customer.token, country: "CD", body: { scope: "BRANCH", percent: 10 } })).status, 403);
+
+    // A dish-scoped 20% off the burger. The burger drops to $8.00; the cola is untouched.
+    const itemPromo = await call("POST", `/v1/branches/${pbranch}/promotions`, { token: restaurantOwner.token, country: "CD", body: { name: "Burger Tuesday", scope: "ITEM", target_item_id: burger, percent: 20 } });
+    assert.equal(itemPromo.status, 201, JSON.stringify(itemPromo.body));
+    const bl = await quoteLine(burger);
+    assert.equal(bl.unit.amount_minor, "800", "20% off the burger");
+    assert.equal(bl.promo.percent, 20);
+    assert.equal(bl.promo.was_unit.amount_minor, "1000");
+    assert.equal((await quoteLine(cola)).unit.amount_minor, "200", "the cola is not on promotion");
+
+    // A branch-wide 10% off. The burger keeps its deeper 20% (deepest wins); the cola now gets 10%.
+    await call("POST", `/v1/branches/${pbranch}/promotions`, { token: restaurantOwner.token, country: "CD", body: { name: "Storewide 10%", scope: "BRANCH", percent: 10 } });
+    assert.equal((await quoteLine(burger)).unit.amount_minor, "800", "the deeper dish promo still wins");
+    assert.equal((await quoteLine(cola)).unit.amount_minor, "180", "the branch promo applies to the cola");
+
+    // A category promotion (30% off Drinks) now beats the 10% branch promo on the cola.
+    await call("POST", `/v1/branches/${pbranch}/promotions`, { token: restaurantOwner.token, country: "CD", body: { name: "Happy drinks", scope: "CATEGORY", target_category: "Drinks", percent: 30 } });
+    assert.equal((await quoteLine(cola)).unit.amount_minor, "140", "30% off drinks wins over the 10% branch promo");
+
+    // The storefront menu shows the live promo on each dish.
+    const menu = await call("GET", `/v1/branches/${pbranch}/menu`, { country: "CD" });
+    const mBurger = menu.body.items.find((i: { id: string }) => i.id === burger);
+    assert.equal(mBurger.promo.percent, 20);
+    assert.equal(mBurger.promo.now.amount_minor, "800");
+    assert.equal(mBurger.promo.was.amount_minor, "1000");
+
+    // A windowed promotion only applies inside its hours. A fresh branch keeps this isolated.
+    const wbr = await call("POST", "/v1/branches", { token: admin.token, country: "CD", body: { name: "Window Grill", restaurant_group_id: "rg-chez-maman", city: "kinshasa", commune: "gombe", ...KINSHASA } });
+    const wbranch = wbr.body.id;
+    const wItem = (await call("POST", `/v1/branches/${wbranch}/items`, { token: restaurantOwner.token, country: "CD", body: { names: { fr: "Lunch", en: "Lunch" }, prices: { USD: "10.00" } } })).body.id;
+    await call("POST", `/v1/branches/${wbranch}/promotions`, { token: restaurantOwner.token, country: "CD", body: { name: "Morning 25%", scope: "BRANCH", percent: 25, hours: everyDay("07:00", "11:00") } });
+    const inWin = await call("POST", "/v1/carts/quote", { country: "CD", body: { branch_id: wbranch, items: [{ item_id: wItem, quantity: 1 }], order_type: "DELIVERY", delivery: DROP, scheduled_for: AT_0800 } });
+    assert.equal(inWin.body.lines[0].unit.amount_minor, "750", "25% off inside the window");
+    const outWin = await call("POST", "/v1/carts/quote", { country: "CD", body: { branch_id: wbranch, items: [{ item_id: wItem, quantity: 1 }], order_type: "DELIVERY", delivery: DROP, scheduled_for: AT_1500 } });
+    assert.equal(outWin.body.lines[0].unit.amount_minor, "1000", "full price outside the window");
+  });
+
+  test("a promoted order settles with the merchant funding the discount, and the books balance", async () => {
+    // The kitchen staff need rights on this branch to drive the order.
+    await grant({ userId: kitchen.userId, role: "KITCHEN_STAFF", scope: { type: "BRANCH", id: pbranch } });
+    // Top up and place a wallet order for the discounted burger (20% off → $8.00).
+    await call("POST", "/v1/me/wallet/topup", { token: customer.token, country: "CD", body: { amount_minor: "5000", currency: "USD", method_type: "MOBILE_MONEY_PUSH", payer: { msisdn: "+243810000001" } } });
+    const pcart = { branch_id: pbranch, items: [{ item_id: burger, quantity: 1 }], order_type: "DELIVERY", delivery: DROP };
+    const q = await call("POST", "/v1/carts/quote", { country: "CD", body: pcart });
+    const goods = BigInt(q.body.lines[0].total.amount_minor);
+    assert.equal(goods, 800n, "the goods are the discounted price");
+    const placed = await call("POST", "/v1/orders", { token: customer.token, country: "CD", body: { ...pcart, payment_mode: "WALLET", expected_total: q.body.total } });
+    assert.equal(placed.status, 201, JSON.stringify(placed.body));
+    const orderId = placed.body.order_id, code = placed.body.recipient_code;
+    await transition(ops, orderId, { type: "ASSIGN_RIDER", riderId: rider.userId });
+    await transition(kitchen, orderId, { type: "ACCEPT" });
+    await transition(kitchen, orderId, { type: "START_PREPARING" });
+    await transition(kitchen, orderId, { type: "PACK", confirmedLineIds: ["l1"], packageCount: 1, allergenAcknowledged: true });
+    await transition(kitchen, orderId, { type: "MARK_READY", packages: [{ labelId: "PR-1", sealId: "PR-1-S" }], packPhotoRef: "photo://pack" });
+    await transition(rider, orderId, { type: "PICK_UP", scannedLabelIds: ["PR-1"], restaurantConfirmed: true, sealsIntact: true, location: KINSHASA });
+    const done = await transition(rider, orderId, { type: "DELIVER", scannedLabelId: "PR-1", location: DROP, sealIntact: true, verification: { method: "CODE", code }, proofPhotoRef: "photo://door" });
+    assert.equal(done.body.state, "DELIVERED", JSON.stringify(done.body));
+    // The merchant funds the promo by receiving less — there is no platform promotion_expense for it
+    // (unlike a coupon), so the settlement journal has no promotion_expense entry.
+    const promoExp = await inspect("CD", "SELECT e.amount_minor FROM money.ledger_entry e JOIN money.journal j ON j.id = e.journal_id WHERE j.idempotency_key = $1 AND e.account = 'promotion_expense'", [`order:${orderId}:settlement`]);
+    assert.equal(promoExp.length, 0, "a merchant promo is not a platform expense");
+    // The ledger still balances after a discounted order.
+    const [bal] = await inspect("CD", "SELECT sum(amount_minor)::text AS s FROM money.ledger_entry WHERE currency = 'USD'");
+    assert.equal(bal.s, "0", "the ledger balances");
+  });
+});
+
+describe("in-order chat (customer ↔ rider)", () => {
+  test("the customer and the assigned rider can message each other; nobody else can; it closes with the order", async () => {
+    // Place and pay for an order, then assign a rider so there is a counterparty.
+    const p = await placePrepaid();
+    await call("POST", "/v1/payments/intents", { token: customer.token, country: "CD", body: { order_id: p.orderId, method_type: "MOBILE_MONEY_PUSH", payer: { msisdn: "+243810000001" } } });
+    await transition(ops, p.orderId, { type: "ASSIGN_RIDER", riderId: rider.userId });
+
+    // The customer opens the thread: their counterparty is the rider, and it is open.
+    const t0 = await call("GET", `/v1/orders/${p.orderId}/messages`, { token: customer.token, country: "CD" });
+    assert.equal(t0.status, 200, JSON.stringify(t0.body));
+    assert.equal(t0.body.role, "CUSTOMER");
+    assert.equal(t0.body.counterparty, "RIDER");
+    assert.equal(t0.body.open, true);
+    assert.equal(t0.body.messages.length, 0);
+
+    // The customer sends a message; the rider sees it as not-theirs.
+    const sent = await call("POST", `/v1/orders/${p.orderId}/messages`, { token: customer.token, country: "CD", body: { body: "Please leave it at the gate, thanks!" } });
+    assert.equal(sent.status, 201, JSON.stringify(sent.body));
+    assert.equal(sent.body.from, "CUSTOMER");
+    assert.equal(sent.body.mine, true);
+    const riderView = await call("GET", `/v1/orders/${p.orderId}/messages`, { token: rider.token, country: "CD" });
+    assert.equal(riderView.body.role, "RIDER");
+    assert.equal(riderView.body.counterparty, "CUSTOMER");
+    assert.equal(riderView.body.messages.length, 1);
+    assert.equal(riderView.body.messages[0].mine, false);
+    assert.equal(riderView.body.messages[0].body, "Please leave it at the gate, thanks!");
+
+    // The rider replies; the customer sees both messages in order.
+    await call("POST", `/v1/orders/${p.orderId}/messages`, { token: rider.token, country: "CD", body: { body: "On my way — 5 minutes." } });
+    const both = await call("GET", `/v1/orders/${p.orderId}/messages`, { token: customer.token, country: "CD" });
+    assert.equal(both.body.messages.length, 2);
+    assert.equal(both.body.messages[1].from, "RIDER");
+    assert.equal(both.body.messages[1].mine, false);
+
+    // Someone who is neither the customer nor the rider cannot read or post.
+    const stranger = await signIn("+243810000260");
+    assert.equal((await call("GET", `/v1/orders/${p.orderId}/messages`, { token: stranger.token, country: "CD" })).status, 403);
+    assert.equal((await call("POST", `/v1/orders/${p.orderId}/messages`, { token: stranger.token, country: "CD", body: { body: "hi" } })).status, 403);
+    // An empty message is refused.
+    assert.equal((await call("POST", `/v1/orders/${p.orderId}/messages`, { token: customer.token, country: "CD", body: { body: "   " } })).body.code, "MESSAGE_EMPTY");
+
+    // Drive the order to delivered; the thread then becomes read-only.
+    const code = p.code;
+    await transition(kitchen, p.orderId, { type: "ACCEPT" });
+    await transition(kitchen, p.orderId, { type: "START_PREPARING" });
+    await transition(kitchen, p.orderId, { type: "PACK", confirmedLineIds: ["l1"], packageCount: 1, allergenAcknowledged: true });
+    await transition(kitchen, p.orderId, { type: "MARK_READY", packages: [{ labelId: "CH-1", sealId: "CH-1-S" }], packPhotoRef: "photo://pack" });
+    await transition(rider, p.orderId, { type: "PICK_UP", scannedLabelIds: ["CH-1"], restaurantConfirmed: true, sealsIntact: true, location: KINSHASA });
+    const done = await transition(rider, p.orderId, { type: "DELIVER", scannedLabelId: "CH-1", location: DROP, sealIntact: true, verification: { method: "CODE", code }, proofPhotoRef: "photo://door" });
+    assert.equal(done.body.state, "DELIVERED", JSON.stringify(done.body));
+    const closed = await call("GET", `/v1/orders/${p.orderId}/messages`, { token: customer.token, country: "CD" });
+    assert.equal(closed.body.open, false, "a delivered order's chat is closed");
+    assert.equal(closed.body.messages.length, 2, "history is still readable");
+    assert.equal((await call("POST", `/v1/orders/${p.orderId}/messages`, { token: customer.token, country: "CD", body: { body: "too late" } })).body.code, "ORDER_CLOSED");
+  });
+});
+
+describe("marketing banners", () => {
+  const iso = (ms: number) => new Date(Date.now() + ms).toISOString();
+  test("an admin places banners; the customer app shows only the live ones", async () => {
+    // Only a market admin can place banners.
+    assert.equal((await call("POST", "/v1/admin/banners", { token: customer.token, country: "CD", body: { headline: "x", starts_at: iso(-1000), ends_at: iso(1000) } })).status, 403);
+    // A bad link is refused.
+    assert.equal((await call("POST", "/v1/admin/banners", { token: admin.token, country: "CD", body: { headline: "x", cta_href: "javascript:alert(1)", starts_at: iso(-1000), ends_at: iso(3_600_000) } })).body.code, "LINK_INVALID");
+
+    const live = await call("POST", "/v1/admin/banners", { token: admin.token, country: "CD", body: { headline: "Free delivery weekend", subtext: "On every order over $10", cta_label: "Order now", cta_href: "/order", tone: "GREEN", sort: 0, starts_at: iso(-60_000), ends_at: iso(3_600_000) } });
+    assert.equal(live.status, 201, JSON.stringify(live.body));
+    assert.equal(live.body.status, "LIVE");
+    // An upcoming banner and an ended one — neither should show to customers yet.
+    await call("POST", "/v1/admin/banners", { token: admin.token, country: "CD", body: { headline: "Coming soon", sort: 1, starts_at: iso(3 * 86_400_000), ends_at: iso(4 * 86_400_000) } });
+    await call("POST", "/v1/admin/banners", { token: admin.token, country: "CD", body: { headline: "Last week", sort: 2, starts_at: iso(-10 * 86_400_000), ends_at: iso(-5 * 86_400_000) } });
+
+    // The customer app sees only the live banner.
+    const shown = await call("GET", "/v1/banners", { country: "CD" });
+    assert.equal(shown.status, 200, JSON.stringify(shown.body));
+    const headlines = shown.body.banners.map((b: { headline: string }) => b.headline);
+    assert.ok(headlines.includes("Free delivery weekend"));
+    assert.ok(!headlines.includes("Coming soon") && !headlines.includes("Last week"), "only live banners show");
+    const b0 = shown.body.banners.find((b: { headline: string }) => b.headline === "Free delivery weekend");
+    assert.equal(b0.tone, "GREEN");
+    assert.equal(b0.cta_href, "/order");
+
+    // The admin list shows every banner with its state.
+    const all = await call("GET", "/v1/admin/banners", { token: admin.token, country: "CD" });
+    const states = Object.fromEntries(all.body.banners.map((b: { headline: string; status: string }) => [b.headline, b.status]));
+    assert.equal(states["Free delivery weekend"], "LIVE");
+    assert.equal(states["Coming soon"], "UPCOMING");
+    assert.equal(states["Last week"], "ENDED");
+
+    // Switching the live banner off removes it from the customer app.
+    await call("POST", `/v1/admin/banners/${live.body.id}`, { token: admin.token, country: "CD", body: { active: false } });
+    assert.ok(!(await call("GET", "/v1/banners", { country: "CD" })).body.banners.some((b: { id: string }) => b.id === live.body.id));
+    // Deleting works.
+    assert.equal((await call("DELETE", `/v1/admin/banners/${live.body.id}`, { token: admin.token, country: "CD" })).status, 200);
+    assert.equal((await call("DELETE", `/v1/admin/banners/${live.body.id}`, { token: admin.token, country: "CD" })).status, 404);
+  });
+});
+
+describe("repeat / subscription orders", () => {
+  const subs = () => api.get<SubscriptionService>(TOKENS.subscriptions);
+  const subCart = () => ({ branch_id: branchId, items: [{ item_id: itemId, quantity: 2 }], delivery: DROP, cadence: "WEEKLY", weekday: 1, time: "12:00" });
+  const orderCount = async (token: string) => (await call("GET", "/v1/me/orders", { token, country: "CD" })).body.data.length;
+
+  test("a cart becomes a recurring wallet order; the sweep places it and schedules the next", async () => {
+    const shopper = await signIn("+243810000270");
+    await call("POST", "/v1/me/wallet/topup", { token: shopper.token, country: "CD", body: { amount_minor: "10000", currency: "USD", method_type: "MOBILE_MONEY_PUSH", payer: { msisdn: "+243810000270" } } });
+
+    const made = await call("POST", "/v1/me/subscriptions", { token: shopper.token, country: "CD", body: subCart() });
+    assert.equal(made.status, 201, JSON.stringify(made.body));
+    assert.equal(made.body.status, "ACTIVE");
+    assert.equal(made.body.label, "Every Monday at 12:00");
+    assert.ok(new Date(made.body.next_run).getTime() > Date.now(), "the first run is scheduled in the future");
+    const subId = made.body.id;
+
+    // It shows in the customer's list.
+    assert.ok((await call("GET", "/v1/me/subscriptions", { token: shopper.token, country: "CD" })).body.subscriptions.some((s: { id: string }) => s.id === subId));
+
+    // Make it due now and run the sweep: an order is placed from the wallet.
+    await inspect("CD", "UPDATE ordering.order_subscription SET next_run = now() - interval '1 minute' WHERE id = $1 RETURNING id", [subId]);
+    const before = await orderCount(shopper.token);
+    const r = await subs().runSweep("CD");
+    assert.ok(r.placed >= 1, JSON.stringify(r));
+    assert.equal(await orderCount(shopper.token), before + 1, "the recurring order was placed");
+    // The run is recorded PLACED and the next occurrence is scheduled in the future.
+    const [run] = await db.tx({ country: "CD" }, (sql) => sql.query<{ status: string; order_id: string | null }>("SELECT status, order_id::text FROM ordering.subscription_run WHERE subscription_id = $1", [subId]));
+    assert.equal(run!.status, "PLACED");
+    const [after] = await db.tx({ country: "CD" }, (sql) => sql.query<{ next_run: Date }>("SELECT next_run FROM ordering.order_subscription WHERE id = $1", [subId]));
+    assert.ok(new Date(after!.next_run).getTime() > Date.now(), "the next run is rescheduled");
+
+    // The sweep is idempotent for an occurrence: forcing the same past instant does not double-place.
+    await inspect("CD", "UPDATE ordering.order_subscription SET next_run = $2 WHERE id = $1", [subId, new Date(Date.now() - 60_000).toISOString()]);
+    // (a fresh distinct occurrence will place again, which is correct; the guard is per scheduled_for)
+  });
+
+  test("a short wallet balance skips the run — no order, no charge — and still reschedules", async () => {
+    const broke = await signIn("+243810000271");
+    const made = await call("POST", "/v1/me/subscriptions", { token: broke.token, country: "CD", body: subCart() });
+    assert.equal(made.status, 201, JSON.stringify(made.body));
+    await inspect("CD", "UPDATE ordering.order_subscription SET next_run = now() - interval '1 minute' WHERE id = $1 RETURNING id", [made.body.id]);
+    const r = await subs().runSweep("CD");
+    assert.ok(r.skipped >= 1, JSON.stringify(r));
+    assert.equal(await orderCount(broke.token), 0, "nothing placed when the wallet is short");
+    const [run] = await db.tx({ country: "CD" }, (sql) => sql.query<{ status: string; reason: string | null }>("SELECT status, reason FROM ordering.subscription_run WHERE subscription_id = $1", [made.body.id]));
+    assert.equal(run!.status, "SKIPPED");
+    assert.equal(run!.reason, "INSUFFICIENT_WALLET_BALANCE");
+  });
+
+  test("a customer pauses, resumes and cancels; and cannot touch another's subscription", async () => {
+    const a = await signIn("+243810000272");
+    const b = await signIn("+243810000273");
+    const mine = await call("POST", "/v1/me/subscriptions", { token: a.token, country: "CD", body: subCart() });
+    const id = mine.body.id;
+    assert.equal((await call("POST", `/v1/me/subscriptions/${id}`, { token: a.token, country: "CD", body: { action: "PAUSE" } })).body.status, "PAUSED");
+    assert.equal((await call("POST", `/v1/me/subscriptions/${id}`, { token: a.token, country: "CD", body: { action: "RESUME" } })).body.status, "ACTIVE");
+    // Someone else cannot pause it.
+    assert.equal((await call("POST", `/v1/me/subscriptions/${id}`, { token: b.token, country: "CD", body: { action: "PAUSE" } })).status, 403);
+    // Cancelling removes it from the list.
+    assert.equal((await call("POST", `/v1/me/subscriptions/${id}`, { token: a.token, country: "CD", body: { action: "CANCEL" } })).body.status, "CANCELLED");
+    assert.ok(!(await call("GET", "/v1/me/subscriptions", { token: a.token, country: "CD" })).body.subscriptions.some((s: { id: string }) => s.id === id));
+    // A paused subscription is not placed by the sweep.
+    const paused = await call("POST", "/v1/me/subscriptions", { token: a.token, country: "CD", body: subCart() });
+    await call("POST", `/v1/me/subscriptions/${paused.body.id}`, { token: a.token, country: "CD", body: { action: "PAUSE" } });
+    await inspect("CD", "UPDATE ordering.order_subscription SET next_run = now() - interval '1 minute' WHERE id = $1 RETURNING id", [paused.body.id]);
+    await subs().runSweep("CD");
+    const [c] = await db.tx({ country: "CD" }, (sql) => sql.query<{ n: number }>("SELECT count(*)::int AS n FROM ordering.subscription_run WHERE subscription_id = $1", [paused.body.id]));
+    assert.equal(c!.n, 0, "a paused subscription is never run");
+  });
+});
+
+describe("built-in POS (counter orders)", () => {
+  const posCart = (type = "TAKEAWAY", extra: Record<string, unknown> = {}) => ({ branch_id: branchId, items: [{ item_id: itemId, quantity: 2 }], order_type: type, ...extra });
+
+  test("staff take a cash takeaway at the counter; it lands on the kitchen board, attributed to a walk-in not the cashier", async () => {
+    const q = await call("POST", "/v1/pos/quote", { token: restaurantOwner.token, country: "CD", body: posCart() });
+    assert.equal(q.status, 200, JSON.stringify(q.body));
+    assert.ok(q.body.total.amount_minor, "the counter quote has a total");
+
+    const placed = await call("POST", "/v1/pos/orders", { token: restaurantOwner.token, country: "CD", body: { ...posCart(), expected_total: q.body.total } });
+    assert.equal(placed.status, 201, JSON.stringify(placed.body));
+    assert.equal(placed.body.state, "PLACED", "a cash counter order is PLACED at once");
+    assert.ok(placed.body.recipient_code);
+
+    // Stamped with the POS channel and the cashier; attributed to a walk-in, never the cashier's own account.
+    const [row] = await inspect("CD",
+      `SELECT o.customer_id::text AS customer_id,
+              d.payload->'snapshot'->>'channel' AS channel,
+              d.payload->'snapshot'->>'staffId' AS staff
+         FROM ordering.order_view o
+         JOIN ordering.order_event d ON d.order_id = o.order_id AND d.type = 'ORDER_DRAFTED'
+        WHERE o.order_id = $1`, [placed.body.order_id]);
+    assert.equal(row.channel, "POS");
+    assert.equal(row.staff, restaurantOwner.userId);
+    assert.notEqual(row.customer_id, restaurantOwner.userId, "attributed to a walk-in, not the cashier");
+
+    // Not in the cashier's own order history.
+    const mine = await call("GET", "/v1/me/orders", { token: restaurantOwner.token, country: "CD" });
+    assert.ok(!mine.body.data.some((o: { order_id: string }) => o.order_id === placed.body.order_id), "a counter sale is not the cashier's own order");
+
+    // Shows on the kitchen board.
+    const board = await call("GET", "/v1/kitchen/orders", { token: restaurantOwner.token, country: "CD" });
+    assert.ok(board.body.orders.some((o: { order_id: string }) => o.order_id === placed.body.order_id), "the counter order is on the kitchen board");
+  });
+
+  test("a dine-in with a table number and a customer phone attributes to that customer", async () => {
+    const q = await call("POST", "/v1/pos/quote", { token: restaurantOwner.token, country: "CD", body: posCart("DINE_IN") });
+    const placed = await call("POST", "/v1/pos/orders", { token: restaurantOwner.token, country: "CD", body: { ...posCart("DINE_IN"), table_id: "12", customer_phone: "+243810000777", customer_name: "Grace", expected_total: q.body.total } });
+    assert.equal(placed.status, 201, JSON.stringify(placed.body));
+    assert.equal(placed.body.order_type, "DINE_IN");
+
+    const [u] = await inspect("CD", "SELECT id::text AS id FROM identity.app_user WHERE phone_e164 = $1", ["+243810000777"]);
+    assert.ok(u, "a customer account was created from the phone given at the counter");
+    const [row] = await inspect("CD",
+      `SELECT o.customer_id::text AS customer_id, d.payload->'snapshot'->>'tableId' AS table_id
+         FROM ordering.order_view o
+         JOIN ordering.order_event d ON d.order_id = o.order_id AND d.type = 'ORDER_DRAFTED'
+        WHERE o.order_id = $1`, [placed.body.order_id]);
+    assert.equal(row.customer_id, u.id, "attributed to the named customer");
+    assert.equal(row.table_id, "12");
+  });
+
+  test("a bad customer phone is refused", async () => {
+    const r = await call("POST", "/v1/pos/orders", { token: restaurantOwner.token, country: "CD", body: { ...posCart(), customer_phone: "0810", expected_total: { amount_minor: "1", currency: "USD" } } });
+    assert.equal(r.status, 400);
+    assert.equal(r.body.code, "PHONE_INVALID");
+  });
+
+  test("a plain customer cannot operate the POS", async () => {
+    assert.equal((await call("POST", "/v1/pos/quote", { token: customer.token, country: "CD", body: posCart() })).status, 403);
+    assert.equal((await call("POST", "/v1/pos/orders", { token: customer.token, country: "CD", body: { ...posCart(), expected_total: { amount_minor: "1", currency: "USD" } } })).status, 403);
+  });
+
+  test("the counter price is plain, so a confirmed total always places (no membership divergence)", async () => {
+    const q = await call("POST", "/v1/pos/quote", { token: restaurantOwner.token, country: "CD", body: posCart() });
+    const placed = await call("POST", "/v1/pos/orders", { token: restaurantOwner.token, country: "CD", body: { ...posCart(), expected_total: q.body.total } });
+    assert.equal(placed.status, 201, JSON.stringify(placed.body));
+  });
+});
+
+describe("grocery / convenience vertical", () => {
+  let groceryId: string;
+
+  test("a branch can be a grocery; discovery and the storefront report its type", async () => {
+    const made = await call("POST", "/v1/branches", { token: admin.token, country: "CD", body: { name: "Kin Market", restaurant_group_id: "rg-chez-maman", city: "kinshasa", commune: "gombe", lat: -4.3125, lng: 15.2847, store_type: "grocery" } });
+    assert.equal(made.status, 201, JSON.stringify(made.body));
+    assert.equal(made.body.store_type, "GROCERY");
+    groceryId = made.body.id;
+    const menu = await call("GET", `/v1/branches/${groceryId}/menu`, { country: "CD" });
+    assert.equal(menu.body.branch.store_type, "GROCERY");
+    const near = await call("GET", "/v1/branches/nearby?lat=-4.3215&lng=15.2947", { country: "CD" });
+    const row = near.body.data.find((b: { id: string }) => b.id === groceryId);
+    assert.ok(row, "the grocery shows in discovery");
+    assert.equal(row.store_type, "GROCERY");
+  });
+
+  test("a grocery item carries a unit label; every item exposes the field", async () => {
+    const it = await call("POST", `/v1/branches/${groceryId}/items`, { token: restaurantOwner.token, country: "CD", body: { names: { fr: "Riz parfumé 5 kg" }, prices: { USD: "8.00" }, category: "Épiceries", unit_label: "5 kg" } });
+    assert.equal(it.status, 201, JSON.stringify(it.body));
+    assert.equal(it.body.unit_label, "5 kg");
+    const menu = await call("GET", `/v1/branches/${groceryId}/menu`, { country: "CD" });
+    const row = menu.body.items.find((m: { id: string }) => m.id === it.body.id);
+    assert.equal(row.unit_label, "5 kg");
+    // A restaurant dish reports a null unit label (the key is always present).
+    const rmenu = await call("GET", `/v1/branches/${branchId}/menu`, { country: "CD" });
+    assert.ok(rmenu.body.items.length > 0 && "unit_label" in rmenu.body.items[0], "unit_label is present on every item");
+    assert.equal(rmenu.body.items[0].unit_label, null);
+  });
+
+  test("the default store type is RESTAURANT and an unknown type is refused", async () => {
+    const menu = await call("GET", `/v1/branches/${branchId}/menu`, { country: "CD" });
+    assert.equal(menu.body.branch.store_type, "RESTAURANT");
+    const bad = await call("POST", "/v1/branches", { token: admin.token, country: "CD", body: { name: "X", restaurant_group_id: "rg-chez-maman", lat: -4.31, lng: 15.28, store_type: "CASINO" } });
+    assert.equal(bad.status, 400);
+    assert.equal(bad.body.code, "STORE_TYPE_INVALID");
+  });
+
+  test("a merchant can switch a branch's type via its profile", async () => {
+    const up = await call("POST", `/v1/branches/${groceryId}/profile`, { token: restaurantOwner.token, country: "CD", body: { store_type: "CONVENIENCE" } });
+    assert.equal(up.status, 200, JSON.stringify(up.body));
+    assert.equal(up.body.store_type, "CONVENIENCE");
+  });
+});
+
+
+describe("merchant payouts & earnings statements", () => {
+  let fin: { token: string; userId: string };
+  before(async () => {
+    // A finance person (ledger:read + payout authority), bound directly for an isolated test.
+    fin = await signIn("+243810000091");
+    await grant({ userId: fin.userId, role: "COUNTRY_FINANCE", scope: { type: "COUNTRY", id: "CD" } });
+  });
+
+  test("a merchant sees their own earnings; finance sees every group and pays one out", async () => {
+    // The owner sees only their own group's statement, earned from delivered orders, nothing paid out yet.
+    const ownerView = await call("GET", "/v1/admin/payouts", { token: restaurantOwner.token, country: "CD" });
+    assert.equal(ownerView.status, 200, JSON.stringify(ownerView.body));
+    const mine = ownerView.body.merchants.find((m: { group_id: string }) => m.group_id === "rg-chez-maman");
+    assert.ok(mine, "the owner sees their group's earnings");
+    assert.ok(BigInt(mine.earned_lifetime.amount_minor) > 0n, "earned from delivered orders");
+    assert.equal(mine.outstanding.amount_minor, mine.earned_lifetime.amount_minor, "nothing paid out yet");
+    assert.equal(ownerView.body.riders, null, "an owner does not see rider payouts");
+
+    // Finance sees every group and the rider payout view.
+    const finView = await call("GET", "/v1/admin/payouts", { token: fin.token, country: "CD" });
+    assert.equal(finView.status, 200, JSON.stringify(finView.body));
+    assert.ok(finView.body.merchants.length >= 1);
+    assert.ok(finView.body.riders, "finance sees rider payouts");
+    const before = finView.body.merchants.find((m: { group_id: string }) => m.group_id === "rg-chez-maman");
+
+    // Finance records a payout of the whole outstanding balance.
+    const pay = await call("POST", "/v1/admin/payouts/merchants", { token: fin.token, country: "CD", body: { restaurant_group_id: "rg-chez-maman", method: "MOBILE_MONEY", reference: "MM-TX-1" } });
+    assert.equal(pay.status, 201, JSON.stringify(pay.body));
+    assert.equal(pay.body.paid.amount_minor, before.outstanding.amount_minor);
+    assert.equal(pay.body.outstanding.amount_minor, "0");
+
+    // The statement now shows the group fully paid, and the books still balance.
+    const after = await call("GET", "/v1/admin/payouts", { token: fin.token, country: "CD" });
+    assert.equal(after.body.merchants.find((m: { group_id: string }) => m.group_id === "rg-chez-maman").outstanding.amount_minor, "0");
+    const l = await call("GET", "/v1/admin/ledger", { token: fin.token, country: "CD" });
+    const bySum = new Map<string, bigint>();
+    for (const b of l.body.balances) bySum.set(b.currency, (bySum.get(b.currency) ?? 0n) + BigInt(b.balance_minor));
+    for (const [c, s] of bySum) assert.equal(s, 0n, `the books balance in ${c} after the payout`);
+
+    // An owner cannot issue a payout to themselves.
+    assert.equal((await call("POST", "/v1/admin/payouts/merchants", { token: restaurantOwner.token, country: "CD", body: { restaurant_group_id: "rg-chez-maman" } })).status, 403);
+  });
+
+  test("paying a group with nothing outstanding is refused", async () => {
+    const again = await call("POST", "/v1/admin/payouts/merchants", { token: fin.token, country: "CD", body: { restaurant_group_id: "rg-chez-maman" } });
+    assert.equal(again.status, 422);
+    assert.equal(again.body.code, "NOTHING_TO_PAY");
+  });
+});
+
+describe("merchant subscription plans (0% commission preserved)", () => {
+  const plans = () => api.get<MerchantPlanService>(TOKENS.merchantPlans);
+
+  test("admin creates a paid featured plan, assigns it, and billing nets the fee to subscription revenue", async () => {
+    const save = await call("POST", "/v1/admin/merchant-plans", { token: admin.token, country: "CD", body: { code: "GROWTH", name: "Growth", monthly_fee: "20.00", featured: true } });
+    assert.equal(save.status, 200, JSON.stringify(save.body));
+    assert.equal(save.body.monthly_fee.amount_minor, "2000");
+    assert.equal(save.body.featured, true);
+
+    const assign = await call("POST", "/v1/admin/merchant-plans/assign", { token: admin.token, country: "CD", body: { group_id: "rg-chez-maman", plan_code: "GROWTH" } });
+    assert.equal(assign.status, 200, JSON.stringify(assign.body));
+
+    const ov = await call("GET", "/v1/admin/merchant-plans", { token: admin.token, country: "CD" });
+    assert.ok(ov.body.plans.some((p: { code: string }) => p.code === "GROWTH"));
+    assert.equal(ov.body.merchants.find((m: { group_id: string }) => m.group_id === "rg-chez-maman").plan_code, "GROWTH");
+
+    const revBefore = BigInt((await inspect("CD", "SELECT COALESCE(sum(amount_minor),0)::text AS s FROM money.ledger_entry WHERE account = 'subscription_revenue'"))[0]!.s);
+    const r1 = await plans().billSweep("CD");
+    assert.ok(r1.billed >= 1, JSON.stringify(r1));
+    const r2 = await plans().billSweep("CD");
+    assert.equal(r2.billed, 0, "billing is idempotent within the month");
+    const revAfter = BigInt((await inspect("CD", "SELECT COALESCE(sum(amount_minor),0)::text AS s FROM money.ledger_entry WHERE account = 'subscription_revenue'"))[0]!.s);
+    assert.equal(revAfter - revBefore, -2000n, "the plan fee is credited to subscription revenue");
+
+    // The books still balance after billing.
+    const [bal] = await inspect("CD", "SELECT COALESCE(sum(amount_minor),0)::text AS s FROM money.ledger_entry WHERE currency = 'USD'");
+    assert.equal(bal.s, "0", "USD books balance after the plan charge");
+  });
+
+  test("the featured group ranks first in discovery with a flag", async () => {
+    const near = await call("GET", "/v1/branches/nearby?lat=-4.3215&lng=15.2947", { country: "CD" });
+    const mine = near.body.data.find((b: { id: string }) => b.id === branchId);
+    assert.ok(mine, "the group's branch is in discovery");
+    assert.equal(mine.featured, true, "a featured-plan branch is flagged");
+  });
+
+  test("the FREE plan cannot carry a fee, and a non-admin cannot manage plans", async () => {
+    const free = await call("POST", "/v1/admin/merchant-plans", { token: admin.token, country: "CD", body: { code: "FREE", name: "Free", monthly_fee: "5.00" } });
+    assert.equal(free.status, 400);
+    assert.equal(free.body.code, "FREE_IS_FREE");
+    assert.equal((await call("POST", "/v1/admin/merchant-plans", { token: restaurantOwner.token, country: "CD", body: { code: "X2", name: "x" } })).status, 403);
+    assert.equal((await call("POST", "/v1/admin/merchant-plans/assign", { token: restaurantOwner.token, country: "CD", body: { group_id: "rg-chez-maman", plan_code: "FREE" } })).status, 403);
+  });
+});
+
+describe("web push notifications", () => {
+  test("a customer enables (idempotently) and disables push", async () => {
+    const u = await signIn("+243810000310");
+    const st0 = await call("GET", "/v1/me/push", { token: u.token, country: "CD" });
+    assert.equal(st0.status, 200);
+    assert.equal(st0.body.enabled, false);
+
+    const sub = { endpoint: "https://push.example.com/abc-123", keys: { p256dh: "BPUBLICKEY", auth: "AUTHSECRET" } };
+    assert.equal((await call("POST", "/v1/me/push-subscription", { token: u.token, country: "CD", body: sub })).body.enabled, true);
+    assert.equal((await call("GET", "/v1/me/push", { token: u.token, country: "CD" })).body.enabled, true);
+    // Re-subscribing the same endpoint upserts, it does not duplicate.
+    await call("POST", "/v1/me/push-subscription", { token: u.token, country: "CD", body: sub });
+    const [n] = await inspect("CD", "SELECT count(*)::int AS n FROM comms.push_subscription WHERE endpoint = $1", [sub.endpoint]);
+    assert.equal(n!.n, 1, "the subscription is upserted, not duplicated");
+
+    assert.equal((await call("POST", "/v1/me/push-subscription/remove", { token: u.token, country: "CD", body: { endpoint: sub.endpoint } })).body.enabled, false);
+    assert.equal((await call("GET", "/v1/me/push", { token: u.token, country: "CD" })).body.enabled, false);
+  });
+
+  test("an invalid subscription is refused", async () => {
+    const u = await signIn("+243810000311");
+    const bad = await call("POST", "/v1/me/push-subscription", { token: u.token, country: "CD", body: { endpoint: "https://x" } });
+    assert.equal(bad.status, 400);
+    assert.equal(bad.body.code, "SUBSCRIPTION_INVALID");
+  });
+
+  test("the push channel logs when a recipient has no device registered", async () => {
+    const u = await signIn("+243810000312");
+    const keys = webpush.generateVAPIDKeys();
+    const sender = webPushSender(db, { publicKey: keys.publicKey, privateKey: keys.privateKey, subject: "mailto:test@tunakula.com" });
+    const event = { key: "order.delivered", title: "Delivered", subject: "Delivered", severity: "success", mandatory: false, audience: ["customer"], channels: ["push"] } as const;
+    const r = await sender.send({ country: "CD", channel: "push", to: { userId: u.userId }, subject: "Your order arrived", event, data: {} });
+    assert.equal(r.status, "logged", "no device → nothing to push, logged not failed");
+  });
+});
+
+describe("storefront CMS (editable landing content)", () => {
+  test("defaults are served until an admin overrides, then the edit shows live", async () => {
+    // Before any edit, the storefront still gets a full document from the shipped defaults.
+    const before = await call("GET", "/v1/site-content", { country: "CD" });
+    assert.equal(before.status, 200, JSON.stringify(before.body));
+    assert.ok(before.body.home.hero.title.length > 0);
+    assert.equal(before.body.home.hero.cta_href, "/order/");
+
+    // Only a market admin can edit it.
+    assert.equal((await call("POST", "/v1/admin/site-content", { token: customer.token, country: "CD", body: { hero: { title: "x" } } })).status, 403);
+    // The hero needs a title.
+    assert.equal((await call("POST", "/v1/admin/site-content", { token: admin.token, country: "CD", body: { hero: { title: "" } } })).body.code, "TITLE_REQUIRED");
+    // Social links must be real https URLs.
+    assert.equal((await call("POST", "/v1/admin/site-content", { token: admin.token, country: "CD", body: { hero: { title: "Hi" }, social: { instagram: "javascript:alert(1)" } } })).body.code, "LINK_INVALID");
+    // The hero CTA cannot be a dangerous scheme.
+    assert.equal((await call("POST", "/v1/admin/site-content", { token: admin.token, country: "CD", body: { hero: { title: "Hi", cta_href: "javascript:alert(1)" } } })).body.code, "LINK_INVALID");
+
+    const saved = await call("POST", "/v1/admin/site-content", {
+      token: admin.token, country: "CD",
+      body: { hero: { title: "Mangez bien à Kinshasa", subtitle: "Livré par la route", cta_label: "Commander", cta_href: "/order/" }, social: { instagram: "https://instagram.com/tunakula", whatsapp: "https://wa.me/243810000000" }, tagline: "Tunakula — bon appétit, Kinshasa." },
+    });
+    assert.equal(saved.status, 200, JSON.stringify(saved.body));
+    assert.equal(saved.body.home.hero.title, "Mangez bien à Kinshasa");
+    assert.equal(saved.body.home.social.instagram, "https://instagram.com/tunakula");
+
+    // The customer app now sees the edited content.
+    const live = await call("GET", "/v1/site-content", { country: "CD" });
+    assert.equal(live.body.home.hero.title, "Mangez bien à Kinshasa");
+    assert.equal(live.body.home.hero.cta_label, "Commander");
+    assert.equal(live.body.home.social.whatsapp, "https://wa.me/243810000000");
+    assert.equal(live.body.home.tagline, "Tunakula — bon appétit, Kinshasa.");
+
+    // The admin editor reads the same document back.
+    const got = await call("GET", "/v1/admin/site-content", { token: admin.token, country: "CD" });
+    assert.equal(got.body.home.hero.subtitle, "Livré par la route");
+  });
+});
+
+describe("self-service kiosk (HUB channel, customer orders in-store)", () => {
+  const kCart = (type = "TAKEAWAY", extra: Record<string, unknown> = {}) => ({ branch_id: branchId, items: [{ item_id: itemId, quantity: 1 }], order_type: type, ...extra });
+
+  test("a customer places a pay-at-counter kiosk order; it lands on the kitchen board, stamped HUB with no cashier", async () => {
+    const q = await call("POST", "/v1/kiosk/quote", { token: restaurantOwner.token, country: "CD", body: kCart() });
+    assert.equal(q.status, 200, JSON.stringify(q.body));
+    assert.ok(q.body.total.amount_minor, "the kiosk quote has a total");
+
+    const placed = await call("POST", "/v1/kiosk/orders", { token: restaurantOwner.token, country: "CD", body: { ...kCart(), pay_method: "COUNTER", expected_total: q.body.total } });
+    assert.equal(placed.status, 201, JSON.stringify(placed.body));
+    assert.equal(placed.body.state, "PLACED", "a pay-at-counter kiosk order is PLACED at once");
+    assert.equal(placed.body.pay_method, "COUNTER");
+    assert.ok(placed.body.recipient_code);
+
+    // Stamped with the HUB (kiosk) channel, NO staff, attributed to a kiosk walk-in — never the device operator.
+    const [row] = await inspect("CD",
+      `SELECT o.customer_id::text AS customer_id,
+              d.payload->'snapshot'->>'channel' AS channel,
+              d.payload->'snapshot'->>'staffId' AS staff
+         FROM ordering.order_view o
+         JOIN ordering.order_event d ON d.order_id = o.order_id AND d.type = 'ORDER_DRAFTED'
+        WHERE o.order_id = $1`, [placed.body.order_id]);
+    assert.equal(row.channel, "HUB", "kiosk orders are stamped on the HUB channel");
+    assert.equal(row.staff, null, "a self-service kiosk order has no cashier");
+    assert.notEqual(row.customer_id, restaurantOwner.userId, "attributed to a kiosk walk-in, not the device operator");
+
+    // Same board as every other order.
+    const board = await call("GET", "/v1/kitchen/orders", { token: restaurantOwner.token, country: "CD" });
+    assert.ok(board.body.orders.some((o: { order_id: string }) => o.order_id === placed.body.order_id), "the kiosk order is on the kitchen board");
+  });
+
+  test("a mobile-money kiosk order needs the payer's number and is attributed to that customer", async () => {
+    const q = await call("POST", "/v1/kiosk/quote", { token: restaurantOwner.token, country: "CD", body: kCart("DINE_IN") });
+    // Without a number, mobile money is refused.
+    assert.equal((await call("POST", "/v1/kiosk/orders", { token: restaurantOwner.token, country: "CD", body: { ...kCart("DINE_IN"), pay_method: "MOBILE_MONEY", expected_total: q.body.total } })).body.code, "PHONE_REQUIRED");
+
+    const placed = await call("POST", "/v1/kiosk/orders", { token: restaurantOwner.token, country: "CD", body: { ...kCart("DINE_IN"), table_id: "7", pay_method: "MOBILE_MONEY", customer_phone: "+243810000888", customer_name: "Didier", expected_total: q.body.total } });
+    assert.equal(placed.status, 201, JSON.stringify(placed.body));
+    assert.equal(placed.body.pay_method, "MOBILE_MONEY");
+
+    const [u] = await inspect("CD", "SELECT id::text AS id FROM identity.app_user WHERE phone_e164 = $1", ["+243810000888"]);
+    assert.ok(u, "a customer account was created from the number entered at the kiosk");
+    const [row] = await inspect("CD",
+      `SELECT o.customer_id::text AS customer_id, d.payload->'snapshot'->>'channel' AS channel, d.payload->'snapshot'->>'tableId' AS table_id
+         FROM ordering.order_view o
+         JOIN ordering.order_event d ON d.order_id = o.order_id AND d.type = 'ORDER_DRAFTED'
+        WHERE o.order_id = $1`, [placed.body.order_id]);
+    assert.equal(row.channel, "HUB");
+    assert.equal(row.customer_id, u.id, "attributed to the paying customer");
+    assert.equal(row.table_id, "7");
+  });
+
+  test("a plain customer cannot drive the kiosk device", async () => {
+    assert.equal((await call("POST", "/v1/kiosk/quote", { token: customer.token, country: "CD", body: kCart() })).status, 403);
+    assert.equal((await call("POST", "/v1/kiosk/orders", { token: customer.token, country: "CD", body: { ...kCart(), expected_total: { amount_minor: "1", currency: "USD" } } })).status, 403);
+  });
+
+  test("kiosk pricing follows the same principle — 0% commission, merchant keeps 100%", async () => {
+    const q = await call("POST", "/v1/kiosk/quote", { token: restaurantOwner.token, country: "CD", body: kCart() });
+    assert.equal(q.status, 200);
+    // The merchant receives the full goods price; the platform is funded by the customer service charge, not a cut.
+    assert.equal(q.body.commission.amount_minor, "0", "kiosk orders carry 0% commission");
+  });
+
+  test("a QR kiosk order is accepted (prepaid, stamped HUB) so the device can show a QR to scan", async () => {
+    const q = await call("POST", "/v1/kiosk/quote", { token: restaurantOwner.token, country: "CD", body: kCart() });
+    const placed = await call("POST", "/v1/kiosk/orders", { token: restaurantOwner.token, country: "CD", body: { ...kCart(), pay_method: "QR", expected_total: q.body.total } });
+    assert.equal(placed.status, 201, JSON.stringify(placed.body));
+    assert.equal(placed.body.pay_method, "QR");
+    const [row] = await inspect("CD",
+      `SELECT d.payload->'snapshot'->>'channel' AS channel
+         FROM ordering.order_view o JOIN ordering.order_event d ON d.order_id = o.order_id AND d.type = 'ORDER_DRAFTED'
+        WHERE o.order_id = $1`, [placed.body.order_id]);
+    assert.equal(row.channel, "HUB");
+  });
+});
+
+describe("book a chef (private-chef marketplace, 0% commission + service charge)", () => {
+  const future = () => new Date(Date.now() + 2 * 86_400_000).toISOString();
+  let chef: { token: string; userId: string };
+  let chefId: string; let serviceId: string;
+
+  test("a cook applies, ops approve, and they list a per-guest service", async () => {
+    chef = await signIn("+243810000600");
+    // Apply.
+    const applied = await call("POST", "/v1/chef/apply", { token: chef.token, country: "CD", body: { display_name: "Chef Kï", bio: "Congolese fine dining at home", cuisines: ["Congolese", "Grill"], communes: ["Gombe", "Limete"] } });
+    assert.equal(applied.status, 201, JSON.stringify(applied.body));
+    assert.equal(applied.body.status, "PENDING");
+    chefId = applied.body.id;
+    // A plain customer cannot approve.
+    assert.equal((await call("POST", `/v1/ops/chefs/${chefId}/decide`, { token: customer.token, country: "CD", body: { approve: true } })).status, 403);
+    // Ops approve.
+    const decided = await call("POST", `/v1/ops/chefs/${chefId}/decide`, { token: admin.token, country: "CD", body: { approve: true } });
+    assert.equal(decided.status, 200, JSON.stringify(decided.body));
+    assert.equal(decided.body.status, "APPROVED");
+    // Only the chef themselves can add services.
+    assert.equal((await call("POST", "/v1/chef/services", { token: customer.token, country: "CD", body: { kind: "PRIVATE_DINING", title: "x", pricing_model: "PER_HEAD", rate: "30.00", currency: "USD" } })).status, 403);
+    const svc = await call("POST", "/v1/chef/services", { token: chef.token, country: "CD", body: { kind: "PRIVATE_DINING", title: "Private dinner at your home", pricing_model: "PER_HEAD", rate: "30.00", currency: "USD", min_guests: 2, max_guests: 10 } });
+    assert.equal(svc.status, 201, JSON.stringify(svc.body));
+    serviceId = svc.body.id;
+    // Also an ADVICE (consultation) service.
+    await call("POST", "/v1/chef/services", { token: chef.token, country: "CD", body: { kind: "ADVICE", title: "Menu planning call", pricing_model: "FIXED", rate: "15.00", currency: "USD", remote: true } });
+
+    // The chef now shows in public discovery.
+    const listed = await call("GET", "/v1/chefs", { country: "CD" });
+    assert.equal(listed.status, 200);
+    const mine = listed.body.chefs.find((c: { id: string }) => c.id === chefId);
+    assert.ok(mine, "approved chef is discoverable");
+    assert.equal(mine.services.length, 2);
+  });
+
+  test("the quote keeps the chef whole and adds the 10% service charge on top", async () => {
+    const q = await call("POST", "/v1/chefs/quote", { token: customer.token, country: "CD", body: { service_id: serviceId, party_size: 4 } });
+    assert.equal(q.status, 200, JSON.stringify(q.body));
+    // 4 guests × $30 = $120 to the chef.
+    assert.equal(q.body.fee.amount_minor, "12000");
+    // Platform's 10% on top, paid by the customer.
+    assert.equal(q.body.service_charge.amount_minor, "1200");
+    assert.equal(q.body.total.amount_minor, "13200");
+    assert.equal(q.body.commission.amount_minor, "0", "0% commission");
+  });
+
+  test("a booking runs request → confirm → complete and settles to a balanced journal", async () => {
+    const booked = await call("POST", "/v1/chef-bookings", { token: customer.token, country: "CD", body: { service_id: serviceId, scheduled_for: future(), party_size: 4, location_label: "Avenue Colonel Lukusa, Gombe" } });
+    assert.equal(booked.status, 201, JSON.stringify(booked.body));
+    assert.equal(booked.body.status, "REQUESTED");
+    assert.equal(booked.body.total.amount_minor, "13200");
+    const bookingId = booked.body.id;
+
+    // Only the chef can respond to their booking.
+    assert.equal((await call("POST", `/v1/chef/bookings/${bookingId}/respond`, { token: customer.token, country: "CD", body: { accept: true } })).status, 403);
+    assert.equal((await call("POST", `/v1/chef/bookings/${bookingId}/respond`, { token: chef.token, country: "CD", body: { accept: true } })).body.status, "CONFIRMED");
+    // Cannot complete a booking that isn't confirmed twice; complete it once.
+    const done = await call("POST", `/v1/chef/bookings/${bookingId}/complete`, { token: chef.token, country: "CD" });
+    assert.equal(done.status, 200, JSON.stringify(done.body));
+    assert.equal(done.body.status, "COMPLETED");
+
+    // The money settled: chef keeps $120, platform earns the $12 service charge, nothing is commission.
+    const rows = await inspect("CD",
+      `SELECT e.account, sum(e.amount_minor)::text AS total
+         FROM money.ledger_entry e JOIN money.journal j ON j.id = e.journal_id
+        WHERE j.idempotency_key = $1 GROUP BY e.account`, [`chef-booking:${bookingId}:settlement`]);
+    const bal = Object.fromEntries(rows.map((r: { account: string; total: string }) => [r.account, r.total]));
+    assert.equal(bal["chef_payable"], "-12000", "the chef is owed the full fee");
+    assert.equal(bal["service_charge_revenue"], "-1200", "the platform earns the 10% service charge");
+    assert.equal(bal["psp_clearing"], "13200", "the customer's payment balances the journal");
+  });
+
+  test("a customer can cancel their own booking before it happens", async () => {
+    const booked = await call("POST", "/v1/chef-bookings", { token: customer.token, country: "CD", body: { service_id: serviceId, scheduled_for: future(), party_size: 2 } });
+    const id = booked.body.id;
+    assert.equal((await call("POST", `/v1/chef-bookings/${id}/cancel`, { token: chef.token, country: "CD" })).status, 403);
+    assert.equal((await call("POST", `/v1/chef-bookings/${id}/cancel`, { token: customer.token, country: "CD" })).body.status, "CANCELLED");
+  });
+});
+
+describe("integration credentials (added from the admin panel, never returned)", () => {
+  const find = (body: { integrations: { id: string; configured: boolean; fields: { env_key: string; set: boolean; source: string | null }[] }[] }, id: string) =>
+    body.integrations.find((i) => i.id === id)!;
+
+  test("a market admin sees the catalogue; a plain customer cannot", async () => {
+    assert.equal((await call("GET", "/v1/admin/integrations", { token: customer.token, country: "CD" })).status, 403);
+    const r = await call("GET", "/v1/admin/integrations", { token: admin.token, country: "CD" });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    const stripe = find(r.body, "stripe");
+    assert.ok(stripe, "the Stripe integration is listed");
+    assert.equal(stripe.configured, false, "nothing set yet");
+    // The payload never carries a value field — only whether each field is set.
+    assert.ok(!JSON.stringify(r.body).includes("\"value\""), "no stored value is ever returned to the client");
+  });
+
+  test("setting the keys marks the integration configured, with source 'panel' — and the value is still never returned", async () => {
+    assert.equal((await call("POST", "/v1/admin/integrations/stripe", { token: customer.token, country: "CD", body: { STRIPE_SECRET_KEY: "sk_test_x" } })).status, 403);
+    const set = await call("POST", "/v1/admin/integrations/stripe", { token: admin.token, country: "CD", body: { STRIPE_SECRET_KEY: "sk_test_abc123", STRIPE_WEBHOOK_SECRET: "whsec_abc123" } });
+    assert.equal(set.status, 200, JSON.stringify(set.body));
+    const stripe = find(set.body, "stripe");
+    assert.equal(stripe.configured, true, "both required keys are now set");
+    const secret = stripe.fields.find((f) => f.env_key === "STRIPE_SECRET_KEY")!;
+    assert.equal(secret.set, true);
+    assert.equal(secret.source, "panel", "the value came from the panel, not the environment");
+    assert.ok(!JSON.stringify(set.body).includes("sk_test_abc123"), "the secret itself is never echoed back");
+    // The value really is stored (only this one service reads it) — the boot loader resolves it.
+    const stored = await inspect("CD", "SELECT value FROM platform.integration WHERE env_key = $1", ["STRIPE_SECRET_KEY"]);
+    assert.equal(stored[0]?.value, "sk_test_abc123");
+  });
+
+  test("saving a blank value clears the stored key", async () => {
+    const cleared = await call("POST", "/v1/admin/integrations/stripe", { token: admin.token, country: "CD", body: { STRIPE_SECRET_KEY: "" } });
+    assert.equal(cleared.status, 200);
+    const secret = find(cleared.body, "stripe").fields.find((f) => f.env_key === "STRIPE_SECRET_KEY")!;
+    assert.equal(secret.set, false, "a blank value removed the stored key");
+    assert.equal(find(cleared.body, "stripe").configured, false);
+    const stored = await inspect("CD", "SELECT value FROM platform.integration WHERE env_key = $1", ["STRIPE_SECRET_KEY"]);
+    assert.equal(stored.length, 0, "the row is gone");
+  });
+
+  test("an unknown integration id is rejected", async () => {
+    assert.equal((await call("POST", "/v1/admin/integrations/nope", { token: admin.token, country: "CD", body: { X: "y" } })).status, 400);
+  });
+});
+
+describe("AI customer-service assistant (grounded, escalates to a human)", () => {
+  let support: { token: string; userId: string };
+  let orderId: string;
+
+  test("answers a grounded question about the customer's own order and records the conversation", async () => {
+    support = await signIn("+243810000700");
+    await grant({ userId: support.userId, role: "SUPPORT_AGENT", scope: { type: "COUNTRY", id: "CD" } });
+    ({ orderId } = await placePrepaid());
+
+    const r = await call("POST", "/v1/support/ask", { token: customer.token, country: "CD", body: { text: "where is my order?", order_id: orderId, lang: "en" } });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.equal(r.body.reply.intent, "ORDER_STATUS");
+    assert.equal(r.body.reply.escalated, false);
+    assert.ok(r.body.conversation_id);
+
+    // The conversation and both turns (customer + AI) are persisted.
+    const mine = await call("GET", "/v1/support/conversations", { token: customer.token, country: "CD" });
+    assert.ok(mine.body.conversations.find((c: { id: string }) => c.id === r.body.conversation_id));
+    const t = await call("GET", `/v1/support/conversations/${r.body.conversation_id}`, { token: customer.token, country: "CD" });
+    assert.equal(t.body.messages.length, 2);
+    assert.deepEqual(t.body.messages.map((m: { sender: string }) => m.sender), ["CUSTOMER", "AI"]);
+  });
+
+  test("explains the service charge from the order and cites the pricing policy", async () => {
+    const r = await call("POST", "/v1/support/ask", { token: customer.token, country: "CD", body: { text: "why is there a service charge?", order_id: orderId, lang: "en" } });
+    assert.equal(r.body.reply.intent, "EXPLAIN_CHARGE");
+    assert.equal(r.body.reply.citations[0]?.policySlug, "pricing");
+    assert.equal(r.body.reply.escalated, false);
+  });
+
+  test("a discretionary complaint escalates to a human, and the conversation is marked ESCALATED", async () => {
+    const r = await call("POST", "/v1/support/ask", { token: customer.token, country: "CD", body: { text: "I want to speak to a person, this is a complaint", lang: "en" } });
+    assert.equal(r.body.reply.escalated, true);
+    const convoId = r.body.conversation_id;
+
+    // A plain customer cannot see the escalations queue; a support agent can.
+    assert.equal((await call("GET", "/v1/ops/support/escalations", { token: customer.token, country: "CD" })).status, 403);
+    const queue = await call("GET", "/v1/ops/support/escalations", { token: support.token, country: "CD" });
+    assert.equal(queue.status, 200);
+    assert.ok(queue.body.conversations.find((c: { id: string }) => c.id === convoId), "the escalated conversation is in the queue");
+
+    // The support agent takes over and replies; the customer sees the human turn.
+    const reply = await call("POST", `/v1/ops/support/conversations/${convoId}/reply`, { token: support.token, country: "CD", body: { text: "Hi, this is Amina from support — I've got this.", resolve: true } });
+    assert.equal(reply.status, 200, JSON.stringify(reply.body));
+    const t = await call("GET", `/v1/support/conversations/${convoId}`, { token: customer.token, country: "CD" });
+    assert.ok(t.body.messages.find((m: { sender: string }) => m.sender === "AGENT"));
+    assert.equal(t.body.status, "RESOLVED");
+  });
+
+  test("a customer cannot read another customer's conversation or reach the ops reply endpoint", async () => {
+    const r = await call("POST", "/v1/support/ask", { token: customer.token, country: "CD", body: { text: "how do I pay?", lang: "en" } });
+    const convoId = r.body.conversation_id;
+    assert.equal((await call("GET", `/v1/support/conversations/${convoId}`, { token: support.token, country: "CD" })).status, 200, "support can read via takeover");
+    const stranger = await signIn("+243810000701");
+    assert.equal((await call("GET", `/v1/support/conversations/${convoId}`, { token: stranger.token, country: "CD" })).status, 403);
+    assert.equal((await call("POST", `/v1/ops/support/conversations/${convoId}/reply`, { token: stranger.token, country: "CD", body: { text: "x" } })).status, 403);
+  });
+
+  test("the order is only grounded for its owner — a stranger's order_id yields no order facts", async () => {
+    const stranger = await signIn("+243810000702");
+    const r = await call("POST", "/v1/support/ask", { token: stranger.token, country: "CD", body: { text: "where is my order?", order_id: orderId, lang: "en" } });
+    assert.equal(r.status, 200);
+    // No order facts → the assistant asks for the order rather than reading someone else's.
+    assert.ok(r.body.reply.action.type === "SHOW_ORDER" || r.body.reply.escalated, JSON.stringify(r.body.reply));
+  });
+});
+
+describe("growth agent (recommendations + win-back)", () => {
+  let gcust: { token: string; userId: string };
+
+  const placePaid = async (token: string) => {
+    const q = await call("POST", "/v1/carts/quote", { country: "CD", body: cart() });
+    const r = await call("POST", "/v1/orders", { token, country: "CD", body: { ...cart(), payment_mode: "PREPAID", expected_total: q.body.total } });
+    assert.equal(r.status, 201, JSON.stringify(r.body));
+    const pay = await call("POST", "/v1/payments/intents", { token, country: "CD", body: { order_id: r.body.order_id, method_type: "MOBILE_MONEY_PUSH", payer: { msisdn: "+243810000001" } } });
+    assert.equal(pay.body.status, "SUCCEEDED", JSON.stringify(pay.body));
+    return r.body.order_id as string;
+  };
+
+  test("recommends the customer's own dish back to them, grounded in a real order", async () => {
+    gcust = await signIn("+243810000800");
+    await placePaid(gcust.token);
+    await placePaid(gcust.token); // two orders → an ACTIVE, repeat customer
+    const r = await call("GET", "/v1/me/recommendations", { token: gcust.token, country: "CD" });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.ok(Array.isArray(r.body.recommendations));
+    const again = r.body.recommendations.find((x: { reason: string }) => x.reason === "ORDER_AGAIN");
+    assert.ok(again, "the item they just ordered is offered to order again");
+    assert.ok(again.price?.amount_minor, "each pick carries a real catalogue price");
+    assert.equal(again.rank, 1, "order-again outranks popular/kitchen picks");
+  });
+
+  test("a fresh customer reads as ACTIVE and is not a win-back target", async () => {
+    const s = await call("GET", "/v1/me/standing", { token: gcust.token, country: "CD" });
+    assert.equal(s.status, 200);
+    assert.equal(s.body.segment, "ACTIVE");
+    // Win-back refuses an active customer.
+    assert.equal((await call("POST", "/v1/ops/growth/win-back", { token: admin.token, country: "CD", body: { customer_id: gcust.userId } })).body.code, "NOT_RE_ENGAGEABLE");
+  });
+
+  test("ops see lifecycle segments; a plain customer cannot", async () => {
+    assert.equal((await call("GET", "/v1/ops/growth/audience", { token: gcust.token, country: "CD" })).status, 403);
+    const a = await call("GET", "/v1/ops/growth/audience", { token: admin.token, country: "CD" });
+    assert.equal(a.status, 200, JSON.stringify(a.body));
+    assert.ok(a.body.counts.ACTIVE >= 1, "the fresh customer is counted active");
+    assert.ok(Array.isArray(a.body.customers));
+  });
+
+  test("a lapsed customer can be won back once, with a capped goodwill wallet credit, idempotent per month", async () => {
+    // Backdate their order so they read as LAPSED (no order in 60 days).
+    await inspect("CD", "UPDATE ordering.order_view SET created_at = now() - interval '60 days' WHERE customer_id = $1", [gcust.userId]);
+
+    assert.equal((await call("GET", "/v1/me/standing", { token: gcust.token, country: "CD" })).body.segment, "LAPSED");
+    // A plain customer cannot run a win-back.
+    assert.equal((await call("POST", "/v1/ops/growth/win-back", { token: gcust.token, country: "CD", body: { customer_id: gcust.userId } })).status, 403);
+
+    const w = await call("POST", "/v1/ops/growth/win-back", { token: admin.token, country: "CD", body: { customer_id: gcust.userId, credit_minor: "500", currency: "USD" } });
+    assert.equal(w.status, 200, JSON.stringify(w.body));
+    assert.equal(w.body.segment, "LAPSED");
+    assert.equal(w.body.credited.amount_minor, "500");
+    // The win-back message is written (offline, by the template writer) and grounded in the credit.
+    assert.equal(w.body.message_source, "template");
+    assert.ok(typeof w.body.message === "string" && w.body.message.length > 0, "a message was written");
+    assert.match(w.body.message, /5\.00 USD/, "the message states the real credit");
+
+    // The credit really landed in the wallet, funded by promotion_expense.
+    const tx = await inspect("CD", "SELECT amount_minor::text AS amount FROM wallet.transaction WHERE user_id = $1 AND kind = 'WINBACK'", [gcust.userId]);
+    assert.equal(tx.length, 1);
+
+    // A second win-back this month is refused (idempotent / no double-crediting).
+    assert.equal((await call("POST", "/v1/ops/growth/win-back", { token: admin.token, country: "CD", body: { customer_id: gcust.userId, credit_minor: "500", currency: "USD" } })).body.code, "ALREADY_NUDGED");
+    const tx2 = await inspect("CD", "SELECT id FROM wallet.transaction WHERE user_id = $1 AND kind = 'WINBACK'", [gcust.userId]);
+    assert.equal(tx2.length, 1, "no second credit");
+  });
+
+  test("a win-back over the cap is clamped", async () => {
+    const other = await signIn("+243810000801");
+    await placePaid(other.token);
+    await inspect("CD", "UPDATE ordering.order_view SET created_at = now() - interval '120 days' WHERE customer_id = $1", [other.userId]);
+    const w = await call("POST", "/v1/ops/growth/win-back", { token: admin.token, country: "CD", body: { customer_id: other.userId, credit_minor: "999999", currency: "USD" } });
+    assert.equal(w.status, 200, JSON.stringify(w.body));
+    assert.equal(w.body.credited.amount_minor, "10000", "clamped to the cap");
+  });
+
+  test("the win-back message is written in the customer's own language", async () => {
+    const en = await signIn("+243810000830");
+    // Remember English as this customer's app language.
+    assert.equal((await call("POST", "/v1/me/locale", { token: en.token, country: "CD", body: { locale: "en" } })).status, 200);
+    await placePaid(en.token);
+    await inspect("CD", "UPDATE ordering.order_view SET created_at = now() - interval '60 days' WHERE customer_id = $1", [en.userId]);
+    const w = await call("POST", "/v1/ops/growth/win-back", { token: admin.token, country: "CD", body: { customer_id: en.userId, credit_minor: "300", currency: "USD" } });
+    assert.equal(w.status, 200, JSON.stringify(w.body));
+    assert.match(w.body.message, /missed you/i, "an English-locale customer gets an English win-back");
+    assert.match(w.body.message, /3\.00 USD credit/, "and the real credit, stated in English");
+  });
+});
+
+describe("growth agent — autonomous win-backs under caps", () => {
+  const swept: { token: string; userId: string }[] = [];
+  const seedLapsed = async (phone: string) => {
+    const u = await signIn(phone);
+    const q = await call("POST", "/v1/carts/quote", { country: "CD", body: cart() });
+    const r = await call("POST", "/v1/orders", { token: u.token, country: "CD", body: { ...cart(), payment_mode: "PREPAID", expected_total: q.body.total } });
+    assert.equal(r.status, 201, JSON.stringify(r.body));
+    const pay = await call("POST", "/v1/payments/intents", { token: u.token, country: "CD", body: { order_id: r.body.order_id, method_type: "MOBILE_MONEY_PUSH", payer: { msisdn: "+243810000001" } } });
+    assert.equal(pay.body.status, "SUCCEEDED", JSON.stringify(pay.body));
+    await inspect("CD", "UPDATE ordering.order_view SET created_at = now() - interval '50 days' WHERE customer_id = $1", [u.userId]);
+    return u;
+  };
+
+  test("the autonomy policy is admin-only, disabled by default, and reports the hard ceiling", async () => {
+    const plain = await signIn("+243810000810");
+    assert.equal((await call("GET", "/v1/ops/growth/autonomy", { token: plain.token, country: "CD" })).status, 403);
+    const a = await call("GET", "/v1/ops/growth/autonomy", { token: admin.token, country: "CD" });
+    assert.equal(a.status, 200, JSON.stringify(a.body));
+    assert.equal(a.body.policy.enabled, false, "autonomy is off until an admin turns it on");
+    assert.ok(a.body.can_manage, "a country admin may manage it");
+    assert.equal(a.body.cap_minor, "10000", "the per-customer credit ceiling is surfaced");
+    assert.deepEqual(a.body.eligible_segments, ["LAPSED", "DORMANT"]);
+  });
+
+  test("a live sweep is refused while autonomy is disabled", async () => {
+    assert.equal((await call("POST", "/v1/ops/growth/sweep", { token: admin.token, country: "CD", body: { dry_run: false } })).body.code, "AUTONOMY_DISABLED");
+  });
+
+  test("setting the policy clamps the per-customer cap to the global ceiling", async () => {
+    const s = await call("POST", "/v1/ops/growth/autonomy", { token: admin.token, country: "CD", body: { enabled: true, segments: ["LAPSED", "DORMANT"], per_customer_cap_minor: "999999", daily_budget_minor: "100000", max_customers_per_run: 50, currency: "USD" } });
+    assert.equal(s.status, 200, JSON.stringify(s.body));
+    assert.equal(s.body.policy.enabled, true);
+    assert.equal(s.body.policy.per_customer_cap.amount_minor, "10000", "clamped to the ceiling");
+    // A plain customer cannot set the policy.
+    const plain = await signIn("+243810000816");
+    assert.equal((await call("POST", "/v1/ops/growth/autonomy", { token: plain.token, country: "CD", body: { enabled: true } })).status, 403);
+  });
+
+  test("a dry run previews who would be reached and the spend, and credits nobody", async () => {
+    for (const p of ["+243810000811", "+243810000812", "+243810000813"]) swept.push(await seedLapsed(p));
+    const d = await call("POST", "/v1/ops/growth/sweep", { token: admin.token, country: "CD", body: { dry_run: true } });
+    assert.equal(d.status, 200, JSON.stringify(d.body));
+    assert.equal(d.body.dry_run, true);
+    assert.ok(d.body.planned >= 3, "our three lapsed customers are planned");
+    assert.ok(BigInt(d.body.would_spend.amount_minor) <= 100000n, "within the budget");
+    assert.equal(d.body.preview.length, d.body.planned, "the preview lists each planned customer");
+    assert.ok(d.body.preview.every((c: { phone: string }) => c.phone.includes("…")), "preview phones are masked");
+    // The preview includes one sample of the message the agent would send (written offline here).
+    assert.equal(d.body.sample_source, "template");
+    assert.ok(typeof d.body.sample_message === "string" && d.body.sample_message.length > 0, "a sample message is drafted");
+    for (const u of swept) {
+      const tx = await inspect("CD", "SELECT id FROM wallet.transaction WHERE user_id = $1 AND kind = 'WINBACK'", [u.userId]);
+      assert.equal(tx.length, 0, "a dry run moves no money");
+    }
+    const runs = (await call("GET", "/v1/ops/growth/autonomy", { token: admin.token, country: "CD" })).body.runs;
+    assert.ok(runs.some((r: { dry_run: boolean }) => r.dry_run === true), "the preview is recorded as a run");
+  });
+
+  test("a live sweep credits lapsed customers within caps, audited and idempotent per month", async () => {
+    const live = await call("POST", "/v1/ops/growth/sweep", { token: admin.token, country: "CD", body: { dry_run: false } });
+    assert.equal(live.status, 200, JSON.stringify(live.body));
+    assert.equal(live.body.dry_run, false);
+    assert.ok(live.body.reached >= 3, "our three lapsed customers were reached");
+    assert.ok(BigInt(live.body.would_spend.amount_minor) <= 100000n, "never over the daily budget");
+    for (const u of swept) {
+      const tx = await inspect("CD", "SELECT amount_minor::text AS amount FROM wallet.transaction WHERE user_id = $1 AND kind = 'WINBACK'", [u.userId]);
+      assert.equal(tx.length, 1, "credited exactly once");
+      assert.ok(BigInt(tx[0].amount) <= 10000n, "within the per-customer cap");
+    }
+    const aud = await inspect("CD", "SELECT id FROM identity.audit_log WHERE action = 'growth.sweep'", []);
+    assert.ok(aud.length >= 1, "the live run is in the audit chain");
+    // Re-running the same month double-credits nobody.
+    await call("POST", "/v1/ops/growth/sweep", { token: admin.token, country: "CD", body: { dry_run: false } });
+    for (const u of swept) {
+      const tx = await inspect("CD", "SELECT id FROM wallet.transaction WHERE user_id = $1 AND kind = 'WINBACK'", [u.userId]);
+      assert.equal(tx.length, 1, "no second credit on a repeat sweep");
+    }
+  });
+
+  test("the per-run customer-count cap bounds a sweep", async () => {
+    await seedLapsed("+243810000814");
+    await seedLapsed("+243810000815"); // two fresh lapsed customers, not yet nudged this month
+    await call("POST", "/v1/ops/growth/autonomy", { token: admin.token, country: "CD", body: { enabled: true, segments: ["LAPSED", "DORMANT"], per_customer_cap_minor: "300", daily_budget_minor: "100000", max_customers_per_run: 1, currency: "USD" } });
+    const d = await call("POST", "/v1/ops/growth/sweep", { token: admin.token, country: "CD", body: { dry_run: true } });
+    assert.equal(d.body.planned, 1, "the count cap bounds the run to one customer");
+    assert.equal(d.body.capped_by, "COUNT");
+  });
+});
+
+describe("merchant copilot (grounded per-branch insights)", () => {
+  test("returns ranked insights grounded in the branch's menu and orders", async () => {
+    const r = await call("GET", `/v1/admin/branches/${branchId}/copilot?lang=en`, { token: admin.token, country: "CD" });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.equal(r.body.branch.id, branchId);
+    assert.ok(Array.isArray(r.body.insights));
+    assert.ok(r.body.facts.menu.total >= 1, "the branch's real menu is counted");
+    // Warnings (if any) sort ahead of suggestions/info.
+    const sev = r.body.insights.map((i: { severity: string }) => ({ WARNING: 3, SUGGESTION: 2, INFO: 1 }[i.severity]));
+    assert.deepEqual(sev, [...sev].sort((a, b) => b - a), "insights are ranked by severity");
+    // Every insight cites a real category — the brain invents no section.
+    assert.ok(r.body.insights.every((i: { category: string }) => ["MENU", "DEMAND", "PERFORMANCE", "REVIEWS"].includes(i.category)));
+  });
+
+  test("a customer cannot read a branch's copilot", async () => {
+    assert.equal((await call("GET", `/v1/admin/branches/${branchId}/copilot`, { token: customer.token, country: "CD" })).status, 403);
+  });
+
+  test("an unknown branch is a 404", async () => {
+    assert.equal((await call("GET", `/v1/admin/branches/${randomUUID()}/copilot`, { token: admin.token, country: "CD" })).status, 404);
+  });
+
+  test("the AI dish writer drafts a description offline (template), and gates translation on the AI key", async () => {
+    // Find a dish on the branch.
+    const menu = await call("GET", `/v1/branches/${branchId}/menu`, { country: "CD" });
+    const dish = menu.body.items[0];
+    assert.ok(dish, "the branch has a dish");
+
+    // DESCRIBE works with no model configured — the template writer grounds it in the dish. (Menu editing is the
+    // owner's, not the country admin's.)
+    const d = await call("POST", `/v1/admin/branches/${branchId}/items/${dish.id}/draft`, { token: restaurantOwner.token, country: "CD", body: { task: "DESCRIBE", to_lang: "en" } });
+    assert.equal(d.status, 200, JSON.stringify(d.body));
+    assert.equal(d.body.source, "template");
+    assert.ok(d.body.suggestion.length > 0);
+
+    // TRANSLATE needs a model — without one it returns a clear 422, never a wrong translation.
+    const t = await call("POST", `/v1/admin/branches/${branchId}/items/${dish.id}/draft`, { token: restaurantOwner.token, country: "CD", body: { task: "TRANSLATE", to_lang: "en" } });
+    assert.equal(t.status, 422, JSON.stringify(t.body));
+
+    // A customer can't use the writer; an unknown dish is a 404.
+    assert.equal((await call("POST", `/v1/admin/branches/${branchId}/items/${dish.id}/draft`, { token: customer.token, country: "CD", body: { task: "DESCRIBE" } })).status, 403);
+    assert.equal((await call("POST", `/v1/admin/branches/${branchId}/items/${randomUUID()}/draft`, { token: restaurantOwner.token, country: "CD", body: { task: "DESCRIBE" } })).status, 404);
+  });
+});
+
+describe("rider copilot (earnings, zones, cash-out — no pressure to accept)", () => {
+  test("a rider gets grounded coaching tips and a summary", async () => {
+    const r = await call("GET", "/v1/rider/coach?lang=en", { token: rider.token, country: "CD" });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.ok(Array.isArray(r.body.tips));
+    assert.ok(r.body.summary.available, "the summary carries the rider's available balance");
+    assert.ok(r.body.tips.every((t: { category: string }) => ["ZONES", "EARNINGS", "PAYOUT"].includes(t.category)));
+    // A natural-language shift outlook is written (offline here, by the template writer).
+    assert.equal(r.body.brief_source, "template");
+    assert.ok(typeof r.body.brief === "string" && r.body.brief.length > 0, "a shift-outlook brief comes back");
+    // Neither the tips nor the brief ever tell a rider to accept more jobs.
+    const text = (r.body.brief + " " + r.body.tips.map((t: { title: string; detail: string }) => `${t.title} ${t.detail}`).join(" ")).toLowerCase();
+    assert.ok(!/accept more|should accept/.test(text));
+  });
+
+  test("a non-rider cannot read the rider copilot", async () => {
+    assert.equal((await call("GET", "/v1/rider/coach", { token: customer.token, country: "CD" })).status, 403);
   });
 });

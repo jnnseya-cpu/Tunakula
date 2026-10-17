@@ -1,0 +1,32 @@
+# Staging: Caddy terminates TLS (automatic Let's Encrypt certs) for your three subdomains and
+# routes each to its container. Domains come from the environment (set by go-live-staging.sh).
+# Each domain's A record must point at this VPS before Caddy can issue its certificate.
+
+{$API_DOMAIN} {
+	reverse_proxy api:8080
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		-Server
+	}
+	log {
+		output stdout
+		format json
+	}
+}
+
+{$CUSTOMER_DOMAIN} {
+	reverse_proxy customer-web:80
+	log {
+		output stdout
+		format json
+	}
+}
+
+{$ADMIN_DOMAIN} {
+	reverse_proxy admin-web:80
+	log {
+		output stdout
+		format json
+	}
+}

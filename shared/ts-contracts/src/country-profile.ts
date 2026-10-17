@@ -12,7 +12,7 @@ export const COUNTRY_STATUSES = ["DRAFT", "PILOT", "LIVE", "PAUSED"] as const;
 export const PROFILE_STATUSES = ["DRAFT", "PUBLISHED", "SUPERSEDED"] as const;
 export const ADDRESS_MODELS = ["POSTCODE", "STREET", "LANDMARK_PIN", "HYBRID"] as const;
 export const LABOUR_MODELS = ["SELF_EMPLOYED", "FLEET", "EMPLOYED", "HYBRID"] as const;
-export const VEHICLE_TYPES = ["MOTO", "BICYCLE", "CAR", "FOOT"] as const;
+export const VEHICLE_TYPES = ["MOTO", "BICYCLE", "CAR", "VAN", "TRUCK", "FOOT"] as const;
 export const CONFIRMATION_MODELS = ["RESTAURANT_FIRST", "RIDER_FIRST", "AGENT_OPTIMISED"] as const;
 export const BUSINESS_MODELS = ["COMMISSION", "SUBSCRIPTION", "HYBRID"] as const;
 export const OTP_CHANNELS = ["SMS", "WHATSAPP", "VOICE", "EMAIL"] as const;
@@ -193,6 +193,11 @@ export interface CountryProfile {
       readonly band_step_bps: number;
       /** Rural zones pay this share of the city fee (group default 7500 = 75%). */
       readonly rural_bps: number;
+      /**
+       * §18.3 vehicle size surcharge. The per_km/cap ladder is the reference for bikes and motorcycles; larger
+       * vehicles add this per size tier above them (car +1 tier, van +2, truck +3). Group default 2500 = +25%/tier.
+       */
+      readonly size_surcharge_bps?: number;
     };
     /** §18.4 rider share of the delivery fee actually charged (group default 7000 = 70%). */
     readonly rider_share_bps: number;

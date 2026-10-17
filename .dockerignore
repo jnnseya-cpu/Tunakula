@@ -1,0 +1,11 @@
+# Build the API image from source; never copy host artefacts.
+**/node_modules
+**/.next
+**/dist
+**/out
+.git
+reports
+research_notes
+scratchpad
+**/*.log
+backend/api/test-http/screenshot-*-server.ts

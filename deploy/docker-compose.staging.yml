@@ -1,0 +1,88 @@
+# STAGING — the whole platform on ONE Hostinger VPS, published at your domain with automatic HTTPS.
+# Database + API + both websites + Caddy (TLS + routing), in one `docker compose up`.
+#
+# This is the "see it live fast" footprint: a local Postgres (not Cloud SQL), dev sign-in codes
+# (printed in the logs instead of SMS, so you need no Twilio), and the sandbox payment connector
+# (so you need no Stripe/BitriPay). It is NOT for real customers — harden to the production path
+# (deploy/docker-compose.prod.yml + Cloud SQL + Vercel) before taking real money.
+#
+# Driven by deploy/go-live-staging.sh, which writes deploy/.env.staging and runs this file.
+# Only Caddy is exposed to the internet (80/443); everything else talks on the internal network.
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - ./initdb.sql:/docker-entrypoint-initdb.d/10-roles.sql:ro
+      - tunakula-staging-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_OWNER_URL: postgres://tunakula:tunakula@db:5432/tunakula
+      DATABASE_URL: postgres://tunakula_app:tunakula_app@db:5432/tunakula
+      DATABASE_APP_ROLE: tunakula_app
+      TUNAKULA_TOKEN_SECRET: ${TUNAKULA_TOKEN_SECRET}
+      TUNAKULA_CONSOLE_ORIGINS: https://${CUSTOMER_DOMAIN},https://${ADMIN_DOMAIN}
+      TUNAKULA_TRUST_PROXY: "1"
+      TUNAKULA_RATE_LIMIT_RPM: "600"
+      # STAGING conveniences — these make the box usable with no external accounts. NEVER in production.
+      TUNAKULA_DEV_OTP: "1"
+      TUNAKULA_SANDBOX_PAYMENTS: "1"
+      PORT: "8080"
+    expose:
+      - "8080"
+
+  customer-web:
+    build:
+      context: ..
+      dockerfile: frontend/customer/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: https://${API_DOMAIN}
+    restart: unless-stopped
+    expose:
+      - "80"
+
+  admin-web:
+    build:
+      context: ..
+      dockerfile: frontend/admin/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: https://${API_DOMAIN}
+    restart: unless-stopped
+    expose:
+      - "80"
+
+  caddy:
+    image: caddy:2.8-alpine
+    restart: unless-stopped
+    depends_on: [api, customer-web, admin-web]
+    environment:
+      API_DOMAIN: ${API_DOMAIN}
+      CUSTOMER_DOMAIN: ${CUSTOMER_DOMAIN}
+      ADMIN_DOMAIN: ${ADMIN_DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile.staging:/etc/caddy/Caddyfile:ro
+      - caddy-staging-data:/data
+      - caddy-staging-config:/config
+
+volumes:
+  tunakula-staging-db:
+  caddy-staging-data:
+  caddy-staging-config:

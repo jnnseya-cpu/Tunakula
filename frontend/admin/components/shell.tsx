@@ -35,9 +35,11 @@ type NavItem = { href: string; key: Key; cap?: keyof Me["capabilities"]; soon?: 
 const ICON: Record<string, string> = {
   overview: "M4 13h6V4H4v9Zm0 7h6v-5H4v5Zm10 0h6v-9h-6v9Zm0-16v5h6V4h-6Z",
   kitchen: "M8 2v5a2 2 0 0 1-1 1.7V22H5V8.7A2 2 0 0 1 4 7V2h1v4h1V2h1v4h1V2Zm9 0c2 0 3 2.5 3 6s-1 4-2 4.5V22h-2V2h1ZM11 13h2v9h-2v-9Zm-1-3h4v2h-4v-2Z",
+  kds: "M3 4h18a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1h-7v2h3v2H7v-2h3v-2H3a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Zm1 2v9h16V6H4Zm2 2h5v5H6V8Zm7 0h5v2h-5V8Zm0 3h5v2h-5v-2Z",
   dispatch: "M12 2a7 7 0 0 0-7 7c0 5.2 7 13 7 13s7-7.8 7-13a7 7 0 0 0-7-7Zm0 3 1.5 3.2 3.5.4-2.6 2.4.7 3.5L12 13l-3.1 1.5.7-3.5L7 8.6l3.5-.4L12 5Z",
   orders: "M7 4h10l1 3h3v2h-1l-1.5 10h-13L4 9H3V7h3l1-3Zm1.4 3h7.2l-.3-1H8.7l-.3 1ZM6 9l1.3 8h9.4L18 9H6Z",
   pos: "M4 4h16v10H4V4Zm2 2v6h12V6H6Zm-1 10h14v4H5v-4Zm3 1v2h2v-2H8Zm4 0v2h2v-2h-2Z",
+  kiosk: "M7 2h10a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3l1 2v2H9v-2l1-2H7a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Zm0 2v10h10V4H7Zm2 2h6v2H9V6Zm0 3h6v2H9V9Z",
   support: "M12 3a8 8 0 0 0-8 8v5a3 3 0 0 0 3 3h2v-7H6v-1a6 6 0 1 1 12 0v1h-3v7h2.2a2 2 0 0 1-2 1H13v2h2.2a4 4 0 0 0 3.9-3.2A3 3 0 0 0 20 16v-5a8 8 0 0 0-8-8Z",
   merchants: "M4 4h16l1 5a3 3 0 0 1-2 2.8V20H5v-8.2A3 3 0 0 1 3 9l1-5Zm3 9v5h4v-5H7Zm6 0v5h4v-5h-4Z",
   get_started: "M12 2 15 9l7 .5-5.3 4.6L18.4 21 12 17.3 5.6 21l1.7-6.9L2 9.5 9 9l3-7Z",
@@ -57,40 +59,60 @@ const ICON: Record<string, string> = {
   membership: "M12 2 15 8l6 .9-4.5 4.3L17.6 20 12 16.9 6.4 20l1.1-6.8L3 8.9 9 8l3-6Z",
   scorecards: "M4 13h3v7H4v-7Zm6.5-5h3v12h-3V8ZM17 4h3v16h-3V4Z",
   coupons: "M4 6h16a2 2 0 0 1 2 2v2a2 2 0 0 0 0 4v2a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-2a2 2 0 0 0 0-4V8a2 2 0 0 1 2-2Zm11 2v2h2V8h-2Zm0 4v4h2v-4h-2Z",
+  loyalty: "M12 2 9.2 7.6 3 8.5l4.5 4.4L6.4 19 12 16.1 17.6 19l-1.1-6.1L21 8.5l-6.2-.9L12 2Zm0 4.5 1.6 3.2 3.5.5-2.5 2.5.6 3.5L12 18l-3.2-1.7.6-3.5-2.5-2.5 3.5-.5L12 6.5Z",
+  cashback: "M12 1a11 11 0 1 0 0 22 11 11 0 0 0 0-22Zm0 2a9 9 0 1 1 0 18 9 9 0 0 1 0-18Zm.9 3h-1.6v1.2c-1.4.3-2.3 1.2-2.3 2.5 0 1.6 1.4 2.2 2.7 2.6 1 .3 1.5.6 1.5 1.2 0 .5-.5.9-1.3.9-1 0-1.6-.5-1.7-1.3H8.5c.1 1.4 1 2.3 2.4 2.6V18h1.6v-1.3c1.5-.3 2.4-1.3 2.4-2.6 0-1.7-1.5-2.3-2.8-2.7-.9-.3-1.4-.5-1.4-1.1 0-.5.4-.8 1.2-.8.9 0 1.4.4 1.5 1.2h1.7c-.1-1.3-.9-2.2-2.3-2.5V6Z",
+  banners: "M3 5h18a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1Zm1 2v7h16V7H4Zm2 2h8v1.5H6V9Zm0 3h6v1.5H6V12Zm5 7h2v2h-2v-2Z",
+  cms: "M4 3h16a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Zm1 2v3h14V5H5Zm0 5v9h5v-9H5Zm7 0v4h7v-4h-7Zm0 6v3h7v-3h-7Z",
+  chefs: "M12 2a5 5 0 0 0-4.9 4.1A4 4 0 0 0 6 14v1h12v-1a4 4 0 0 0-1.1-7.9A5 5 0 0 0 12 2ZM6 17h12v2a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2v-2Z",
+  integrations: "M10 2h4v4.1a6 6 0 0 1 2.1 1.2l3.5-2 2 3.4-3.5 2a6 6 0 0 1 0 2.6l3.5 2-2 3.4-3.5-2A6 6 0 0 1 14 17.9V22h-4v-4.1a6 6 0 0 1-2.1-1.2l-3.5 2-2-3.4 3.5-2a6 6 0 0 1 0-2.6l-3.5-2 2-3.4 3.5 2A6 6 0 0 1 10 6.1V2Zm2 7a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z",
+  growth: "M4 20V4h2v14h14v2H4Zm3-3 4-5 3 3 5-6 1.4 1.3L14 18l-3-3-3 3.7L7 17Z",
+  broadcasts: "M3 10v4h3l5 4V6L6 10H3Zm12.5 2a3.5 3.5 0 0 0-2-3.2v6.4a3.5 3.5 0 0 0 2-3.2Zm-2-7v2.1a5.5 5.5 0 0 1 0 9.8V19a7.5 7.5 0 0 0 0-14Z",
+  copilot: "M12 2a5 5 0 0 1 5 5c0 1.9-1 3.3-2.2 4.3-.6.5-.8.8-.8 1.2V13h-4v-.5c0-.4-.2-.7-.8-1.2C7.9 10.3 7 8.9 7 7a5 5 0 0 1 5-5Zm-2 15h4v2h-4v-2Zm.5 3h3l-1 1.5h-1L10.5 20Z",
 };
 const Icon = ({ k }: { k: string }) => <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden className="nav-ico"><path fill="currentColor" d={ICON[k] ?? ""} /></svg>;
 
 const NAV: { group: Key; items: NavItem[] }[] = [
   { group: "g_operations", items: [
-    { href: "/get-started/", key: "get_started", always: true },
     { href: "/", key: "overview", cap: "overview" },
     { href: "/dispatch/", key: "dispatch", cap: "dispatch" },
     { href: "/kitchen/", key: "kitchen", cap: "kitchen" },
+    { href: "/kds/", key: "kds", cap: "kitchen" },
     { href: "/orders/", key: "orders", cap: "orders" },
-    { href: "/pos/", key: "pos", soon: true },
-    { href: "/support/", key: "support", soon: true },
+    { href: "/pos/", key: "pos", cap: "pos" },
+    { href: "/kiosk/", key: "kiosk", cap: "pos" },
+    { href: "/support/", key: "support", cap: "support" },
   ] },
   { group: "g_business", items: [
-    { href: "/merchants/", key: "merchants", cap: "catalogue" },
+    { href: "/merchants/", key: "merchants", always: true },
     { href: "/menu/", key: "menu", cap: "catalogue" },
+    { href: "/copilot/", key: "copilot", cap: "copilot" },
     { href: "/scorecards/", key: "scorecards", cap: "overview" },
-    { href: "/zones/", key: "zones", soon: true },
+    { href: "/zones/", key: "zones", cap: "catalogue" },
     { href: "/membership/", key: "membership", cap: "membership" },
+    { href: "/merchant-plans/", key: "merchantPlans", cap: "merchant_plans" },
     { href: "/coupons/", key: "coupons", cap: "markets" },
-    { href: "/promotions/", key: "promotions", soon: true },
+    { href: "/loyalty/", key: "loyalty", cap: "markets" },
+    { href: "/cashback/", key: "cashback", cap: "markets" },
+    { href: "/banners/", key: "banners", cap: "markets" },
+    { href: "/promotions/", key: "promotions", cap: "catalogue" },
+    { href: "/growth/", key: "growth", cap: "growth" },
+    { href: "/broadcasts/", key: "broadcasts", cap: "markets" },
     { href: "/customers/", key: "customers", soon: true },
     { href: "/riders/", key: "riders", cap: "riders" },
+    { href: "/chefs/", key: "chefs", cap: "markets" },
   ] },
   { group: "g_money", items: [
     { href: "/finance/", key: "finance", cap: "finance" },
     { href: "/payments/", key: "payments", cap: "payments" },
     { href: "/refunds/", key: "refunds", cap: "refunds" },
-    { href: "/payouts/", key: "payouts", soon: true },
+    { href: "/payouts/", key: "payouts", cap: "payouts" },
   ] },
   { group: "g_platform", items: [
     { href: "/team/", key: "team", cap: "team" },
     { href: "/markets/", key: "markets", cap: "markets" },
     { href: "/comms/", key: "comms", cap: "markets" },
+    { href: "/cms/", key: "cms", cap: "markets" },
+    { href: "/integrations/", key: "integrations", cap: "markets" },
     { href: "/audit/", key: "audit", cap: "audit" },
   ] },
 ];
@@ -102,7 +124,7 @@ export function Shell({ title, children, actions }: { title: Key; children: Reac
   const [error, setError] = useState<string | null>(null);
   const [country, setCountryState] = useState("CD");
   const [lang, setLang] = useState<Lang>("fr");
-  const [theme, setTheme] = useState<"auto" | "light" | "dark">("auto");
+  const [theme, setTheme] = useState<"auto" | "light" | "dark">("dark");
 
   useEffect(() => {
     if (!session.token()) { router.replace("/login/"); return; }
@@ -124,8 +146,9 @@ export function Shell({ title, children, actions }: { title: Key; children: Reac
       const m = await api<Me>("/v1/me", { country: c });
       setMe(m);
       setError(null);
-      // Kitchen teams have no dashboard: their home is the live board.
-      if (window.location.pathname === "/" && !m.capabilities.overview && m.capabilities.kitchen) router.replace("/kitchen/");
+      // People without a dashboard land on their home: kitchen teams on the live board; a new or self-serve
+      // merchant on the Merchants hub, where they set up and manage their business.
+      if (window.location.pathname === "/" && !m.capabilities.overview) router.replace(m.capabilities.kitchen ? "/kitchen/" : "/merchants/");
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) router.replace("/login/");
       else setError((e as Error).message);
