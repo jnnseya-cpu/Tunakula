@@ -70,6 +70,12 @@ export interface PlacedOrder {
   readonly state: string;
 }
 
+export interface RiderPosition {
+  readonly lat: number;
+  readonly lng: number;
+  readonly updated_at: string;
+}
+
 export interface OrderView {
   readonly order_id: string;
   readonly state: string;
@@ -77,7 +83,8 @@ export interface OrderView {
   readonly total: MoneyWire;
   readonly type: OrderType;
   readonly recipient_code?: string;
-  readonly rider?: { name: string | null; lat?: number; lng?: number } | null;
+  // The server returns the rider's live position and distance only while the order is on the way.
+  readonly rider?: { name: string | null; position?: RiderPosition; meters_to_you?: number } | null;
   readonly placed_at?: string;
 }
 

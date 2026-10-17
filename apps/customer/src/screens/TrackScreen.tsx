@@ -30,9 +30,9 @@ export default function TrackScreen({ route, navigation }: Screen<"Track">) {
         .then((o) => { if (active) setOrder(o); })
         .catch((e: ApiError) => { if (active) setError(e.message); });
     void load();
-    // Poll while the order is live. (Push notifications deliver the same updates to the lock screen; a
-    // websocket live-track channel is the next backend increment.)
-    const timer = setInterval(load, 8000);
+    // Poll while the order is live; the server returns the rider's live position and distance once the
+    // order is on the way. (Push notifications deliver the same milestones to the lock screen.)
+    const timer = setInterval(load, 6000);
     return () => { active = false; clearInterval(timer); };
   }, [orderId]);
 
@@ -55,6 +55,25 @@ export default function TrackScreen({ route, navigation }: Screen<"Track">) {
           </View>
         ) : null}
       </Card>
+
+      {order.rider && (order.rider.position || order.rider.name) ? (
+        <Card style={styles.rider}>
+          <Text style={font.muted}>Your rider</Text>
+          <Text style={font.title}>{order.rider.name ?? "On the way"}</Text>
+          {order.rider.meters_to_you != null ? (
+            <Text style={styles.distance}>
+              {order.rider.meters_to_you < 1000
+                ? `${Math.round(order.rider.meters_to_you)} m away`
+                : `${(order.rider.meters_to_you / 1000).toFixed(1)} km away`}
+            </Text>
+          ) : order.rider.position ? (
+            <Text style={font.muted}>Heading to you</Text>
+          ) : null}
+          {order.rider.position ? (
+            <Text style={font.muted}>Updated {new Date(order.rider.position.updated_at).toLocaleTimeString()}</Text>
+          ) : null}
+        </Card>
+      ) : null}
 
       {cancelled ? (
         <Card style={[styles.head, { borderColor: colors.tomato }]}>
@@ -84,6 +103,8 @@ const styles = StyleSheet.create({
   body: { padding: space(4), backgroundColor: colors.paper, gap: space(3) },
   head: { gap: space(2) },
   total: { ...font.display, fontSize: 28, color: colors.tomato },
+  rider: { gap: space(1), borderColor: colors.orange },
+  distance: { ...font.display, fontSize: 22, color: colors.tomato },
   codeBox: { marginTop: space(2), alignItems: "center", backgroundColor: colors.paper, borderRadius: 14, padding: space(3) },
   code: { fontSize: 34, fontWeight: "900", letterSpacing: 6, color: colors.ink },
   step: { flexDirection: "row", alignItems: "center", gap: space(3), paddingVertical: space(2) },
