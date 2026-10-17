@@ -45,6 +45,7 @@ import { serialiseQuote, type CommerceService, type PlaceOrderInput, type QuoteI
 import { badRequest, notFound } from "../app/errors.ts";
 import type { PaymentService } from "../app/payments.ts";
 import { loadPrincipal } from "../app/principal.ts";
+import { isTerminal, snapshotChanged, sseFrame, SSE_HEARTBEAT, type TrackSnapshot } from "../app/order-stream.ts";
 import type { TokenService } from "../app/tokens.ts";
 import type { Db } from "../db/db.ts";
 import type { CountryConfigRegistry } from "../modules/config/config-registry.ts";
@@ -349,6 +350,71 @@ export class OrdersController {
     const { order, timeline, branch } = await this.commerce.get(c, principal, id);
     const rider = order.riderId ? await this.dispatch.riderForCustomer(c, order.riderId, order.state, order.snapshot.dropLocation) : null;
     return { ...orderView(order), branch, rider, drop: order.snapshot.dropLocation ?? null, timeline: timeline.map((t) => ({ state: t.state, at: new Date(t.at).toISOString() })) };
+  }
+
+  /**
+   * Live order tracking over Server-Sent Events. The browser's EventSource cannot set headers, so this
+   * route takes the auth token and the market as query params (?token=&c=). It holds the connection open
+   * and pushes an `update` event whenever the order's state or the rider's position changes, a `done`
+   * event at a terminal state, and a heartbeat comment to keep the socket alive. Closes on disconnect.
+   */
+  @Get("orders/:id/stream")
+  async stream(@Req() req: FastifyRequest, @Res() reply: FastifyReply, @Param("id") id: string) {
+    const q = (req.query ?? {}) as { token?: string; c?: string };
+    const header = req.headers["authorization"];
+    const bearer = typeof header === "string" && header.startsWith("Bearer ") ? header.slice(7) : undefined;
+    const token = q.token ?? bearer;
+    const claims = token ? this.tokens.verify(token) : undefined;
+    const rawC = q.c ?? req.headers["x-country"];
+    if (!claims || typeof rawC !== "string" || !/^[A-Z]{2}$/.test(rawC)) {
+      reply.status(claims ? 400 : 401).send();
+      return;
+    }
+    const c = rawC;
+    const principal = await this.db.tx({}, (sql) => loadPrincipal(sql, claims.sub));
+
+    const res = reply.raw;
+    res.writeHead(200, {
+      "content-type": "text/event-stream",
+      "cache-control": "no-cache, no-transform",
+      connection: "keep-alive",
+      "x-accel-buffering": "no", // tell nginx/Caddy not to buffer the stream
+    });
+    res.write(": connected\n\n");
+
+    let prev: TrackSnapshot | null = null;
+    let closed = false;
+    const cleanup = () => {
+      if (closed) return;
+      closed = true;
+      clearInterval(poll);
+      clearInterval(beat);
+    };
+    const tick = async () => {
+      if (closed) return;
+      try {
+        const { order } = await this.commerce.get(c, principal, id);
+        const rider = order.riderId ? await this.dispatch.riderForCustomer(c, order.riderId, order.state, order.snapshot.dropLocation) : null;
+        const snap: TrackSnapshot = { state: order.state, rider };
+        if (snapshotChanged(prev, snap)) {
+          res.write(sseFrame("update", snap));
+          prev = snap;
+        }
+        if (isTerminal(order.state)) {
+          res.write(sseFrame("done", { state: order.state }));
+          cleanup();
+          res.end();
+        }
+      } catch {
+        res.write(sseFrame("end", { reason: "unavailable" }));
+        cleanup();
+        res.end();
+      }
+    };
+    const poll = setInterval(() => void tick(), 4000);
+    const beat = setInterval(() => { if (!closed) res.write(SSE_HEARTBEAT); }, 25000);
+    req.raw.on("close", cleanup);
+    await tick(); // push the current state immediately
   }
 
   @Get("me/orders")
