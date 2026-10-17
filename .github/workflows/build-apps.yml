@@ -1,0 +1,57 @@
+# Build the native apps for BOTH platforms (Android + iOS) on EAS, when a version is complete.
+#
+# Trigger it by pushing a tag like `apps-v1.0.0`, or run it manually (Actions → Build apps → Run workflow)
+# and tick "submit" to also upload to the App Store / Google Play. It builds all three apps — customer,
+# rider, restaurant — each for Android and iOS, in the cloud (no Mac needed).
+#
+# Repository SECRETS this needs:
+#   EXPO_TOKEN     an Expo access token (expo.dev → Account → Access tokens) tied to your Expo account
+# For `submit` to work you must also have configured store credentials in EAS once:
+#   eas credentials           (per app, per platform)   and App Store / Play service keys in eas.json/EAS.
+name: Build apps
+
+on:
+  workflow_dispatch:
+    inputs:
+      submit:
+        description: "Also submit the builds to the App Store and Google Play"
+        type: boolean
+        default: false
+  push:
+    tags: ["apps-v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.app }} (Android + iOS)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [customer, rider, restaurant]
+    defaults:
+      run:
+        working-directory: apps/${{ matrix.app }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Set up EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+      - name: Install dependencies
+        run: npm install
+      - name: Typecheck
+        run: npm run typecheck
+      - name: EAS build (Android + iOS)
+        # --no-wait queues both platform builds and returns; watch them at expo.dev.
+        run: eas build --platform all --profile production --non-interactive --no-wait
+      - name: EAS submit (optional)
+        if: ${{ inputs.submit == true }}
+        run: eas submit --platform all --profile production --non-interactive --latest
