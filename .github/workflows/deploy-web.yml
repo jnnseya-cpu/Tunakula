@@ -33,6 +33,21 @@ jobs:
     name: Build + test gate
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    # npm run check includes the API end-to-end tests (test:api), which need PostgreSQL 16 — same service
+    # and roles the CI backend job uses, so the gate reproduces CI exactly before any deploy.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_ADMIN_URL: postgres://tunakula:tunakula@localhost:5432/postgres
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -40,6 +55,12 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Database roles
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -U postgres -v ON_ERROR_STOP=1 -c "CREATE ROLE tunakula LOGIN PASSWORD 'tunakula' CREATEDB NOSUPERUSER NOBYPASSRLS"
+          psql -h localhost -U postgres -v ON_ERROR_STOP=1 -c "CREATE ROLE tunakula_app LOGIN PASSWORD 'tunakula_app' NOSUPERUSER NOBYPASSRLS"
       - name: Guards, typecheck, tests, web builds
         run: npm run check
 
