@@ -12,8 +12,9 @@
 #   VPS_USER       the SSH user (e.g. root)
 #   VPS_SSH_KEY    a private SSH key authorized on the server
 #   VPS_PORT       (optional) SSH port, defaults to 22
-# Repository VARIABLES (optional):
-#   VPS_APP_DIR    the repo checkout on the server, defaults to /root/Tunakula
+# Repository VARIABLES:
+#   DEPLOY_WEB     set to "true" to enable the deploy job (until then it is skipped, not failed)
+#   VPS_APP_DIR    (optional) the repo checkout on the server, defaults to /root/Tunakula
 name: Deploy web
 
 on:
@@ -67,6 +68,10 @@ jobs:
   deploy:
     name: Deploy to VPS
     needs: gate
+    # Opt-in: the deploy runs only once you set repository variable DEPLOY_WEB=true (Settings → Secrets and
+    # variables → Actions → Variables) AND have added the VPS_* secrets. Until then it is skipped, not failed,
+    # so a PR's checks stay clean before the server is wired up.
+    if: ${{ vars.DEPLOY_WEB == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     # Scope the VPS secrets to a protected environment if you like (Settings → Environments → production).
