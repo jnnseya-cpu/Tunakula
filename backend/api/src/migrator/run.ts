@@ -49,10 +49,22 @@ CREATE TABLE IF NOT EXISTS migration.item     (source_id text PRIMARY KEY, recor
 CREATE TABLE IF NOT EXISTS migration.order_hdr(source_id text PRIMARY KEY, total_minor numeric NOT NULL, record jsonb NOT NULL);
 `;
 
+// SQL identifiers (table + column names) are never user data in this tool — they come from the constants
+// above and the field map — but they are interpolated into SQL, so we allowlist/validate them before use.
+// That keeps the injection surface provably closed even if the config is later edited carelessly.
+const STAGING_TABLES: ReadonlySet<string> = new Set(["user", "merchant", "branch", "item", "order_hdr"]);
+const SOURCE_TABLE_SET: ReadonlySet<string> = new Set(Object.values(SOURCE_TABLES));
+const SAFE_IDENT = /^[A-Za-z_][A-Za-z0-9_]*$/;
+function assertIdent(name: string, kind: string): void {
+  if (!SAFE_IDENT.test(name)) throw new Error(`unsafe ${kind} identifier: ${JSON.stringify(name)}`);
+}
+
 async function load(client: pg.Client, table: string, rows: { source_id: string; extra?: Record<string, string>; record: unknown }[]): Promise<number> {
+  if (!STAGING_TABLES.has(table)) throw new Error(`unknown staging table: ${JSON.stringify(table)}`);
   let n = 0;
   for (const r of rows) {
     const cols = ["source_id", ...Object.keys(r.extra ?? {}), "record"];
+    cols.forEach((c) => assertIdent(c, "column"));
     const vals = [r.source_id, ...Object.values(r.extra ?? {}), JSON.stringify(r.record)];
     const ph = cols.map((_, i) => `$${i + 1}`).join(",");
     await client.query(`INSERT INTO migration.${table} (${cols.join(",")}) VALUES (${ph}) ON CONFLICT (source_id) DO UPDATE SET record = EXCLUDED.record`, vals);
@@ -70,7 +82,11 @@ async function main(): Promise<void> {
   if (apply && !pgUrl) throw new Error("set DATABASE_OWNER_URL to --apply");
 
   const my = await connectMysql(mysqlUrl);
-  const rowsOf = async (table: string): Promise<Row[]> => (await my.query(`SELECT * FROM \`${table}\``))[0];
+  const rowsOf = async (table: string): Promise<Row[]> => {
+    if (!SOURCE_TABLE_SET.has(table)) throw new Error(`unknown source table: ${JSON.stringify(table)}`);
+    assertIdent(table, "source table");
+    return (await my.query(`SELECT * FROM \`${table}\``))[0];
+  };
 
   const users = mapAll(await rowsOf(SOURCE_TABLES.users), (r) => mapUser(r, cfg));
   const merchants = mapAll(await rowsOf(SOURCE_TABLES.merchants), (r) => mapMerchant(r, cfg));
