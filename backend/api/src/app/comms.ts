@@ -25,6 +25,8 @@ import {
 
 export interface ChannelMessage {
   readonly channel: CommsChannel;
+  /** The market, so a channel adapter can look up country-scoped data (e.g. push subscriptions). */
+  readonly country: string;
   /** The recipient and the contact details a channel adapter needs (phone for SMS/WhatsApp, email). */
   readonly to: { readonly userId: string; readonly phone?: string | null; readonly email?: string | null };
   readonly subject: string;
@@ -45,6 +47,8 @@ export interface DispatchInput {
   readonly data?: Record<string, string | number>;
   /** When set, the same key never delivers twice (per channel). */
   readonly dedupeKey?: string;
+  /** When set, restrict delivery to these channels (intersected with the event's own channels). */
+  readonly channels?: readonly CommsChannel[];
 }
 
 const CHANNELS: readonly CommsChannel[] = ["email", "inapp", "sms", "push", "whatsapp"];
@@ -65,7 +69,8 @@ export class NotificationService {
 
   /** Emit an event to one recipient. Returns what happened on each channel. Safe to call best-effort. */
   async dispatch(input: DispatchInput): Promise<{ event: string; subject: string; deliveries: { channel: CommsChannel; status: string }[] }> {
-    const event = resolveEvent(input.eventKey);
+    const base = resolveEvent(input.eventKey);
+    const event = input.channels ? { ...base, channels: base.channels.filter((c) => input.channels!.includes(c)) } : base;
     const data = input.data ?? {};
     const subject = renderSubject(event.subject, data);
     const audience = input.audience ?? event.audience[0]!;
@@ -80,7 +85,7 @@ export class NotificationService {
         let failure: string | undefined;
         if (!suppressed) {
           try {
-            const r = await this.#sender.send({ channel, to, subject, event, data });
+            const r = await this.#sender.send({ country: input.country, channel, to, subject, event, data });
             status = r.status;
             ref = r.ref;
             failure = r.failure;

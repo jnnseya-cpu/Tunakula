@@ -3,8 +3,9 @@
  * header and Idempotency-Key on writes, problem+json errors, and money in minor units.
  */
 import { API_URL } from "./geo";
+import { COUNTRY } from "./country";
 
-export const COUNTRY = "CD";
+export { COUNTRY } from "./country";
 const SESSION_KEY = "tk-session";
 
 export interface Session { readonly token: string; readonly userId: string; readonly phone: string }
@@ -55,6 +56,20 @@ export async function api<T>(path: string, opts: { method?: string; body?: unkno
   }
   return body as T;
 }
+
+export interface SiteContent {
+  home: { hero: { title: string; subtitle: string; cta_label: string; cta_href: string }; social: Record<string, string>; tagline: string };
+  customized: boolean;
+}
+/** The storefront's editable content (landing hero, social links, tagline) for this market. Returns null when the
+ * API is offline (static preview) so callers keep their built-in defaults. */
+export async function siteContent(): Promise<SiteContent | null> {
+  try { return await api<SiteContent>("/v1/site-content", { auth: false }); }
+  catch { return null; }
+}
+
+/** The public URL of a food photo, for an <img src>. Country is in the query so no header is needed. */
+export const foodPhotoUrl = (imageId: string) => `${API_URL}/v1/menu-images/${imageId}?c=${COUNTRY}`;
 
 /** "18,00 $US" / "16 000 FC": minor units shifted by the currency's own decimals, never via floats. */
 export function money(m: MoneyWire, locale = "fr-FR"): string {
@@ -153,7 +168,7 @@ export const myBookings = () => api<{ bookings: Booking[] }>("/v1/me/reservation
 export const cancelBooking = (id: string) => api<{ id: string; status: BookingStatus }>(`/v1/reservations/${id}/cancel`, { method: "POST" });
 
 // ── Wallet ──
-export interface WalletTxn { id: string; kind: "TOPUP" | "ORDER_PAYMENT" | "REFUND" | "ADJUSTMENT"; amount: MoneyWire; balance_after: MoneyWire; order_id: string | null; reference: string | null; created_at: string }
+export interface WalletTxn { id: string; kind: "TOPUP" | "ORDER_PAYMENT" | "REFUND" | "ADJUSTMENT" | "REFERRAL" | "LOYALTY" | "CASHBACK"; amount: MoneyWire; balance_after: MoneyWire; order_id: string | null; reference: string | null; created_at: string }
 export const walletBalance = () => api<{ balances: MoneyWire[] }>("/v1/me/wallet").then((r) => r.balances);
 export const walletHistory = () => api<{ transactions: WalletTxn[] }>("/v1/me/wallet/transactions").then((r) => r.transactions);
 export const walletTopup = (amountMinor: string, currency: string, methodType: string, msisdn?: string) =>
@@ -165,6 +180,81 @@ export interface ReferralClaim { first_order_discount_pct: number; discount_avai
 export const myReferral = () => api<ReferralSummary>("/v1/me/referral");
 export const myReferralClaim = () => api<{ claim: ReferralClaim | null }>("/v1/me/referral/claim").then((r) => r.claim);
 export const claimReferral = (code: string) => api<{ id: string; first_order_discount_pct: number }>("/v1/referrals/claim", { method: "POST", body: { code } });
+
+// ── Loyalty points ──
+export interface LoyaltySummary { enabled: boolean; points: number; point_value: MoneyWire; worth: MoneyWire; min_redeem_points: number; earn_bps: number }
+export interface LoyaltyTxn { id: string; points: number; kind: "EARN" | "REDEEM" | "ADJUSTMENT"; order_id: string | null; balance_after: number; created_at: string }
+export const myLoyalty = () => api<LoyaltySummary>("/v1/me/loyalty");
+export const myLoyaltyHistory = () => api<{ transactions: LoyaltyTxn[] }>("/v1/me/loyalty/transactions").then((r) => r.transactions);
+export const redeemLoyalty = (points: number) =>
+  api<{ points_balance: number; credited?: MoneyWire; wallet_balance: MoneyWire }>("/v1/me/loyalty/redeem", { method: "POST", body: { points } });
+
+// ── Marketing banners ──
+export interface Banner { id: string; headline: string; subtext: string; cta_label: string; cta_href: string; tone: "ACCENT" | "DARK" | "GREEN" | "ORANGE"; sort: number }
+export const liveBanners = () => api<{ banners: Banner[] }>("/v1/banners", { auth: false }).then((r) => r.banners);
+
+/** Public storefront discovery: trending (real order volume) and best-reviewed dishes for the market. */
+export interface DiscoveryItem {
+  readonly item_id: string; readonly name: string; readonly branch_id: string; readonly branch_name: string;
+  readonly image_id: string | null; readonly price: MoneyWire | null;
+  readonly qty?: number; readonly rating?: number; readonly ratings?: number;
+}
+export interface Discovery { readonly currency: string; readonly trending: DiscoveryItem[]; readonly top_rated: DiscoveryItem[] }
+export const fetchDiscovery = () => api<Discovery>("/v1/discovery", { auth: false });
+
+// ── In-order chat (customer ↔ rider) ──
+export interface ChatMessage { id: string; from: "CUSTOMER" | "RIDER"; mine: boolean; body: string; at: string }
+export interface ChatThread { role: "CUSTOMER" | "RIDER"; counterparty: "CUSTOMER" | "RIDER" | null; open: boolean; messages: ChatMessage[] }
+export const orderMessages = (orderId: string) => api<ChatThread>(`/v1/orders/${orderId}/messages`);
+export const sendOrderMessage = (orderId: string, body: string) => api<ChatMessage>(`/v1/orders/${orderId}/messages`, { method: "POST", body: { body } });
+
+// ── Cashback campaigns ──
+export interface CashbackOffer { name: string; percent: number; min_spend: MoneyWire; max_cashback: MoneyWire | null; ends_at: string }
+export const cashbackOffer = () => api<{ offer: CashbackOffer | null }>("/v1/cashback").then((r) => r.offer);
+
+// ── Web push notifications ──
+export interface PushStatus { enabled: boolean; configured: boolean; public_key: string }
+export const pushStatus = () => api<PushStatus>("/v1/me/push");
+const urlBase64ToUint8Array = (base64: string) => {
+  const padding = "=".repeat((4 - (base64.length % 4)) % 4);
+  const raw = atob((base64 + padding).replace(/-/g, "+").replace(/_/g, "/"));
+  return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
+};
+/** Registers the service worker, asks permission, subscribes with the server's VAPID key, and stores it. */
+export async function enablePush(publicKey: string): Promise<void> {
+  if (!("serviceWorker" in navigator) || !("PushManager" in window)) throw new ApiError(0, "UNSUPPORTED", "This browser does not support notifications.");
+  const perm = await Notification.requestPermission();
+  if (perm !== "granted") throw new ApiError(0, "DENIED", "Allow notifications in your browser to turn them on.");
+  const reg = await navigator.serviceWorker.register("/sw.js");
+  await navigator.serviceWorker.ready;
+  const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(publicKey) });
+  const json = sub.toJSON() as { endpoint?: string; keys?: { p256dh?: string; auth?: string } };
+  await api("/v1/me/push-subscription", { method: "POST", body: { endpoint: json.endpoint, keys: json.keys, user_agent: navigator.userAgent } });
+}
+/** Removes the browser subscription and tells the server to stop pushing to it. */
+export async function disablePush(): Promise<void> {
+  try {
+    const reg = await navigator.serviceWorker.getRegistration();
+    const sub = await reg?.pushManager.getSubscription();
+    if (sub) { const endpoint = sub.endpoint; await sub.unsubscribe(); await api("/v1/me/push-subscription/remove", { method: "POST", body: { endpoint } }); }
+  } catch { /* best effort */ }
+}
+
+// ── Repeat / subscription orders ──
+export type SubCadence = "DAILY" | "WEEKLY";
+export interface Subscription {
+  id: string; branch_id: string; items: { itemId: string; quantity: number }[];
+  cadence: SubCadence; weekday: number | null; time: string; status: "ACTIVE" | "PAUSED" | "CANCELLED";
+  label: string; next_run: string; next_run_local: string; last_run_at: string | null;
+}
+export interface SubscribeInput {
+  branch_id: string; items: { item_id: string; quantity: number; options?: CartLineOption[]; addons?: string[] }[];
+  delivery: { lat: number; lng: number }; cadence: SubCadence; weekday?: number; time: string;
+}
+export const mySubscriptions = () => api<{ subscriptions: Subscription[] }>("/v1/me/subscriptions").then((r) => r.subscriptions);
+export const createSubscription = (body: SubscribeInput) => api<Subscription>("/v1/me/subscriptions", { method: "POST", body });
+export const setSubscriptionStatus = (id: string, action: "PAUSE" | "RESUME" | "CANCEL") =>
+  api<Subscription>(`/v1/me/subscriptions/${id}`, { method: "POST", body: { action } });
 
 // ── Refund requests ──
 export type RefundStatus = "PENDING" | "APPROVED" | "DECLINED";

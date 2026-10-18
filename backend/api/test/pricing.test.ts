@@ -57,6 +57,38 @@ test("distance is charged per started kilometre, minimum one", () => {
   rejects(() => deliveryFee(cd, "USD", { distanceMeters: 1.5, rural: false }), "DISTANCE_INVALID");
 });
 
+test("§18.3 vehicle size surcharge: bikes/motorcycles are the reference, larger vehicles add 25% per size tier", () => {
+  const dist = km(5); // the §18.3 ladder caps at 5.00 in CD — the reference bike/motorcycle fee
+  const at = (mode?: "MOTO" | "BICYCLE" | "CAR" | "VAN" | "TRUCK" | "FOOT") =>
+    deliveryFee(cd, "USD", { distanceMeters: dist, rural: false, ...(mode ? { mode } : {}) });
+  // Reference tier: no mode, bike, motorcycle and foot all price the same, with no surcharge.
+  for (const m of [undefined, "BICYCLE", "MOTO", "FOOT"] as const) assert.equal(at(m).fee.toDecimalString(), "5.00", `${m ?? "none"} is reference`);
+  assert.equal(at("MOTO").sizeSurchargeBps, 0);
+  // Larger vehicles: car +25%, van +50%, truck +75%.
+  assert.equal(at("CAR").fee.toDecimalString(), "6.25");
+  assert.equal(at("VAN").fee.toDecimalString(), "7.50");
+  assert.equal(at("TRUCK").fee.toDecimalString(), "8.75");
+  assert.equal(at("CAR").sizeSurchargeBps, 2500);
+  assert.equal(at("VAN").sizeSurchargeBps, 5000);
+  assert.equal(at("TRUCK").sizeSurchargeBps, 7500);
+  assert.equal(at("TRUCK").mode, "TRUCK");
+  assert.equal(at().mode, null);
+  // The rider's 70% share is taken on the surcharged fee, and the split still loses nothing.
+  for (const m of ["CAR", "VAN", "TRUCK"] as const) {
+    const f = at(m);
+    assert.ok(f.riderShare.add(f.platformShare).equals(f.fee), `${m} split balances`);
+  }
+  // The surcharge composes with surge (all multiplicative): truck, 5 km, ×1.5 surge = 8.75 × 1.5 = 13.125 → 13.12 (half-even).
+  const surged = deliveryFee(cd, "USD", { distanceMeters: dist, rural: false, mode: "TRUCK", surge: { multiplier: "1.5", trigger: "rain", zoneId: "z1" } });
+  assert.equal(surged.fee.toDecimalString(), "13.12");
+  // A zone's flat fee is the bike/motorcycle reference too — the size surcharge still applies on top.
+  const zoneBike = deliveryFee(cd, "USD", { distanceMeters: km(2), rural: false, flatFeeMinor: usd("3.00").minor });
+  const zoneCar = deliveryFee(cd, "USD", { distanceMeters: km(2), rural: false, flatFeeMinor: usd("3.00").minor, mode: "CAR" });
+  assert.equal(zoneBike.step, "ZONE_FLAT");
+  assert.equal(zoneBike.fee.toDecimalString(), "3.00");
+  assert.equal(zoneCar.fee.toDecimalString(), "3.75");
+});
+
 test("PRC-010: §18.5 surge on the fee only, after the ladder, capped, rider gets 70%", () => {
   const rows: [string, string, string][] = [["1.0", "3.00", "2.10"], ["1.3", "3.90", "2.73"], ["1.6", "4.80", "3.36"], ["2.0", "6.00", "4.20"]];
   for (const [m, f, r] of rows) {

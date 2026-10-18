@@ -10,3 +10,13 @@ frontend/*/out/
 *.tsbuildinfo
 next-env.d.ts
 frontend/*/.preview/
+
+# Production secrets for docker-compose.prod.yml — never commit
+deploy/.env.prod
+.env.prod
+
+# Cloud SQL service-account key — never commit
+deploy/cloudsql-key.json
+
+# Staging env (generated on the VPS) — never commit
+deploy/.env.staging

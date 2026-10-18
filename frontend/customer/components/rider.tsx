@@ -8,6 +8,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError, getSession, live, money, setSession, type MoneyWire } from "../lib/api";
 import { TileMap, type MapPin } from "./map";
+import { OrderChat } from "./order-chat";
 
 interface Job {
   order_id: string; ref: string; state: string; type: string; items: number; labels: string[]; age_restricted?: boolean;
@@ -67,6 +68,9 @@ export function RiderApp() {
   const [gpsError, setGpsError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [showEarn, setShowEarn] = useState(false);
+  const [showShifts, setShowShifts] = useState(false);
+  const [showBusy, setShowBusy] = useState(false);
+  const [showCoach, setShowCoach] = useState(false);
   const watch = useRef<number | null>(null);
   const lastSent = useRef<{ at: number; pos: Pos } | null>(null);
   const lastOffer = useRef<string | null>(null);
@@ -197,8 +201,14 @@ export function RiderApp() {
         <div><small>Today</small><b>{money(jobs.today.earnings)}</b><span>{jobs.today.deliveries} deliver{jobs.today.deliveries === 1 ? "y" : "ies"}</span></div>
         <div><small>Cash in hand</small><b>{money(jobs.cash_in_hand)}</b><span>hand in at the hub</span></div>
       </div>
+      <button type="button" className="r-earn-link r-coach-link" onClick={() => setShowCoach(true)}>Your copilot — tips for right now →</button>
       <button type="button" className="r-earn-link" onClick={() => setShowEarn(true)}>Earnings &amp; instant cash-out →</button>
+      <button type="button" className="r-earn-link" onClick={() => setShowShifts(true)}>My shifts — book when you&apos;ll ride →</button>
+      <button type="button" className="r-earn-link" onClick={() => setShowBusy(true)}>Busy areas — where the jobs are →</button>
+      {showCoach ? <CoachPanel onClose={() => setShowCoach(false)} /> : null}
       {showEarn ? <EarningsPanel onClose={() => setShowEarn(false)} /> : null}
+      {showShifts ? <ShiftsPanel onClose={() => setShowShifts(false)} /> : null}
+      {showBusy ? <BusyAreasPanel pos={pos} onClose={() => setShowBusy(false)} /> : null}
       <SosButton pos={pos} orderId={job?.order_id ?? null} />
     </Frame>
   );
@@ -239,6 +249,99 @@ function SosButton({ pos, orderId }: { pos: Pos | null; orderId: string | null }
   );
 }
 
+interface Shift { id: string; zone: string; status: string; starts_at: string; ends_at: string; active_now: boolean; upcoming: boolean }
+
+/** Book availability shifts (a zone + a time window) so dispatch prefers you for jobs in that zone. */
+function ShiftsPanel({ onClose }: { onClose: () => void }) {
+  const [zones, setZones] = useState<string[]>([]);
+  const [shifts, setShifts] = useState<Shift[]>([]);
+  const [zone, setZone] = useState("");
+  const [start, setStart] = useState("");
+  const [end, setEnd] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = () => api<{ zones: string[]; shifts: Shift[] }>("/v1/rider/shifts")
+    .then((r) => { setZones(r.zones); setShifts(r.shifts); setZone((z) => z || r.zones[0] || ""); })
+    .catch((e: ApiError) => setError(e.message));
+  useEffect(() => { void load(); }, []);
+
+  const book = async () => {
+    if (!zone || !start || !end) { setError("Pick a zone, a start and an end."); return; }
+    setBusy(true); setError(null);
+    try {
+      await api("/v1/rider/shifts", { method: "POST", body: { zone, starts_at: new Date(start).toISOString(), ends_at: new Date(end).toISOString() } });
+      setStart(""); setEnd(""); await load();
+    } catch (e) { setError((e as ApiError).message); } finally { setBusy(false); }
+  };
+  const cancel = async (id: string) => { try { await api(`/v1/rider/shifts/${id}/cancel`, { method: "POST", body: {} }); await load(); } catch (e) { setError((e as ApiError).message); } };
+  const when = (iso: string) => new Date(iso).toLocaleString("fr-FR", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+
+  return (
+    <div className="r-sheet" role="dialog" aria-modal="true" aria-label="My shifts" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="r-sheet-card">
+        <div className="r-sheet-head"><h2>My shifts</h2><button type="button" className="picker-x" onClick={onClose} aria-label="Close">✕</button></div>
+        <p className="muted">Book when and where you&apos;ll ride. On-shift riders get first pick of jobs in their zone — booking is optional, and saying no to a job never counts against you.</p>
+        <div className="r-shift-form">
+          <label>Zone<select value={zone} onChange={(e) => setZone(e.target.value)}>{zones.map((z) => <option key={z} value={z}>{z}</option>)}</select></label>
+          <label>Start<input type="datetime-local" value={start} onChange={(e) => setStart(e.target.value)} /></label>
+          <label>End<input type="datetime-local" value={end} onChange={(e) => setEnd(e.target.value)} /></label>
+        </div>
+        {error ? <p className="r-error" role="alert">{error}</p> : null}
+        <button type="button" className="r-btn go" disabled={busy} onClick={book}>{busy ? "Booking…" : "Book this shift"}</button>
+        <div className="r-shift-list">
+          {shifts.length === 0 ? <p className="muted">No shifts yet.</p> : shifts.map((s) => (
+            <div key={s.id} className={`r-shift ${s.active_now ? "live" : ""}`}>
+              <div><b>{s.zone}</b>{s.active_now ? <span className="r-shift-tag live">On shift now</span> : s.upcoming ? <span className="r-shift-tag">Upcoming</span> : <span className="r-shift-tag past">Past</span>}<br /><small>{when(s.starts_at)} → {when(s.ends_at)}</small></div>
+              {s.status === "BOOKED" && new Date(s.ends_at).getTime() > Date.now() ? <button type="button" className="link-btn" onClick={() => cancel(s.id)}>Cancel</button> : s.status === "CANCELLED" ? <small className="muted">Cancelled</small> : null}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+interface HeatZone { zone: string; waiting: number; recent: number; riders: number; level: "HOT" | "BUSY" | "STEADY" | "QUIET" }
+interface Heatmap { window_minutes: number; zones: HeatZone[]; hotspots: { lat: number; lng: number }[] }
+const LEVEL_LABEL: Record<string, string> = { HOT: "Very busy", BUSY: "Busy", STEADY: "Steady", QUIET: "Quiet" };
+
+/** Busy areas: which zones have the most demand right now, so a rider can move to where the jobs are. */
+function BusyAreasPanel({ pos, onClose }: { pos: Pos | null; onClose: () => void }) {
+  const [h, setH] = useState<Heatmap | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    const load = () => api<Heatmap>("/v1/rider/heatmap").then(setH).catch((e: ApiError) => setError(e.message));
+    void load();
+    const t = setInterval(load, 15_000);
+    return () => clearInterval(t);
+  }, []);
+  const pins: MapPin[] = [
+    ...(h?.hotspots ?? []).map((p, i) => ({ lat: p.lat, lng: p.lng, kind: "drop" as const, id: `h${i}` })),
+    ...(pos ? [{ lat: pos.lat, lng: pos.lng, kind: "me" as const, id: "me" }] : []),
+  ];
+  const busy = (h?.zones ?? []).filter((z) => z.level !== "QUIET");
+  return (
+    <div className="r-sheet" role="dialog" aria-modal="true" aria-label="Busy areas" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="r-sheet-card">
+        <div className="r-sheet-head"><h2>Busy areas</h2><button type="button" className="picker-x" onClick={onClose} aria-label="Close">✕</button></div>
+        <p className="muted">Demand over the last {h?.window_minutes ?? 45} minutes. Move toward a hot zone to catch more jobs — and book a shift there to get first pick.</p>
+        {error ? <p className="r-error" role="alert">{error}</p> : null}
+        {h && h.hotspots.length > 0 ? <TileMap height={190} pins={pins} /> : null}
+        <div className="r-heat-list">
+          {busy.length === 0 ? <p className="muted">It&apos;s quiet everywhere right now.</p> : busy.map((z) => (
+            <div key={z.zone} className="r-heat-row">
+              <span className={`r-heat-dot ${z.level.toLowerCase()}`} aria-hidden />
+              <div className="r-heat-main"><b>{z.zone}</b><small>{z.waiting} waiting · {z.recent} recent · {z.riders} rider{z.riders === 1 ? "" : "s"} online</small></div>
+              <span className={`r-heat-tag ${z.level.toLowerCase()}`}>{LEVEL_LABEL[z.level]}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 interface Earnings {
   tier: { tier: string; deliveries: number; acceptance_rate: number | null; next: { tier: string; deliveries: number; acceptance_rate: number } | null };
   available: MoneyWire; lifetime_earned: MoneyWire; bonuses: MoneyWire; cashed_out: MoneyWire;
@@ -246,6 +349,57 @@ interface Earnings {
 }
 interface Quest { id: string; name: string; target: number; progress: number; bonus: MoneyWire; ends_at: string; claimed: boolean; claimable: boolean }
 const TIER_COLOR: Record<string, string> = { BRONZE: "#a9713b", SILVER: "#8a93a6", GOLD: "#d4a017", PLATINUM: "#5a7d9a" };
+
+interface Coach {
+  tips: { id: string; category: "ZONES" | "EARNINGS" | "PAYOUT"; tone: "ACTION" | "INFO" | "CHEER"; title: string; detail: string; metric?: string }[];
+  brief?: string;
+  brief_source?: "ai" | "template";
+  summary: { today: MoneyWire; week: MoneyWire; jobs_today: number; jobs_week: number; available: MoneyWire; tier: { tier: string } };
+}
+
+function CoachPanel({ onClose }: { onClose: () => void }) {
+  const [c, setC] = useState<Coach | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    const load = () => api<Coach>("/v1/rider/coach?lang=en").then(setC).catch((e: ApiError) => setError(e.message));
+    void load();
+    const t = setInterval(load, 30_000);
+    return () => clearInterval(t);
+  }, []);
+  return (
+    <div className="r-sheet" role="dialog" aria-modal="true" aria-label="Your copilot" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="r-sheet-card">
+        <div className="r-sheet-head"><h2>Your copilot</h2><button type="button" className="picker-x" onClick={onClose} aria-label="Close">✕</button></div>
+        <p className="muted">Tips from your own earnings and live demand. Advice only — you ride when and where you choose.</p>
+        {error ? <p className="r-error" role="alert">{error}</p> : null}
+        {c ? (
+          <>
+            <div className="r-coach-summary">
+              <div><small>Today</small><b>{money(c.summary.today)}</b><span>{c.summary.jobs_today} job{c.summary.jobs_today === 1 ? "" : "s"}</span></div>
+              <div><small>This week</small><b>{money(c.summary.week)}</b><span>{c.summary.jobs_week} job{c.summary.jobs_week === 1 ? "" : "s"}</span></div>
+              <div><small>Ready to cash out</small><b>{money(c.summary.available)}</b><span>{c.summary.tier.tier.toLowerCase()} rider</span></div>
+            </div>
+            {c.brief ? (
+              <div className="r-coach-brief">
+                <div className="r-coach-brief-head"><span>Shift outlook</span>{c.brief_source === "ai" ? <span className="r-coach-ai">AI</span> : null}</div>
+                <p>{c.brief}</p>
+              </div>
+            ) : null}
+            <div className="r-coach-list">
+              {c.tips.length === 0 ? <p className="muted">All quiet — nothing to flag right now. Ride safe.</p> : c.tips.map((t) => (
+                <div key={t.id} className={`r-coach-card tone-${t.tone.toLowerCase()} cat-${t.category.toLowerCase()}`}>
+                  <div className="r-coach-top"><span className="r-coach-cat">{t.category === "ZONES" ? "Where to go" : t.category === "EARNINGS" ? "Your earnings" : "Your pay"}</span>{t.metric ? <span className="r-coach-metric">{t.metric}</span> : null}</div>
+                  <h3>{t.title}</h3>
+                  <p>{t.detail}</p>
+                </div>
+              ))}
+            </div>
+          </>
+        ) : !error ? <p className="muted">…</p> : null}
+      </div>
+    </div>
+  );
+}
 
 function EarningsPanel({ onClose }: { onClose: () => void }) {
   const [e, setE] = useState<Earnings | null>(null);
@@ -378,6 +532,8 @@ function ActiveJob({ job, pos, onDone }: { job: Job; pos: Pos | null; onDone: ()
         <li className={atKitchen ? "now" : "done"}>Pick up at {job.pickup.name}</li>
         <li className={atKitchen ? "" : "now"}>Deliver{job.drop?.customer ? ` to ${job.drop.customer}` : ""}</li>
       </ol>
+
+      <OrderChat orderId={job.order_id} title="Chat with the customer" />
 
       {atKitchen ? (
         <div className="r-card">

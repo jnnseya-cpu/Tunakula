@@ -15,6 +15,7 @@ import {
   type ConnectorCapability,
   type ConnectorHealth,
   type InitiateResult,
+  type NextAction,
   type NormalisedWebhookEvent,
   type PaymentConnector,
   type PaymentIntent,
@@ -204,14 +205,28 @@ export class SandboxConnector implements PaymentConnector {
   }
 
   #toInitiateResult(p: SandboxPayment): InitiateResult {
-    const msisdn = p.intent.payer.msisdn ?? "";
     return {
       providerRef: p.providerRef,
       state: p.state,
-      nextAction: p.state === "PENDING_CUSTOMER_ACTION" ? { type: "PUSH_SENT", msisdn } : { type: "NONE" },
+      nextAction: p.state === "PENDING_CUSTOMER_ACTION" ? sandboxNextAction(p) : { type: "NONE" },
       ...(p.state === "PENDING_CUSTOMER_ACTION" ? { expiresAt: new Date(this.#now().getTime() + 5 * 60_000) } : {}),
       ...(p.reasonCode ? { reasonCode: p.reasonCode } : {}),
     };
+  }
+}
+
+/** The customer-action the sandbox simulates, matched to the method type so the UI can render the right step. */
+function sandboxNextAction(p: SandboxPayment): NextAction {
+  switch (p.intent.methodType) {
+    case "QR":
+      // A short scan target the customer's wallet/bank app resolves (real EMVCo payloads are a VERIFY item).
+      return { type: "QR", payload: `https://pay.tunakula.com/q/${p.providerRef.slice(-12)}` };
+    case "CARD":
+    case "MOBILE_MONEY_REDIRECT":
+    case "BANK_TRANSFER":
+      return { type: "REDIRECT", url: `https://sandbox.pay.tunakula.com/c/${p.providerRef}` };
+    default:
+      return { type: "PUSH_SENT", msisdn: p.intent.payer.msisdn ?? "" };
   }
 }
 

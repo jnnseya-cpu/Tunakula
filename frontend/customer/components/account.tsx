@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { api, ApiError, getSession, live, setSession, type Session } from "../lib/api";
+import { lang } from "../lib/i18n";
 
 export function useSession(): Session | null | undefined {
   const [s, setS] = useState<Session | null | undefined>(undefined);
@@ -51,7 +52,7 @@ export function SignIn() {
     e.preventDefault();
     setBusy(true); setError(null);
     try {
-      const r = await api<{ token: string; user_id: string }>("/v1/auth/otp/verify", { method: "POST", body: { phone: clean, code: code.trim(), ...(name.trim() ? { display_name: name.trim() } : {}) }, auth: false });
+      const r = await api<{ token: string; user_id: string }>("/v1/auth/otp/verify", { method: "POST", body: { phone: clean, code: code.trim(), locale: lang(), ...(name.trim() ? { display_name: name.trim() } : {}) }, auth: false });
       setSession({ token: r.token, userId: r.user_id, phone: clean });
       window.location.href = nextUrl();
     } catch (err) { setError((err as ApiError).message); } finally { setBusy(false); }

@@ -1,0 +1,109 @@
+# Continuous deployment of the WEB platform (API + customer site + admin console) to the VPS.
+#
+# Every push to the deploy branch (and main) is fully gated by `npm run check` (guards, typecheck, all
+# tests, both web builds); only if that passes does it SSH to the VPS, pull the same commit, and bring the
+# coexist stack up with the new code. So the web is always deployed at the end of a green build.
+#
+# ONE-TIME setup on the VPS (run the interactive bring-up once, which writes deploy/.env.staging and wires
+# Caddy): `bash deploy/go-live-coexist.sh`. After that, this workflow handles every subsequent deploy.
+#
+# Repository SECRETS this needs (Settings → Secrets and variables → Actions):
+#   VPS_HOST       the server's hostname or IP
+#   VPS_USER       the SSH user (e.g. root)
+#   VPS_SSH_KEY    a private SSH key authorized on the server
+#   VPS_PORT       (optional) SSH port, defaults to 22
+# Repository VARIABLES:
+#   DEPLOY_WEB     set to "true" to enable the deploy job (until then it is skipped, not failed)
+#   VPS_APP_DIR    (optional) the repo checkout on the server, defaults to /root/Tunakula
+name: Deploy web
+
+on:
+  push:
+    branches: [main, claude/exciting-turing-k5r4jb]
+  workflow_dispatch: {}
+
+concurrency:
+  group: deploy-web-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    name: Build + test gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    # npm run check includes the API end-to-end tests (test:api), which need PostgreSQL 16 — same service
+    # and roles the CI backend job uses, so the gate reproduces CI exactly before any deploy.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_ADMIN_URL: postgres://tunakula:tunakula@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Database roles
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -U postgres -v ON_ERROR_STOP=1 -c "CREATE ROLE tunakula LOGIN PASSWORD 'tunakula' CREATEDB NOSUPERUSER NOBYPASSRLS"
+          psql -h localhost -U postgres -v ON_ERROR_STOP=1 -c "CREATE ROLE tunakula_app LOGIN PASSWORD 'tunakula_app' NOSUPERUSER NOBYPASSRLS"
+      - name: Guards, typecheck, tests, web builds
+        run: npm run check
+
+  deploy:
+    name: Deploy to VPS
+    needs: gate
+    # Opt-in: the deploy runs only once you set repository variable DEPLOY_WEB=true (Settings → Secrets and
+    # variables → Actions → Variables) AND have added the VPS_* secrets. Until then it is skipped, not failed,
+    # so a PR's checks stay clean before the server is wired up.
+    if: ${{ vars.DEPLOY_WEB == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Scope the VPS secrets to a protected environment if you like (Settings → Environments → production).
+    environment: production
+    steps:
+      - name: SSH deploy (pull + coexist stack up)
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          envs: DEPLOY_REF,APP_DIR
+          script_stop: true
+          script: |
+            set -euo pipefail
+            APP_DIR="${APP_DIR:-/root/Tunakula}"
+            cd "$APP_DIR"
+            git fetch --all --prune
+            git checkout "$DEPLOY_REF"
+            git reset --hard "origin/$DEPLOY_REF"
+            C="docker compose --env-file deploy/.env.staging -f deploy/docker-compose.coexist.yml"
+            $C up -d --build
+            # wait for the API to report healthy, else fail the deploy
+            for i in $(seq 1 60); do
+              if $C exec -T api node -e "fetch('http://127.0.0.1:8080/v1/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"; then
+                echo "API healthy"; break
+              fi
+              [ "$i" -eq 60 ] && { echo "API did not become healthy"; $C logs --tail=80 api; exit 1; }
+              sleep 3
+            done
+            $C ps
+        env:
+          DEPLOY_REF: ${{ github.ref_name }}
+          APP_DIR: ${{ vars.VPS_APP_DIR }}

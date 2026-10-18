@@ -11,13 +11,13 @@ import type { Principal, ResourceContext } from "../modules/identity/policy.ts";
 import type { Action } from "../modules/identity/roles.ts";
 import { createJournal, type LedgerEntry } from "../modules/money/journal.ts";
 import { evidenceBundle } from "../modules/ordering/evidence.ts";
-import { OrderRuleError, replay, type OrderCommand } from "../modules/ordering/order-aggregate.ts";
+import { OrderRuleError, distanceMetres, replay, type OrderCommand } from "../modules/ordering/order-aggregate.ts";
 import { RIDER_ORDER_TYPES, type Actor, type OrderLine, type OrderSnapshot, type OrderType } from "../modules/ordering/order-types.ts";
-import { priceOrder, PricingError, type PriceBreakdown } from "../modules/pricing/pricing.ts";
+import { priceOrder, PricingError, requiredDeliveryMode, type PriceBreakdown } from "../modules/pricing/pricing.ts";
 import { isOpenNow } from "../modules/catalogue/hours.ts";
 import { membershipDiscount, type MembershipLookup } from "./membership.ts";
 import type { CouponLookup, CouponPrice } from "./coupons.ts";
-import { getBranch, menuOf, type BranchRow, type MenuItemRow } from "../persistence/catalogue.ts";
+import { bestPromotion, getBranch, menuOf, promoPrice, promotionsForBranch, zonesForBranch, type BranchRow, type MenuItemRow } from "../persistence/catalogue.ts";
 import { userById } from "../persistence/identity.ts";
 import { postJournal } from "../persistence/ledger.ts";
 import { handleOrderCommand, loadOrderEvents, OrderConflictError } from "../persistence/orders.ts";
@@ -25,9 +25,10 @@ import { ApiError, badRequest, conflict, notFound, unprocessable } from "./error
 import { require } from "./principal.ts";
 import type { RoutingProvider } from "./routing.ts";
 
-/** The wallet operation the order placement needs: debit the customer's balance for an order. */
+/** The wallet operations the order placement needs: read the balance and debit it for an order. */
 export interface WalletFunder {
   payForOrder(sql: Sql, country: string, userId: string, orderId: string, total: Money): Promise<void>;
+  balance(sql: Sql, country: string, userId: string, currency: string): Promise<Money>;
 }
 
 /** The referral lookup the quote/placement needs: the referee's first-order discount, and marking it used. */
@@ -47,10 +48,18 @@ export interface QuoteInput {
   readonly customerId?: string;
   /** A promo code to apply (requires customerId for limit checks). */
   readonly couponCode?: string;
+  /** For a scheduled order, the intended time: dayparting (per-dish hours) is checked against it, not now. */
+  readonly scheduledFor?: string;
 }
 
 export interface PlaceOrderInput extends QuoteInput {
   readonly paymentMode: "PREPAID" | "CASH_ON_DELIVERY" | "WALLET";
+  /**
+   * Split payment: draw this much (minor units) from the wallet and charge the rest on `paymentMode`
+   * (PREPAID or CASH_ON_DELIVERY). Must be greater than zero and less than the total; for the whole
+   * total from the wallet, use paymentMode "WALLET" instead. Ignored when paymentMode is "WALLET".
+   */
+  readonly walletApplyMinor?: string;
   /** The total the customer saw and accepted (§11.2 confirm-before-pay). */
   readonly expectedTotal: { readonly amount_minor: string; readonly currency: string };
   readonly address?: { readonly landmark?: string; readonly voiceNoteUrl?: string };
@@ -67,7 +76,7 @@ export interface PlaceOrderInput extends QuoteInput {
 
 export interface Quote {
   readonly branch: { id: string; name: string };
-  readonly lines: readonly { itemId: string; name: string; quantity: number; unit: MoneyJSON; total: MoneyJSON; allergens: string[]; options: string[] }[];
+  readonly lines: readonly { itemId: string; name: string; quantity: number; unit: MoneyJSON; total: MoneyJSON; allergens: string[]; options: string[]; promo?: { name: string; percent: number; wasUnit: MoneyJSON } }[];
   readonly breakdown: PriceBreakdown;
   readonly distanceMeters?: number;
   /** Present when a member's benefit applies: the discount funded by the platform and the resulting payable total. */
@@ -83,6 +92,7 @@ export interface Quote {
     readonly couponId: string;
     readonly code: string;
     readonly discount: MoneyJSON;
+    readonly fundedBy: "PLATFORM" | "MERCHANT";
   };
   /** Present for a referee's first order: the referral first-order discount funded by the platform. */
   readonly referral?: {
@@ -185,6 +195,15 @@ export class CommerceService {
     const tz = profile.country.timezones[0] ?? "UTC";
     if (!isOpenNow(branch.hours ?? {}, branch.special_hours ?? {}, this.now(), tz)) throw unprocessable("BRANCH_CLOSED", `${branch.name} is closed right now`);
     const menu = new Map((await menuOf(sql, branch.id)).map((m) => [m.id, m]));
+    // Dayparting: a dish with an availability schedule is orderable only inside it. For a scheduled order we check
+    // the intended time; otherwise now. A dish with no schedule is always available (backward-compatible).
+    const scheduledAt = input.scheduledFor ? new Date(input.scheduledFor) : undefined;
+    const effectiveAt = scheduledAt && !Number.isNaN(scheduledAt.getTime()) ? scheduledAt : this.now();
+
+    // Merchant promotions (happy hour): a percentage off a dish, category or the whole branch, optionally only in
+    // its weekly window. The discount lowers the dish price here, so the merchant funds it by receiving less — no
+    // ledger change. With no active promotion, prices are unchanged.
+    const promos = await promotionsForBranch(sql, branch.id, { activeOnly: true });
 
     let goods = Money.zero(ccy);
     const lines: Quote["lines"][number][] = [];
@@ -194,35 +213,69 @@ export class CommerceService {
       const item = menu.get(itemId);
       if (!item) throw unprocessable("ITEM_NOT_ON_MENU", `Item ${itemId} is not on ${branch.name}'s menu`);
       if (!item.available) throw unprocessable("ITEM_UNAVAILABLE", `${nameOf(item.names, lang)} is not available right now`, { itemId });
+      const schedule = item.availability_hours ?? {};
+      if (Object.keys(schedule).length > 0 && !isOpenNow(schedule, {}, effectiveAt, tz)) {
+        throw unprocessable("ITEM_OFF_SCHEDULE", `${nameOf(item.names, lang)} is only available at certain times`, { itemId });
+      }
       const price = item.prices[ccy];
       // MR-2: a missing price would be converted by quote; until FX quoting is wired, refuse rather than guess.
       if (price === undefined) throw unprocessable("PRICE_MISSING", `${nameOf(item.names, lang)} has no ${ccy} price`, { itemId });
+      // The promotion applies to the dish price (not option surcharges), at the effective time.
+      const promo = promos.length ? bestPromotion(promos, { id: item.id, category: item.category }, effectiveAt, tz) : null;
+      const basePrice = BigInt(price);
+      const promoBase = promo ? promoPrice(basePrice, promo.percent_bps) : basePrice;
       const { surcharge, descriptors } = optionSurcharge(item, lineInput, nameOf(item.names, lang));
-      const unit = Money.ofMinor(BigInt(price) + surcharge, ccy);
+      const unit = Money.ofMinor(promoBase + surcharge, ccy);
       const total = unit.multiply(BigInt(quantity));
       goods = goods.add(total);
-      lines.push({ itemId, name: nameOf(item.names, lang), quantity, unit: unit.toJSON(), total: total.toJSON(), allergens: item.allergens, options: descriptors });
+      const wasUnit = Money.ofMinor(basePrice + surcharge, ccy);
+      lines.push({
+        itemId, name: nameOf(item.names, lang), quantity, unit: unit.toJSON(), total: total.toJSON(), allergens: item.allergens, options: descriptors,
+        ...(promo && promoBase < basePrice ? { promo: { name: promo.name, percent: promo.percent_bps / 100, wasUnit: wasUnit.toJSON() } } : {}),
+      });
     }
 
     let distanceMeters: number | undefined;
+    let zoneFlatFeeMinor: bigint | undefined;
     const needsRider = ["DELIVERY", "SCHEDULED", "XBO"].includes(input.orderType);
+    // §18.3: the delivery mode the store needs by its type — bike/motorcycle for restaurants and pharmacies,
+    // a larger vehicle (priced for its size) for groceries, convenience, boutiques and other non-restaurant sellers.
+    const deliveryMode = requiredDeliveryMode(branch.store_type);
+    // An indirect boutique (or any branch with a delivery lead) needs the order scheduled far enough ahead.
+    this.#enforceDeliveryLead(branch, input.orderType, input.scheduledFor);
     if (needsRider) {
       if (!input.delivery) throw badRequest("DELIVERY_PIN_REQUIRED", "Drop a pin for delivery");
-      distanceMeters = await this.routing.distanceMeters({ lat: Number(branch.lat), lng: Number(branch.lng) }, input.delivery, "MOTO");
+      distanceMeters = await this.routing.distanceMeters({ lat: Number(branch.lat), lng: Number(branch.lng) }, input.delivery, deliveryMode);
+      // Delivery zones: if the branch has defined service areas, the drop must fall in one. The most specific
+      // (smallest-radius) matching zone sets an optional flat fee and/or minimum order for that area. A branch
+      // with no zones keeps the distance-ladder fee and no serviceability gate (fully backward-compatible).
+      const zones = await zonesForBranch(sql, branch.id, { activeOnly: true });
+      if (zones.length > 0) {
+        const drop = { lat: input.delivery.lat, lng: input.delivery.lng };
+        const matched = zones
+          .filter((z) => distanceMetres({ lat: Number(z.centre_lat), lng: Number(z.centre_lng) }, drop) <= z.radius_m)
+          .sort((a, b) => a.radius_m - b.radius_m);
+        const zone = matched[0];
+        if (!zone) throw unprocessable("OUTSIDE_SERVICE_AREA", `${branch.name} does not deliver to that location yet`);
+        if (zone.min_order_minor !== null && goods.minor < BigInt(zone.min_order_minor)) {
+          throw unprocessable("BELOW_ZONE_MINIMUM", `Orders to ${zone.name} start at ${Money.ofMinor(BigInt(zone.min_order_minor), ccy).toString()}`, { min_order: { amount_minor: zone.min_order_minor, currency: ccy }, zone: zone.name });
+        }
+        if (zone.flat_fee_minor !== null) zoneFlatFeeMinor = BigInt(zone.flat_fee_minor);
+      }
     }
     try {
       const breakdown = priceOrder(profile.pricing, {
         goods,
         channel: "ONLINE",
         orderType: input.orderType,
-        ...(needsRider ? { delivery: { distanceMeters: distanceMeters as number, rural: input.delivery?.rural === true } } : {}),
+        ...(needsRider ? { delivery: { distanceMeters: distanceMeters as number, rural: input.delivery?.rural === true, mode: deliveryMode, ...(zoneFlatFeeMinor !== undefined ? { flatFeeMinor: zoneFlatFeeMinor } : {}) } } : {}),
         ...(input.tip ? { tip: Money.of(input.tip, ccy) } : {}),
       });
       const membership = await this.#memberBenefit(sql, country, input.customerId, breakdown);
       // A coupon applies on top of any membership benefit; both are funded by the platform.
       let coupon: CouponPrice | undefined;
       if (input.couponCode && input.customerId && this.coupons) {
-        coupon = await this.coupons.priceFor(sql, country, input.customerId, input.couponCode, { goods: breakdown.goods, customerDeliveryFee: breakdown.customerDeliveryFee });
+        coupon = await this.coupons.priceFor(sql, country, input.customerId, input.couponCode, { goods: breakdown.goods, customerDeliveryFee: breakdown.customerDeliveryFee }, branch.id);
       }
       const memberDisc = membership ? Money.fromJSON(membership.discount) : Money.zero(ccy);
       const couponDisc = coupon ? coupon.discount : Money.zero(ccy);
@@ -240,7 +293,7 @@ export class CommerceService {
         branch: { id: branch.id, name: branch.name }, lines, breakdown,
         ...(distanceMeters !== undefined ? { distanceMeters } : {}),
         ...(membership ? { membership } : {}),
-        ...(coupon ? { coupon: { couponId: coupon.couponId, code: coupon.code, discount: coupon.discount.toJSON() } } : {}),
+        ...(coupon ? { coupon: { couponId: coupon.couponId, code: coupon.code, discount: coupon.discount.toJSON(), fundedBy: coupon.fundedBy } } : {}),
         ...(referral ? { referral: { claimId: referral.claimId, discount: referral.discount.toJSON() } } : {}),
         ...((membership || coupon || referral) ? { payable: payable.toJSON() } : {}),
         ...(ageRestricted ? { ageRestricted: true } : {}),
@@ -250,6 +303,31 @@ export class CommerceService {
       if (error instanceof RangeError) throw badRequest("AMOUNT_INVALID", error.message);
       throw error;
     }
+  }
+
+  /** Parses and validates a requested split-payment wallet amount against the total (must be 0 < apply < total). */
+  #resolveWalletApply(raw: string | undefined, total: Money): Money | undefined {
+    if (raw === undefined || raw === null || raw === "") return undefined;
+    let apply: Money;
+    try { apply = Money.ofMinor(BigInt(raw), total.currency); } catch { throw badRequest("AMOUNT_INVALID", "Send the wallet amount as whole minor units"); }
+    if (apply.minor <= 0n) throw badRequest("WALLET_APPLY_INVALID", "The wallet amount must be greater than zero");
+    if (apply.compare(total) >= 0) throw unprocessable("WALLET_APPLY_TOO_LARGE", "To pay the whole order from your wallet, choose wallet as the payment method");
+    return apply;
+  }
+
+  /**
+   * A branch with a delivery lead (a boutique's indirect mode) needs the order scheduled at least that many days
+   * ahead. Direct branches (lead 0) are unaffected. Pickup/takeaway from the shop itself is never gated.
+   */
+  #enforceDeliveryLead(branch: BranchRow, orderType: OrderType, scheduledFor: string | undefined): void {
+    const leadDays = branch.delivery_lead_days ?? 0;
+    if (leadDays <= 0) return;
+    if (!["DELIVERY", "SCHEDULED", "XBO"].includes(orderType)) return;
+    const days = `${leadDays} day${leadDays === 1 ? "" : "s"}`;
+    if (!scheduledFor) throw unprocessable("LEAD_TIME_REQUIRED", `${branch.name} delivers to order and needs at least ${days} — choose a delivery date at least ${days} ahead`);
+    const at = new Date(scheduledFor);
+    if (Number.isNaN(at.getTime())) throw badRequest("SCHEDULE_INVALID", "Send a valid scheduled time");
+    if (at.getTime() < this.now().getTime() + leadDays * 86_400_000) throw unprocessable("LEAD_TIME_TOO_SOON", `${branch.name} needs at least ${days}' notice; pick a later delivery date`);
   }
 
   /** Validates a requested scheduled time: a real future time, at least the minimum lead ahead and within the window. */
@@ -284,11 +362,21 @@ export class CommerceService {
   }
 
   /** Places an order: re-prices, checks the accepted total, creates the event stream (§11.2). */
-  async place(country: string, principal: Principal, input: PlaceOrderInput, idempotencyKey: string): Promise<{ orderId: string; state: string; recipientCode: string; quote: Quote }> {
+  /**
+   * Places an order. `inStore` turns this into an on-premise sale: a counter order taken by branch staff (channel
+   * POS, stamped with the cashier `staffId`) or a self-service kiosk order the customer places themselves (channel
+   * HUB, no staff). Either way it is attributed to the supplied walk-in/known customer and the on-delivery cash
+   * policy is skipped because the money is handled on the spot. Authorisation happens in PosService / KioskService.
+   */
+  async place(country: string, principal: Principal, input: PlaceOrderInput, idempotencyKey: string, inStore?: { customerId: string; channel: "POS" | "HUB"; staffId?: string; deviceId: string; tableId?: string }): Promise<{ orderId: string; state: string; recipientCode: string; quote: Quote }> {
     const profile = this.profile(country);
+    const pos = inStore; // on-premise context (POS counter or HUB kiosk); shares the counter pricing/cash path
+    const customerId = pos?.customerId ?? principal.userId;
     let placedRestaurant: string | undefined;
     const out = await this.db.tx({ country }, async (sql) => {
-      const quote = await this.#quote(sql, country, { ...input, customerId: principal.userId });
+      // A counter (POS) sale is priced plainly — membership and coupons are app features — but still attributed to
+      // the walk-in/known customer for history and loyalty. An online order prices for the signed-in customer.
+      const quote = await this.#quote(sql, country, { ...input, ...(pos ? {} : { customerId }) });
       // What the customer actually pays: the gross price minus any platform-funded discount (membership + coupon).
       const total = quote.payable ? Money.fromJSON(quote.payable) : quote.breakdown.total;
       if (input.expectedTotal?.currency !== total.currency || input.expectedTotal.amount_minor !== total.minor.toString()) {
@@ -300,7 +388,15 @@ export class CommerceService {
       // A wallet order settles like a prepaid one; the money comes from the balance instead of a provider charge.
       const settledMode: "PREPAID" | "CASH_ON_DELIVERY" = walletFunded ? "PREPAID" : input.paymentMode;
       if (walletFunded && !this.wallet) throw unprocessable("WALLET_UNAVAILABLE", "Wallet payment is not available");
-      if (input.paymentMode === "CASH_ON_DELIVERY") await this.#assertCodAllowed(sql, profile, principal.userId, total);
+      // Split payment: part from the wallet, the rest on the chosen method (never with full-wallet mode).
+      const walletApplied = walletFunded ? undefined : this.#resolveWalletApply(input.walletApplyMinor, total);
+      if (walletApplied) {
+        if (!this.wallet) throw unprocessable("WALLET_UNAVAILABLE", "Wallet payment is not available");
+        const bal = await this.wallet.balance(sql, country, customerId, walletApplied.currency);
+        if (bal.compare(walletApplied) < 0) throw unprocessable("INSUFFICIENT_WALLET_BALANCE", "Your wallet balance is too low for the amount you chose to pay from it");
+      }
+      // Cash on delivery collects what the rider will actually hand over: the total less any wallet portion.
+      if (input.paymentMode === "CASH_ON_DELIVERY" && !pos) await this.#assertCodAllowed(sql, profile, principal.userId, walletApplied ? total.subtract(walletApplied) : total);
       if (input.orderType === "XBO" && !input.recipient) throw badRequest("RECIPIENT_REQUIRED", "Cross-border orders name a recipient");
 
       const branch = (await getBranch(sql, input.branchId)) as BranchRow;
@@ -326,11 +422,14 @@ export class CommerceService {
       const snapshot: OrderSnapshot = {
         orderId,
         type: input.orderType,
-        channel: "ONLINE",
+        channel: pos ? pos.channel : "ONLINE",
         country,
         brandId: branch.brand_id,
         branchId: branch.id,
-        customerId: principal.userId,
+        customerId,
+        ...(pos ? { deviceId: pos.deviceId } : {}),
+        ...(pos?.staffId ? { staffId: pos.staffId } : {}),
+        ...(pos?.tableId ? { tableId: pos.tableId } : {}),
         ...(input.recipient ? { recipient: input.recipient } : {}),
         gifted: input.gifted === true || input.orderType === "XBO",
         lines,
@@ -348,11 +447,12 @@ export class CommerceService {
           riderReceives: b.riderReceives.toJSON(),
           platformReceives: b.platformReceives.toJSON(),
           ...(quote.membership ? { membershipDiscount: quote.membership.discount } : {}),
-          ...(quote.coupon ? { couponDiscount: quote.coupon.discount } : {}),
+          ...(quote.coupon ? { couponDiscount: quote.coupon.discount, couponFundedBy: quote.coupon.fundedBy } : {}),
           ...(quote.referral ? { referralDiscount: quote.referral.discount } : {}),
         },
         paymentMode: settledMode,
         ...(walletFunded ? { walletFunded: true } : {}),
+        ...(walletApplied ? { walletApplied: walletApplied.toJSON() } : {}),
         configuredConfirmationModel: configured,
         // AGENT_OPTIMISED is decided per order by the Dispatch Optimiser (A2); until it runs, restaurant-first.
         confirmationModel: configured === "AGENT_OPTIMISED" ? "RESTAURANT_FIRST" : configured,
@@ -366,12 +466,12 @@ export class CommerceService {
         ...(scheduledFor ? { scheduledFor: scheduledFor.toISOString() } : {}),
         geofenceRadiusM: GEOFENCE_M,
       };
-      const actor: Actor = { kind: "CUSTOMER", id: principal.userId };
+      const actor: Actor = { kind: "CUSTOMER", id: customerId };
       const tenant = { country, brandId: branch.brand_id };
       await this.#run(sql, tenant, orderId, actor, `${idempotencyKey}:draft`, { type: "CREATE_DRAFT", snapshot });
       // Log the coupon redemption now the order exists (idempotent on the order id).
       if (quote.coupon && this.coupons) {
-        await this.coupons.record(sql, country, quote.coupon.couponId, principal.userId, orderId, Money.fromJSON(quote.coupon.discount));
+        await this.coupons.record(sql, country, quote.coupon.couponId, customerId, orderId, Money.fromJSON(quote.coupon.discount));
       }
       // Mark the referee's first-order discount as used so it applies only once.
       if (quote.referral && this.referral) {
@@ -379,17 +479,23 @@ export class CommerceService {
       }
       if (walletFunded) {
         // Reserve the money from the balance, then settle the order as paid at once.
-        await this.wallet!.payForOrder(sql, country, principal.userId, orderId, total);
+        await this.wallet!.payForOrder(sql, country, customerId, orderId, total);
         await this.#run(sql, tenant, orderId, actor, `${idempotencyKey}:checkout`, { type: "START_CHECKOUT" });
         const { order } = await this.#run(sql, tenant, orderId, actor, `${idempotencyKey}:wallet-confirm`, { type: "CONFIRM_PAYMENT", paymentIntentId: `wallet:${orderId}` });
         return { orderId, state: order.state, recipientCode, quote };
+      }
+      // A split cash order is live at once, so the wallet portion is committed here (the rider collects the
+      // rest). A split prepaid order waits for the remainder charge; its wallet portion is debited only when
+      // that charge confirms (so an abandoned order never has wallet money moved).
+      if (walletApplied && settledMode === "CASH_ON_DELIVERY") {
+        await this.wallet!.payForOrder(sql, country, customerId, orderId, walletApplied);
       }
       const next: OrderCommand = settledMode === "PREPAID" ? { type: "START_CHECKOUT" } : { type: "PLACE_CASH_ORDER" };
       const { order } = await this.#run(sql, tenant, orderId, actor, `${idempotencyKey}:${next.type}`, next);
       return { orderId, state: order.state, recipientCode, quote };
     });
     // A cash order is PLACED straight away; a prepaid one becomes PLACED when payment confirms.
-    if (out.state === "PLACED") await this.#notifyOrder(country, { state: "PLACED", orderId: out.orderId, customerId: principal.userId, restaurant: placedRestaurant });
+    if (out.state === "PLACED") await this.#notifyOrder(country, { state: "PLACED", orderId: out.orderId, customerId, restaurant: placedRestaurant });
     return out;
   }
 
@@ -516,13 +622,34 @@ export class CommerceService {
     const discount = m.membershipDiscount ? Money.fromJSON(m.membershipDiscount) : Money.zero(ccy0);
     const couponDisc = m.couponDiscount ? Money.fromJSON(m.couponDiscount) : Money.zero(ccy0);
     const referralDisc = m.referralDiscount ? Money.fromJSON(m.referralDiscount) : Money.zero(ccy0);
-    const cashAccount = s.walletFunded ? "customer_wallet" : s.paymentMode === "PREPAID" ? "psp_clearing" : "cod_cash_in_transit";
+    const total = Money.fromJSON(s.total);
+    // A merchant-funded coupon comes out of the merchant's payout instead of the platform. Clamp the
+    // merchant's share to what they earn on the order, so the merchant can never be paid a negative
+    // amount; any excess falls back to the platform. Either way the journal stays balanced.
+    const merchantReceives = Money.fromJSON(m.merchantReceives);
+    const merchantFunded = m.couponFundedBy === "MERCHANT"
+      ? (couponDisc.compare(merchantReceives) > 0 ? merchantReceives : couponDisc)
+      : Money.zero(ccy0);
+    const platformCouponDisc = couponDisc.subtract(merchantFunded);
+    // Where the customer's money came in. A full-wallet order is entirely from the wallet; a split order
+    // draws a wallet portion and the rest from the method's clearing account; otherwise a single account.
+    const methodAccount = s.paymentMode === "PREPAID" ? "psp_clearing" : "cod_cash_in_transit";
+    const walletApplied = s.walletApplied ? Money.fromJSON(s.walletApplied) : Money.zero(ccy0);
+    const cashIn: LedgerEntry[] = s.walletFunded
+      ? [{ account: "customer_wallet", country: c, amount: total }]
+      : walletApplied.isZero()
+        ? [{ account: methodAccount, country: c, amount: total }]
+        : [
+            { account: "customer_wallet", country: c, amount: walletApplied },
+            { account: methodAccount, country: c, amount: total.subtract(walletApplied) },
+          ];
     return [
-      { account: cashAccount, country: c, amount: Money.fromJSON(s.total) },
+      ...cashIn,
       { account: "subscription_revenue", country: c, amount: discount },
-      // The platform funds both coupon and referral first-order discounts.
-      { account: "promotion_expense", country: c, amount: couponDisc.add(referralDisc) },
-      { account: "restaurant_payable", country: c, amount: neg(m.merchantReceives) },
+      // The platform funds referral first-order discounts and any platform-funded coupon; a
+      // merchant-funded coupon instead reduces the restaurant payout below.
+      { account: "promotion_expense", country: c, amount: platformCouponDisc.add(referralDisc) },
+      { account: "restaurant_payable", country: c, amount: merchantReceives.subtract(merchantFunded).negate() },
       { account: "service_charge_revenue", country: c, amount: neg(m.serviceCharge) },
       { account: "rider_payable", country: c, amount: neg(m.riderReceives) },
       { account: "delivery_fee_revenue", country: c, amount: neg(m.platformDeliveryShare) },
@@ -603,7 +730,7 @@ const ACTION_FOR: Record<Exclude<OrderCommand["type"], "CREATE_DRAFT">, Action> 
 function actorKind(role: string): Actor["kind"] {
   if (role === "RIDER") return "RIDER";
   if (role === "CUSTOMER") return "CUSTOMER";
-  if (["RESTAURANT_OWNER", "BRANCH_MANAGER", "KITCHEN_STAFF"].includes(role) || role.startsWith("profile:")) return "RESTAURANT";
+  if (["RESTAURANT_OWNER", "FRANCHISEE", "BRANCH_MANAGER", "KITCHEN_STAFF"].includes(role) || role.startsWith("profile:")) return "RESTAURANT";
   return "SUPPORT";
 }
 
@@ -656,7 +783,7 @@ export function serialiseQuote(q: Quote) {
   const m = (x: Money) => ({ amount_minor: x.minor.toString(), currency: x.currency });
   return {
     branch: q.branch,
-    lines: q.lines.map((l) => ({ item_id: l.itemId, name: l.name, quantity: l.quantity, unit: { amount_minor: l.unit.minor, currency: l.unit.currency }, total: { amount_minor: l.total.minor, currency: l.total.currency }, allergens: l.allergens, options: l.options })),
+    lines: q.lines.map((l) => ({ item_id: l.itemId, name: l.name, quantity: l.quantity, unit: { amount_minor: l.unit.minor, currency: l.unit.currency }, total: { amount_minor: l.total.minor, currency: l.total.currency }, allergens: l.allergens, options: l.options, ...(l.promo ? { promo: { name: l.promo.name, percent: l.promo.percent, was_unit: { amount_minor: l.promo.wasUnit.minor, currency: l.promo.wasUnit.currency } } } : {}) })),
     price_lines: b.lines.map((l) => ({ code: l.code, amount: m(l.amount) })),
     commission: m(b.commission),
     total: m(b.total),

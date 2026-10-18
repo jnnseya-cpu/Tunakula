@@ -1,0 +1,60 @@
+# Production stack for the Hostinger VPS: the always-on API (migrates on boot, runs the dispatch/
+# refund/settlement sweep loops) behind Caddy for automatic HTTPS. PostgreSQL is NOT in this file —
+# in production it lives in Google Cloud SQL (managed backups + PITR). See deploy/cloudsql-setup.md.
+#
+#   1. Put real secrets in deploy/.env.prod  (copy from ../.env.production.example; NEVER commit it).
+#   2. docker compose -f deploy/docker-compose.prod.yml up -d --build
+#   3. docker compose -f deploy/docker-compose.prod.yml exec api \
+#        npm run bootstrap-admin -w @tunakula/api -- +243810000000 "Launch Owner"
+#
+# The API binds to 127.0.0.1:8080 on the host; only Caddy is exposed to the internet (80/443).
+services:
+  # Cloud SQL Auth Proxy — gives the API an encrypted local path to Google Cloud SQL at
+  # host `cloudsql-proxy:5432`, with no IP allowlists or client certs to manage. Needs a
+  # service-account key (role roles/cloudsql.client) at deploy/cloudsql-key.json and the
+  # instance connection name in .env.prod as CLOUDSQL_INSTANCE=<project>:<region>:tunakula-prod.
+  cloudsql-proxy:
+    image: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.13.0
+    restart: unless-stopped
+    command: ["--address", "0.0.0.0", "--port", "5432", "--credentials-file", "/key.json", "${CLOUDSQL_INSTANCE}"]
+    volumes:
+      - ./cloudsql-key.json:/key.json:ro
+    expose:
+      - "5432"
+
+  api:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on: [cloudsql-proxy]
+    env_file:
+      - .env.prod
+    environment:
+      PORT: "8080"
+      # Behind Caddy: trust X-Forwarded-* and enable the per-instance rate limit as a second layer.
+      TUNAKULA_TRUST_PROXY: "1"
+    expose:
+      - "8080"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/v1/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+  caddy:
+    image: caddy:2.8-alpine
+    restart: unless-stopped
+    depends_on: [api]
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  caddy-data:
+  caddy-config:

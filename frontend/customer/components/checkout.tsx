@@ -5,7 +5,8 @@
  */
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { api, ApiError, getSession, listAddresses, live, loadCart, money, rememberCode, saveAddress, saveCart, walletBalance, type Cart, type MoneyWire, type SavedAddress } from "../lib/api";
+import { api, ApiError, createSubscription, getSession, listAddresses, live, loadCart, money, rememberCode, saveAddress, saveCart, walletBalance, type Cart, type MoneyWire, type SavedAddress, type SubCadence } from "../lib/api";
+import { qrSvg } from "../lib/qr";
 import { useLocationCtx } from "./location";
 
 interface Quote {
@@ -26,13 +27,14 @@ interface Quote {
   age_restricted?: boolean;
 }
 type Mode = "DELIVERY" | "TAKEAWAY";
-type Pay = "MOBILE_MONEY_PUSH" | "CARD" | "CASH_ON_DELIVERY" | "WALLET";
+type Pay = "MOBILE_MONEY_PUSH" | "CARD" | "QR" | "CASH_ON_DELIVERY" | "WALLET";
 
 const LINE_LABEL: Record<string, string> = { GOODS: "Food", SERVICE_CHARGE: "Service charge (10%)", DELIVERY_FEE: "Delivery", DELIVERY_PROMOTION: "Delivery offer", TIP: "Tip for your rider" };
 const PAY_LABEL: Record<string, [string, string]> = {
   WALLET: ["Wallet", "Pay instantly from your Tunakula balance"],
   MOBILE_MONEY_PUSH: ["Mobile money", "M-Pesa, Orange Money or Airtel Money — approve on your phone"],
   CARD: ["Card", "Visa or Mastercard"],
+  QR: ["QR code", "Scan with your mobile-money or bank app"],
   CASH_ON_DELIVERY: ["Cash on delivery", "Pay the rider in francs or dollars"],
 };
 const TIPS = ["0", "0.50", "1.00", "2.00"];
@@ -69,6 +71,8 @@ export function Checkout() {
   const [methods, setMethods] = useState<string[]>([]);
   const [wallet, setWallet] = useState<MoneyWire | null>(null);
   const [pay, setPay] = useState<Pay>("MOBILE_MONEY_PUSH");
+  const [qr, setQr] = useState<{ payload: string; orderId: string } | null>(null);
+  const [useWalletPart, setUseWalletPart] = useState(false);
   const [msisdn, setMsisdn] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -78,6 +82,12 @@ export function Checkout() {
   const [ageOk, setAgeOk] = useState(false);
   const [promoApplied, setPromoApplied] = useState("");
   const [promoError, setPromoError] = useState<string | null>(null);
+  const [repeat, setRepeat] = useState(false);
+  const [repCadence, setRepCadence] = useState<SubCadence>("WEEKLY");
+  const [repWeekday, setRepWeekday] = useState(1);
+  const [repTime, setRepTime] = useState("12:00");
+  const [repMsg, setRepMsg] = useState<string | null>(null);
+  const [repBusy, setRepBusy] = useState(false);
   const attempt = useRef<{ key: string; total: string } | null>(null);
   const placed = useRef<string | null>(null);
 
@@ -139,7 +149,7 @@ export function Checkout() {
     const due = quote.payable ?? quote.membership?.payable_total ?? quote.total;
     api<{ data: string[] }>(`/v1/countries/CD/payment-methods?amount_minor=${due.amount_minor}&currency=${due.currency}`, { auth: false })
       .then((r) => {
-        const usable = r.data.filter((m) => m === "MOBILE_MONEY_PUSH" || m === "CARD" || m === "CASH_ON_DELIVERY");
+        const usable = r.data.filter((m) => m === "MOBILE_MONEY_PUSH" || m === "CARD" || m === "QR" || m === "CASH_ON_DELIVERY");
         if (mode === "DELIVERY" && !usable.includes("CASH_ON_DELIVERY")) usable.push("CASH_ON_DELIVERY");
         setMethods(usable);
         if (pay !== "WALLET" && !usable.includes(pay)) setPay((usable[0] as Pay) ?? "MOBILE_MONEY_PUSH");
@@ -167,16 +177,19 @@ export function Checkout() {
     if (!quote || !body) return;
     setError(null); setNotice(null);
     try {
-      // A member pays the discounted total; everyone else the plain total.
+      // A member pays the discounted total; everyone else the plain total. A split order still accepts the
+      // full total (the wallet covers part of it); only wallet_apply_minor says how much comes from the balance.
       const due = quote.payable ?? quote.membership?.payable_total ?? quote.total;
+      const apply = splitting ? walletApply : null;
       let orderId = placed.current;
       if (!orderId) {
-        // One Idempotency-Key per total: a retry of the same attempt replays, a new price is a new attempt.
-        if (!attempt.current || attempt.current.total !== due.amount_minor) attempt.current = { key: crypto.randomUUID(), total: due.amount_minor };
+        // One Idempotency-Key per (total, wallet split): a retry replays, a changed price or split is a new attempt.
+        const sig = `${due.amount_minor}:${apply ?? "0"}`;
+        if (!attempt.current || attempt.current.total !== sig) attempt.current = { key: crypto.randomUUID(), total: sig };
         setBusy("Placing your order…");
         const r = await api<{ order_id: string; recipient_code: string; state: string }>("/v1/orders", {
           method: "POST", key: attempt.current.key,
-          body: { ...body, payment_mode: pay === "CASH_ON_DELIVERY" ? "CASH_ON_DELIVERY" : pay === "WALLET" ? "WALLET" : "PREPAID", expected_total: due, ...(quote.age_restricted ? { age_confirmed: true } : {}), ...(kitchenNote.trim() ? { kitchen_note: kitchenNote.trim() } : {}), ...(when === "LATER" ? { scheduled_for: schedTime || scheduleSlots(schedDay)[0]?.[0] } : {}), ...(landmark.trim() ? { address: { landmark: landmark.trim() } } : {}) },
+          body: { ...body, payment_mode: pay === "CASH_ON_DELIVERY" ? "CASH_ON_DELIVERY" : pay === "WALLET" ? "WALLET" : "PREPAID", expected_total: due, ...(apply ? { wallet_apply_minor: apply } : {}), ...(quote.age_restricted ? { age_confirmed: true } : {}), ...(kitchenNote.trim() ? { kitchen_note: kitchenNote.trim() } : {}), ...(when === "LATER" ? { scheduled_for: schedTime || scheduleSlots(schedDay)[0]?.[0] } : {}), ...(landmark.trim() ? { address: { landmark: landmark.trim() } } : {}) },
         });
         orderId = r.order_id;
         placed.current = orderId;
@@ -184,8 +197,8 @@ export function Checkout() {
       }
       // Cash and wallet orders are placed already paid; only card/mobile money need a payment intent.
       if (pay !== "CASH_ON_DELIVERY" && pay !== "WALLET") {
-        setBusy(pay === "MOBILE_MONEY_PUSH" ? "Approve the payment on your phone…" : "Processing your card…");
-        const intent = await api<{ status: string; reason_code?: string; next_action?: { url?: string } }>("/v1/payments/intents", {
+        setBusy(pay === "MOBILE_MONEY_PUSH" ? "Approve the payment on your phone…" : pay === "QR" ? "Generating your QR code…" : "Processing your card…");
+        const intent = await api<{ status: string; reason_code?: string; next_action?: { type?: string; url?: string; payload?: string } }>("/v1/payments/intents", {
           method: "POST", key: `pay-${orderId}-${pay}-${msisdn}`,
           body: { order_id: orderId, method_type: pay, payer: pay === "MOBILE_MONEY_PUSH" ? { msisdn: msisdn.replace(/\s/g, "") } : {} },
         });
@@ -194,6 +207,8 @@ export function Checkout() {
           setError(`The payment did not go through${intent.reason_code ? ` (${intent.reason_code.replace(/_/g, " ").toLowerCase()})` : ""}. Try again or choose another way to pay.`);
           return;
         }
+        // QR: show the code to scan; the order confirms server-side when the provider's webhook lands.
+        if (intent.next_action?.type === "QR" && intent.next_action.payload) { setBusy(null); setQr({ payload: intent.next_action.payload, orderId }); return; }
         if (intent.next_action?.url) { window.location.href = intent.next_action.url; return; }
       }
       saveCart({ ...cart, lines: [] });
@@ -208,11 +223,33 @@ export function Checkout() {
     }
   };
 
+  const makeRepeat = async () => {
+    if (!cart || !place) return;
+    setRepMsg(null); setRepBusy(true);
+    try {
+      const sub = await createSubscription({
+        branch_id: cart.branch_id,
+        items: cart.lines.map((l) => ({ item_id: l.item_id, quantity: l.qty, ...(l.options?.length ? { options: l.options } : {}), ...(l.addons?.length ? { addons: l.addons } : {}) })),
+        delivery: { lat: place.lat, lng: place.lng },
+        cadence: repCadence, ...(repCadence === "WEEKLY" ? { weekday: repWeekday } : {}), time: repTime,
+      });
+      setRepMsg(`✓ Saved — ${sub.label}. We’ll place it from your wallet. Manage it in Repeat orders.`);
+      setRepeat(false);
+    } catch (e) { setRepMsg((e as ApiError).message); } finally { setRepBusy(false); }
+  };
+
   const km = quote?.distance_meters !== undefined ? (Math.round(quote.distance_meters / 100) / 10).toFixed(1) : null;
   const dueNow = quote ? (quote.payable ?? quote.membership?.payable_total ?? quote.total) : null;
-  const walletCovers = !!(wallet && dueNow && wallet.currency === dueNow.currency && BigInt(wallet.amount_minor) >= BigInt(dueNow.amount_minor));
+  const walletMinor = wallet ? BigInt(wallet.amount_minor) : 0n;
+  const walletCovers = !!(wallet && dueNow && wallet.currency === dueNow.currency && walletMinor >= BigInt(dueNow.amount_minor));
   // Always offer the wallet to a signed-in customer; it is only selectable once the balance covers the total.
   const payOptions = [...(wallet ? ["WALLET"] : []), ...methods];
+  // Split payment: when the balance is positive but short of the total, the customer can spend it and pay
+  // the rest on the chosen method. We apply the whole balance (always less than the total here).
+  const canSplit = !!(wallet && dueNow && wallet.currency === dueNow.currency && walletMinor > 0n && !walletCovers && pay !== "WALLET");
+  const splitting = canSplit && useWalletPart;
+  const walletApply = splitting ? wallet!.amount_minor : null;
+  const remainder: MoneyWire | null = splitting && dueNow ? { amount_minor: (BigInt(dueNow.amount_minor) - walletMinor).toString(), currency: dueNow.currency } : dueNow;
   return (
     <div className="checkout">
       <div className="co-main">
@@ -288,10 +325,46 @@ export function Checkout() {
                 <span className="radio" aria-hidden /><span><b>{PAY_LABEL[m]?.[0] ?? m}</b><small>{m === "WALLET" && wallet ? (walletCovers ? `Balance ${money(wallet)}` : `Balance ${money(wallet)} · top up to use`) : PAY_LABEL[m]?.[1]}</small></span>
               </button>
             ))}
-            {wallet && !walletCovers ? <Link className="wallet-topup-hint" href="/wallet/">Top up your wallet ({money(wallet)}) to pay from your balance →</Link> : null}
+            {canSplit ? (
+              <label className="wallet-split">
+                <input type="checkbox" checked={useWalletPart} onChange={(e) => setUseWalletPart(e.target.checked)} />
+                <span>Use my <b>{money(wallet!)}</b> balance and pay the rest {pay === "CASH_ON_DELIVERY" ? "in cash" : `by ${(PAY_LABEL[pay]?.[0] ?? "card").toLowerCase()}`}</span>
+              </label>
+            ) : null}
+            {wallet && !walletCovers && walletMinor === 0n ? <Link className="wallet-topup-hint" href="/wallet/">Top up your wallet to pay from your balance →</Link> : null}
           </div>
           {pay === "MOBILE_MONEY_PUSH" ? <label className="field"><span>Mobile money number</span><input inputMode="tel" value={msisdn} onChange={(e) => setMsisdn(e.target.value)} /></label> : null}
         </section>
+
+        {mode === "DELIVERY" ? (
+          <section className="co-sec">
+            <h2>Make it a repeat order</h2>
+            <label className="repeat-toggle">
+              <input type="checkbox" checked={repeat} onChange={(e) => { setRepeat(e.target.checked); setRepMsg(null); }} />
+              <span>Deliver this order again automatically — your usual, paid from your wallet.</span>
+            </label>
+            {repeat ? (
+              <div className="repeat-grid">
+                <div className="seg2" role="radiogroup" aria-label="How often">
+                  {(["WEEKLY", "DAILY"] as const).map((c) => (
+                    <button type="button" key={c} role="radio" aria-checked={repCadence === c} className={repCadence === c ? "on" : ""} onClick={() => setRepCadence(c)}>{c === "WEEKLY" ? "Every week" : "Every day"}</button>
+                  ))}
+                </div>
+                {repCadence === "WEEKLY" ? (
+                  <label className="field"><span>Day</span>
+                    <select value={repWeekday} onChange={(e) => setRepWeekday(Number(e.target.value))}>
+                      {["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"].map((d, i) => <option key={i} value={i}>{d}</option>)}
+                    </select>
+                  </label>
+                ) : null}
+                <label className="field"><span>Time</span><input type="time" value={repTime} onChange={(e) => setRepTime(e.target.value)} /></label>
+                <button type="button" className="btn light" disabled={repBusy || !place} onClick={makeRepeat}>{repBusy ? "Saving…" : "Save repeat order"}</button>
+                {!place ? <p className="muted small">Choose a delivery address first.</p> : null}
+              </div>
+            ) : null}
+            {repMsg ? <p className="form-notice small" role="status">{repMsg}</p> : null}
+          </section>
+        ) : null}
       </div>
 
       <aside className="co-summary">
@@ -329,6 +402,12 @@ export function Checkout() {
               <div className="member-save"><dt>Referral — no service fee</dt><dd className="num">−{money(quote.referral.discount)}</dd></div>
             ) : null}
             <div className="total"><dt>Total</dt><dd className="num">{money(quote.payable ?? quote.membership?.payable_total ?? quote.total)}</dd></div>
+            {splitting && remainder ? (
+              <>
+                <div className="member-save"><dt>From your wallet</dt><dd className="num">−{money(wallet!)}</dd></div>
+                <div className="total"><dt>Pay now</dt><dd className="num">{money(remainder)}</dd></div>
+              </>
+            ) : null}
           </dl>
         ) : quoteError ? <p className="form-error">{quoteError}</p> : <div className="skeleton-line" />}
         <p className="muted small">Restaurants pay 0% commission: dishes are at the counter price. Our 10% service charge is shown on its own line.</p>
@@ -338,10 +417,23 @@ export function Checkout() {
         {notice ? <p className="form-notice" role="status">{notice}</p> : null}
         {error ? <p className="form-error" role="alert">{error}</p> : null}
         <button type="button" className="btn accent wide big" disabled={!quote || !!busy || (quote?.age_restricted && !ageOk) || (pay === "MOBILE_MONEY_PUSH" && msisdn.replace(/\D/g, "").length < 9)} onClick={placeOrder}>
-          {busy ?? (quote ? `Place order · ${money(quote.payable ?? quote.membership?.payable_total ?? quote.total)}` : "Place order")}
+          {busy ?? (quote ? `Place order · ${money(splitting && remainder ? remainder : (quote.payable ?? quote.membership?.payable_total ?? quote.total))}` : "Place order")}
         </button>
         <Link className="link-btn" href={`/store/?id=${cart.branch_id}`}>Change my order</Link>
       </aside>
+
+      {qr ? (
+        <div className="qr-backdrop" role="dialog" aria-modal="true" aria-label="Scan to pay">
+          <div className="qr-card">
+            <h2>Scan to pay</h2>
+            <p className="muted">Open your mobile-money or bank app, scan this code and approve the payment.</p>
+            <div className="qr-img" dangerouslySetInnerHTML={{ __html: qrSvg(qr.payload, { size: 240 }) ?? "" }} />
+            <p className="qr-amount">{quote ? money(quote.payable ?? quote.membership?.payable_total ?? quote.total) : ""}</p>
+            <button type="button" className="btn accent wide" onClick={() => { saveCart({ ...cart, lines: [] }); window.location.href = `/track/?id=${qr.orderId}`; }}>I’ve scanned — track my order</button>
+            <button type="button" className="link-btn" onClick={() => setQr(null)}>Choose another way to pay</button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -83,6 +83,16 @@ TUNAKULA_TOKEN_SECRET=<32+ chars> TUNAKULA_SANDBOX_PAYMENTS=1 TUNAKULA_DEV_OTP=1
 DATABASE_URL=… npm run bootstrap-admin -w @tunakula/api -- +243810000000 "Name"   # first Super Admin
 ```
 
+Production hardening (optional env):
+
+- `TUNAKULA_CONSOLE_ORIGINS` — comma-separated browser origins allowed by CORS (the admin console and website).
+- `TUNAKULA_TRUST_PROXY=1` — behind a load balancer / reverse proxy, trust `X-Forwarded-*` so the client IP is correct.
+- `TUNAKULA_RATE_LIMIT_RPM=<n>` — enable a per-IP rate limit of n requests/minute (per instance; pair with an
+  edge limiter for a fleet). Health probes are exempt. Omit to disable.
+
+The API shuts down gracefully on `SIGTERM`/`SIGINT`: it stops the background sweeps and drains in-flight
+requests (up to 25s) before exiting, so rolling deploys drop no traffic.
+
 A fresh database has no markets: a country admin drafts a Country Profile
 (`POST /v1/admin/countries/drafts`) and a Super Admin publishes it with the §28.10 readiness review.
 

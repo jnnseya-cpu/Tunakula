@@ -1,6 +1,7 @@
 "use client";
 /** Filters the server-rendered storefront cards in place: by search text (?q=) and by kind. */
 import { useEffect, useState } from "react";
+import { useT } from "./use-t";
 
 const KINDS = ["Everything", "Restaurants", "Grills", "Malewa", "Bakeries", "Groceries"] as const;
 const MATCH: Record<(typeof KINDS)[number], string[]> = {
@@ -8,6 +9,7 @@ const MATCH: Record<(typeof KINDS)[number], string[]> = {
 };
 
 export function StoreFilter() {
+  const t = useT();
   const [q, setQ] = useState("");
   const [kind, setKind] = useState<(typeof KINDS)[number]>("Everything");
   useEffect(() => {
@@ -30,12 +32,12 @@ export function StoreFilter() {
   return (
     <div className="filter">
       <label className="search">
-        <span className="sr">Search dishes, kitchens or communes</span>
+        <span className="sr">{t("nav.search")}</span>
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Moambe, brochettes, Limete…" />
       </label>
       <div className="chips" role="radiogroup" aria-label="Kind of place">
         {KINDS.map((k) => (
-          <button key={k} type="button" role="radio" aria-checked={kind === k} className={kind === k ? "on" : ""} onClick={() => setKind(k)}>{k}</button>
+          <button key={k} type="button" role="radio" aria-checked={kind === k} className={kind === k ? "on" : ""} onClick={() => setKind(k)}>{t(`filter.${k.toLowerCase()}`)}</button>
         ))}
       </div>
     </div>

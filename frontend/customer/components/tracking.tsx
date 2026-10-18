@@ -2,11 +2,13 @@
 /** Order tracking (/track/?id=) with live progress and the door code, and the order history (/orders/). */
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { api, ApiError, live, money, recallCode, refundStatus, requestRefund, REFUND_REASONS, setSession, STATE_LABEL, type MoneyWire, type RefundRequestView, type RefundStatus } from "../lib/api";
+import { api, ApiError, COUNTRY, live, money, recallCode, refundStatus, requestRefund, REFUND_REASONS, setSession, STATE_LABEL, type MoneyWire, type RefundRequestView, type RefundStatus } from "../lib/api";
+import { API_URL } from "../lib/geo";
 import { useSession } from "./account";
 import { localHour, modelSeconds } from "@tunakula/ts-contracts/eta-model";
 import { ClockIcon, PinIcon, useLocationCtx } from "./location";
 import { TileMap } from "./map";
+import { OrderChat } from "./order-chat";
 
 interface OrderView {
   order_id: string; state: string; type: string; total: MoneyWire; payment_mode: string; rider_id: string | null;
@@ -55,6 +57,25 @@ export function Tracking() {
     }).catch((e: ApiError) => { setError(e.message); timer = setTimeout(load, 15000); });
     load();
     return () => clearTimeout(timer);
+  }, [id, session]);
+  // Live updates over SSE: the server pushes when the order's state or the rider's position changes, so we
+  // refetch the full order immediately instead of waiting for the next poll. The 8s poll above stays as a
+  // fallback for browsers/networks where the stream drops. EventSource can't set headers, so auth + market
+  // ride as query params.
+  useEffect(() => {
+    if (!id || !session || typeof window === "undefined" || typeof EventSource === "undefined" || !API_URL) return;
+    let es: EventSource;
+    try {
+      es = new EventSource(`${API_URL}/v1/orders/${id}/stream?token=${encodeURIComponent(session.token)}&c=${COUNTRY}`);
+    } catch {
+      return;
+    }
+    const refresh = () => { void api<OrderView>(`/v1/orders/${id}`).then(setO).catch(() => undefined); };
+    es.addEventListener("update", refresh);
+    es.addEventListener("done", () => { refresh(); es.close(); });
+    es.addEventListener("end", () => es.close());
+    es.onerror = () => es.close(); // fall back to polling
+    return () => es.close();
   }, [id, session]);
   useEffect(() => {
     if (!o?.branch || !place || TERMINAL.has(o.state)) return;
@@ -126,6 +147,8 @@ export function Tracking() {
           ))}
         </ol>
       ) : null}
+
+      {o.rider_id ? <OrderChat orderId={o.order_id} /> : null}
 
       {o.state === "DELIVERED" ? <RateOrder orderId={o.order_id} /> : null}
       {o.state === "DELIVERED" || o.state === "REFUND_REQUESTED" || o.state === "REFUNDED" ? <RefundRequest orderId={o.order_id} /> : null}

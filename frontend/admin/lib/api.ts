@@ -4,6 +4,17 @@
  */
 export const API_BASE = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080").replace(/\/$/, "");
 
+/** The public URL of any public image (food photo, logo, cover) for an <img src>; country goes in the query. */
+export const publicImageUrl = (imageId: string, country: string) => `${API_BASE}/v1/images/${imageId}?c=${country}`;
+
+/** Reads a File as base64 (without the data: prefix), for upload to the media store. */
+export const fileToBase64 = (file: File) => new Promise<string>((resolve, reject) => {
+  const r = new FileReader();
+  r.onload = () => resolve(String(r.result).split(",")[1] ?? "");
+  r.onerror = () => reject(new Error("read failed"));
+  r.readAsDataURL(file);
+});
+
 const TOKEN_KEY = "tk-admin-token";
 const COUNTRY_KEY = "tk-admin-country";
 
@@ -64,6 +75,32 @@ export async function api<T>(path: string, opts: { method?: "GET" | "POST" | "DE
   return data as T;
 }
 
+/** Fetch an authenticated file (e.g. a CSV export) and save it in the browser. Honours the server's filename. */
+export async function downloadFile(path: string, fallbackName: string, country?: string | null): Promise<void> {
+  const headers: Record<string, string> = {};
+  const token = session.token();
+  if (token) headers["authorization"] = `Bearer ${token}`;
+  const c = country === undefined ? session.country() : country;
+  if (c) headers["x-country"] = c;
+  let res: Response;
+  try { res = await fetch(`${API_BASE}${path}`, { headers }); }
+  catch { throw new ApiError(0, "NETWORK", `The API at ${API_BASE} cannot be reached`); }
+  if (!res.ok) {
+    if (res.status === 401) session.setToken(null);
+    throw new ApiError(res.status, `HTTP_${res.status}`, `Export failed (${res.status})`);
+  }
+  const blob = await res.blob();
+  const match = /filename="?([^"]+)"?/.exec(res.headers.get("content-disposition") ?? "");
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = match?.[1] ?? fallbackName;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 // ---------- response types (mirror backend/api/src/app/admin.ts) ----------
 
 export interface Money { amount_minor: string; currency: string }
@@ -73,7 +110,7 @@ export interface Me {
   user: { id: string; display_name: string; phone: string | null };
   bindings: { id: string; role: string; scope: Scope }[];
   markets: { iso2: string; name: string; status: string }[];
-  capabilities: Partial<Record<"overview" | "orders" | "kitchen" | "dispatch" | "riders" | "catalogue" | "markets" | "membership" | "team" | "finance" | "payments" | "refunds" | "audit" | "customers", boolean>>;
+  capabilities: Partial<Record<"overview" | "orders" | "kitchen" | "pos" | "dispatch" | "riders" | "catalogue" | "markets" | "membership" | "team" | "finance" | "payments" | "refunds" | "payouts" | "merchant_plans" | "audit" | "customers" | "support" | "growth" | "copilot", boolean>>;
 }
 
 export interface Kpis { orders: number; delivered: number; gmv_minor: string; aov_minor: string; delivered_rate: number; lost_rate: number; customers: number }
