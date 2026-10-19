@@ -45,8 +45,9 @@ docker network inspect "$EDGE_NETWORK" >/dev/null 2>&1 || {
 if [[ -f "$ENV_FILE" ]]; then
   say "Using existing $ENV_FILE"
 else
-  say "First run — set your three subdomains (DNS A records must already point at this server)."
-  BASE=$(ask "Your domain (e.g. tunakula.com)")
+  say "First run — set the three domains (DNS A records must already point at this server)."
+  # Defaults target the new platform on the tunakula.com apex, beside the old system on cd./drc.
+  BASE=$(ask "Your domain" "tunakula.com")
   API_DOMAIN=$(ask "  API subdomain"     "api.$BASE")
   CUSTOMER_DOMAIN=$(ask "  Customer site" "$BASE")
   ADMIN_DOMAIN=$(ask "  Admin console"    "admin.$BASE")
