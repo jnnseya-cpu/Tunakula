@@ -4,6 +4,8 @@ import { HeroCarousel } from "../components/hero";
 import { HeroFoodCopy } from "../components/hero-cms";
 import { PayScreen, TrackingScreen } from "../components/screens";
 import { PlateArt } from "../components/plate";
+import { LiveMerchantGrid } from "../components/live";
+import { MERCHANTS } from "../lib/catalogue";
 import fees from "@tunakula/ts-contracts/published/fee-comparison.json";
 
 // The LANDING page: what Tunakula is and why, with a clear way into the storefront. The actual
@@ -90,6 +92,18 @@ export default function Home() {
           <div className="cta-row" style={{ marginTop: 22 }}>
             <Link className="btn accent wide" href="/order/">Start an order</Link>
             <Link className="link" href="/how-it-works/">How it works</Link>
+          </div>
+        </div>
+      </section>
+
+      <section className="tight" id="near">
+        <div className="wrap">
+          <div className="sec-head">
+            <h2 className="sec-title">Popular near you</h2>
+            <Link className="link" href="/order/">See everything</Link>
+          </div>
+          <div className="mgrid" data-scope="home">
+            <LiveMerchantGrid fallback={MERCHANTS.slice(0, 6)} />
           </div>
         </div>
       </section>
