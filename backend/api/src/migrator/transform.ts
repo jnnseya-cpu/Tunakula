@@ -102,6 +102,82 @@ export function normalizePhone(raw: string, countryCallingCode: string): string 
   return joined.length >= 8 && joined.length <= 15 ? "+" + joined : null;
 }
 
+/**
+ * Parse a StackFood id list — a food's `add_ons` column — into string ids. StackFood writes it as a JSON
+ * array ("[1, 2, 3]"); some older installs use a comma-separated string ("1,2,3"). Both are accepted; an
+ * empty/absent value yields no ids. Never throws.
+ */
+export function parseIdList(raw: string | null): string[] {
+  if (!raw) return [];
+  const s = raw.trim();
+  try {
+    const v: unknown = JSON.parse(s);
+    if (Array.isArray(v)) return v.map((x) => String(x).trim()).filter(Boolean);
+  } catch {
+    /* not JSON — fall through to CSV */
+  }
+  return s.replace(/^[[\]]+|[[\]]+$/g, "").split(",").map((p) => p.trim()).filter((p) => p !== "" && p !== "null");
+}
+
+/**
+ * Parse a StackFood variations JSON blob into Tunakula variation groups. v8.0 stores `food_variations`
+ * (newer) as [{name,type,min,max,required,values:[{label,optionPrice}]}]; older installs use `variations`
+ * with the same value shape and no type/min/max. This is deliberately lenient (optional menu metadata, not
+ * money owed): malformed groups/options are skipped, and an option whose surcharge cannot be parsed is kept
+ * with a 0 surcharge so the dish still imports and the merchant can correct the price in admin. Never throws.
+ */
+export function parseVariations(raw: string | null, fractionDigits: number): MigratedVariation[] {
+  if (!raw) return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw.trim());
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(parsed)) return [];
+  const out: MigratedVariation[] = [];
+  for (const g of parsed) {
+    if (!g || typeof g !== "object") continue;
+    const grp = g as Record<string, unknown>;
+    const name = typeof grp.name === "string" ? grp.name.trim() : "";
+    if (!name) continue;
+    const rawValues = Array.isArray(grp.values) ? grp.values : [];
+    const options: MigratedOption[] = [];
+    for (const v of rawValues) {
+      if (!v || typeof v !== "object") continue;
+      const val = v as Record<string, unknown>;
+      const label = typeof val.label === "string" ? val.label.trim() : "";
+      if (!label) continue;
+      const priceStr = val.optionPrice === undefined || val.optionPrice === null ? "0" : String(val.optionPrice).trim();
+      options.push({ name: label, priceMinor: moneyToMinor(priceStr || "0", fractionDigits) ?? "0" });
+    }
+    if (!options.length) continue;
+    const type = String(grp.type ?? "").toLowerCase() === "multi" ? "MULTI" : "SINGLE";
+    const required = grp.required === "on" || grp.required === true || grp.required === 1 || grp.required === "1";
+    const minN = Number(grp.min);
+    const maxN = Number(grp.max);
+    const min = Number.isFinite(minN) && minN >= 0 ? Math.floor(minN) : required ? 1 : 0;
+    const max = Number.isFinite(maxN) && maxN >= 1 ? Math.floor(maxN) : type === "SINGLE" ? 1 : options.length;
+    out.push({ name, type, required, min, max: Math.max(max, min || 1), options });
+  }
+  return out;
+}
+
+/**
+ * Resolve a food's `add_ons` id list against the loaded `add_ons` table into Tunakula add-on options. Ids
+ * with no matching row are skipped (a stale reference), and an unparseable surcharge falls back to 0 so the
+ * add-on still carries over for the merchant to price. Never throws.
+ */
+export function resolveAddons(raw: string | null, byId: ReadonlyMap<string, AddonSource>, fractionDigits: number): MigratedOption[] {
+  const out: MigratedOption[] = [];
+  for (const id of parseIdList(raw)) {
+    const src = byId.get(id);
+    if (!src || !src.name.trim()) continue;
+    out.push({ name: src.name.trim(), priceMinor: moneyToMinor((src.price || "0").trim() || "0", fractionDigits) ?? "0" });
+  }
+  return out;
+}
+
 // ── canonical target records ──
 
 export interface UserRecord {
@@ -125,6 +201,20 @@ export interface BranchRecord {
   readonly lng: number | null;
   readonly commune: string | null;
 }
+/** A paid add-on or a variation option, as carried to Tunakula: name + surcharge in integer minor units. */
+export interface MigratedOption {
+  readonly name: string;
+  readonly priceMinor: string;
+}
+/** A variation group (StackFood food_variations / variations) → Tunakula's SINGLE/MULTI option group. */
+export interface MigratedVariation {
+  readonly name: string;
+  readonly type: "SINGLE" | "MULTI";
+  readonly required: boolean;
+  readonly min: number;
+  readonly max: number;
+  readonly options: readonly MigratedOption[];
+}
 export interface MenuItemRecord {
   readonly sourceId: string;
   readonly branchSourceId: string;
@@ -132,6 +222,15 @@ export interface MenuItemRecord {
   readonly priceMinor: string;
   readonly currency: string;
   readonly available: boolean;
+  readonly addons: readonly MigratedOption[];
+  readonly variations: readonly MigratedVariation[];
+}
+
+/** One row of StackFood's `add_ons` table, resolved by id from a food's `add_ons` id list. */
+export interface AddonSource {
+  readonly id: string;
+  readonly name: string;
+  readonly price: string; // decimal, in the source currency (e.g. "1.50")
 }
 export interface OrderRecord {
   readonly sourceId: string;
@@ -148,7 +247,12 @@ export interface OrderRecord {
 export interface UserFields { readonly id: string; readonly phone: string; readonly name?: string; readonly email?: string; readonly createdAt?: string }
 export interface MerchantFields { readonly id: string; readonly name: string; readonly ownerPhone?: string }
 export interface BranchFields { readonly id: string; readonly merchantId: string; readonly name: string; readonly lat?: string; readonly lng?: string; readonly commune?: string }
-export interface ItemFields { readonly id: string; readonly branchId: string; readonly name: string; readonly price: string; readonly available?: string }
+export interface ItemFields {
+  readonly id: string; readonly branchId: string; readonly name: string; readonly price: string; readonly available?: string;
+  readonly addOns?: string; // the food's add-on id list column (resolved against the add_ons table)
+  readonly foodVariations?: string; // v8.0 variations JSON column
+  readonly variations?: string; // older variations JSON column (fallback)
+}
 export interface OrderFields { readonly id: string; readonly branchId: string; readonly total: string; readonly status: string; readonly customerId?: string; readonly placedAt?: string }
 
 export interface MigratorConfig {
@@ -207,7 +311,13 @@ export function mapBranch(row: Row, cfg: MigratorConfig): Mapped<BranchRecord> {
   return { ok: true, value: { sourceId, merchantSourceId, name, storeType: cfg.storeTypeFor(row), lat, lng, commune: f.commune ? str(row, f.commune) : null } };
 }
 
-export function mapItem(row: Row, cfg: MigratorConfig): Mapped<MenuItemRecord> {
+/**
+ * `addonsById` resolves a food's add-on id list against StackFood's `add_ons` table (loaded by the runner).
+ * It is optional so the pure transform and its tests stay callable with just a row; omit it and a food
+ * carries no add-ons. Add-ons and variations are optional metadata, so a problem there never rejects the
+ * item — see `resolveAddons` / `parseVariations`.
+ */
+export function mapItem(row: Row, cfg: MigratorConfig, addonsById?: ReadonlyMap<string, AddonSource>): Mapped<MenuItemRecord> {
   const f = cfg.fields.item;
   const sourceId = str(row, f.id);
   if (!sourceId) return { ok: false, problem: problem("item", null, f.id, "missing id") };
@@ -220,7 +330,11 @@ export function mapItem(row: Row, cfg: MigratorConfig): Mapped<MenuItemRecord> {
   const priceMinor = moneyToMinor(priceRaw, cfg.fractionDigits);
   if (priceMinor === null) return { ok: false, problem: problem("item", sourceId, f.price, `bad price: ${priceRaw}`) };
   const available = f.available ? str(row, f.available) !== "0" : true;
-  return { ok: true, value: { sourceId, branchSourceId, name, priceMinor, currency: cfg.currency, available } };
+  const addons = f.addOns ? resolveAddons(str(row, f.addOns), addonsById ?? new Map(), cfg.fractionDigits) : [];
+  // Prefer the v8.0 food_variations column; fall back to the older `variations` column when it is absent.
+  const varRaw = (f.foodVariations ? str(row, f.foodVariations) : null) ?? (f.variations ? str(row, f.variations) : null);
+  const variations = parseVariations(varRaw, cfg.fractionDigits);
+  return { ok: true, value: { sourceId, branchSourceId, name, priceMinor, currency: cfg.currency, available, addons, variations } };
 }
 
 export function mapOrder(row: Row, cfg: MigratorConfig): Mapped<OrderRecord> {

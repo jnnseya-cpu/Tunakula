@@ -1,8 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  int, mapAll, mapBranch, mapItem, mapMerchant, mapOrder, mapUser, moneyToMinor, normalizePhone, str, toMinorUnits,
-  type MigratorConfig, type Row,
+  int, mapAll, mapBranch, mapItem, mapMerchant, mapOrder, mapUser, moneyToMinor, normalizePhone,
+  parseIdList, parseVariations, resolveAddons, str, toMinorUnits,
+  type AddonSource, type MigratorConfig, type Row,
 } from "../src/migrator/transform.ts";
 import { DRC_CONFIG, stackfoodStateFor, stackfoodStoreTypeFor } from "../src/migrator/mapping.ts";
 import { formatReport, reconcile, sumMinor } from "../src/migrator/reconcile.ts";
@@ -91,6 +92,70 @@ test("mapItem and mapOrder carry StackFood 2-decimal money as CDF minor units", 
     assert.equal(order.value.state, "DELIVERED");
     assert.equal(order.value.customerSourceId, "9");
   }
+});
+
+test("parseIdList reads a food's add_ons column as JSON or CSV", () => {
+  assert.deepEqual(parseIdList("[1, 2, 3]"), ["1", "2", "3"]);
+  assert.deepEqual(parseIdList("1,2,3"), ["1", "2", "3"]);
+  assert.deepEqual(parseIdList("[]"), []);
+  assert.deepEqual(parseIdList(null), []);
+  assert.deepEqual(parseIdList(""), []);
+  assert.deepEqual(parseIdList("[5]"), ["5"]);
+});
+
+test("resolveAddons resolves a food's add_ons ids against the add_ons catalogue", () => {
+  const byId = new Map<string, AddonSource>([
+    ["1", { id: "1", name: "Fromage", price: "1500.00" }],
+    ["2", { id: "2", name: "Piment", price: "0" }],
+  ]);
+  // CDF has no minor unit, so "1500.00" → "1500".
+  assert.deepEqual(resolveAddons("[1, 2]", byId, 0), [
+    { name: "Fromage", priceMinor: "1500" },
+    { name: "Piment", priceMinor: "0" },
+  ]);
+  // A stale id with no catalogue row is skipped, not an error.
+  assert.deepEqual(resolveAddons("[1, 99]", byId, 0), [{ name: "Fromage", priceMinor: "1500" }]);
+  assert.deepEqual(resolveAddons(null, byId, 0), []);
+});
+
+test("parseVariations maps v8.0 food_variations into SINGLE/MULTI option groups", () => {
+  const raw = JSON.stringify([
+    { name: "Taille", type: "single", min: "0", max: "1", required: "on", values: [{ label: "Normale", optionPrice: "0" }, { label: "Grande", optionPrice: "2000.00" }] },
+    { name: "Extras", type: "multi", min: "0", max: "2", required: "off", values: [{ label: "Oignons", optionPrice: "500.00" }] },
+  ]);
+  const vars = parseVariations(raw, 0);
+  assert.equal(vars.length, 2);
+  assert.equal(vars[0]!.name, "Taille");
+  assert.equal(vars[0]!.type, "SINGLE");
+  assert.equal(vars[0]!.required, true);
+  assert.deepEqual(vars[0]!.options, [{ name: "Normale", priceMinor: "0" }, { name: "Grande", priceMinor: "2000" }]);
+  assert.equal(vars[1]!.type, "MULTI");
+  assert.equal(vars[1]!.required, false);
+  assert.equal(vars[1]!.max, 2);
+  // Malformed / empty blobs never throw and yield no groups; a group with no usable option is dropped.
+  assert.deepEqual(parseVariations(null, 0), []);
+  assert.deepEqual(parseVariations("not json", 0), []);
+  assert.deepEqual(parseVariations(JSON.stringify([{ name: "Empty", values: [] }]), 0), []);
+});
+
+test("mapItem carries add-ons (resolved) and variations onto the item record", () => {
+  const byId = new Map<string, AddonSource>([["7", { id: "7", name: "Supplément frites", price: "1000.00" }]]);
+  const row: Row = {
+    id: "42", restaurant_id: "1", name: "Burger", price: "6000.00", status: "1",
+    add_ons: "[7]",
+    food_variations: JSON.stringify([{ name: "Cuisson", type: "single", required: "on", values: [{ label: "À point", optionPrice: "0" }] }]),
+  };
+  const r = mapItem(row, DRC_CONFIG, byId);
+  assert.ok(r.ok);
+  if (r.ok) {
+    assert.deepEqual(r.value.addons, [{ name: "Supplément frites", priceMinor: "1000" }]);
+    assert.equal(r.value.variations.length, 1);
+    assert.equal(r.value.variations[0]!.name, "Cuisson");
+    assert.equal(r.value.variations[0]!.options[0]!.name, "À point");
+  }
+  // Older dump: `variations` column is used when food_variations is absent; no add_ons lookup given → none.
+  const legacy = mapItem({ id: "43", restaurant_id: "1", name: "Pizza", price: "8000.00", status: "1", variations: JSON.stringify([{ name: "Taille", values: [{ label: "Large", optionPrice: "3000.00" }] }]) }, DRC_CONFIG);
+  assert.ok(legacy.ok && legacy.value.variations[0]!.options[0]!.priceMinor === "3000" && legacy.value.addons.length === 0);
 });
 
 test("mapBranch links to the vendor owner, derives store type, parses coordinates", () => {

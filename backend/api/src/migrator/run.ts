@@ -19,8 +19,8 @@
  */
 import pg from "pg";
 import {
-  mapAll, mapBranch, mapItem, mapMerchant, mapOrder, mapUser,
-  type MigratorConfig, type Row, type RowProblem,
+  mapAll, mapBranch, mapItem, mapMerchant, mapOrder, mapUser, str,
+  type AddonSource, type MigratorConfig, type Row, type RowProblem,
 } from "./transform.ts";
 import { DRC_CONFIG, SOURCE_TABLES } from "./mapping.ts";
 import { formatReport, reconcile, sumMinor, type EntityCount, type SumCheck } from "./reconcile.ts";
@@ -95,10 +95,23 @@ async function main(): Promise<void> {
       "SELECT r.*, m.module_type AS module_type FROM `restaurants` r LEFT JOIN `modules` m ON m.id = r.module_id",
     ))[0];
 
+  // The add-ons catalogue: id → {name, price}. A food's `add_ons` column lists ids into this, which
+  // mapItem resolves. A dump without the table (older install) just yields no add-ons, never an error.
+  const addonsById = new Map<string, AddonSource>();
+  try {
+    for (const r of await rowsOf(SOURCE_TABLES.addons)) {
+      const id = str(r, "id");
+      const name = str(r, "name");
+      if (id && name) addonsById.set(id, { id, name, price: str(r, "price") ?? "0" });
+    }
+  } catch {
+    console.log("note: add_ons table not found in the dump — importing foods without add-ons.");
+  }
+
   const users = mapAll(await rowsOf(SOURCE_TABLES.users), (r) => mapUser(r, cfg));
   const merchants = mapAll(await rowsOf(SOURCE_TABLES.merchants), (r) => mapMerchant(r, cfg));
   const branches = mapAll(await branchRows(), (r) => mapBranch(r, cfg));
-  const items = mapAll(await rowsOf(SOURCE_TABLES.items), (r) => mapItem(r, cfg));
+  const items = mapAll(await rowsOf(SOURCE_TABLES.items), (r) => mapItem(r, cfg, addonsById));
   const orders = mapAll(await rowsOf(SOURCE_TABLES.orders), (r) => mapOrder(r, cfg));
   await my.end();
 
@@ -135,8 +148,17 @@ async function main(): Promise<void> {
   ];
   const sums: SumCheck[] = [{ label: "order value (minor)", sourceMinor: sumMinor(orders.records.map((o) => o.totalMinor)), loadedMinor: sumMinor(orders.records.map((o) => o.totalMinor)) }];
 
+  // Add-ons/variations ride along inside each item record; surface their totals so a human can sanity-check
+  // that paid extras and option groups actually carried over (the thing that was silently dropped before).
+  const itemsWithAddons = items.records.filter((i) => i.addons.length).length;
+  const addonTotal = items.records.reduce((n, i) => n + i.addons.length, 0);
+  const itemsWithVariations = items.records.filter((i) => i.variations.length).length;
+  const variationOptionTotal = items.records.reduce((n, i) => n + i.variations.reduce((m, v) => m + v.options.length, 0), 0);
+
   console.log(`\n${apply ? "APPLIED to migration.* staging schema" : "DRY RUN (no writes)"}\n`);
   console.log(formatReport(reconcile(counts, sums)));
+  console.log(`\nadd-ons:    ${addonTotal} across ${itemsWithAddons} item(s) (from ${addonsById.size} in the catalogue)`);
+  console.log(`variations: ${variationOptionTotal} option(s) across ${itemsWithVariations} item(s)`);
 }
 
 main().catch((e) => {
