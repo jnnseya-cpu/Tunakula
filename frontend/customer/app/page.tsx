@@ -1,33 +1,15 @@
 import Link from "next/link";
 import { Phone, SiteFooter, SiteNav } from "../components/site";
-import { HeroCarousel, PlaceLine } from "../components/hero";
+import { HeroCarousel } from "../components/hero";
 import { HeroFoodCopy } from "../components/hero-cms";
-import { EtaChip, StoreSorter } from "../components/location";
 import { PayScreen, TrackingScreen } from "../components/screens";
-import { JoinCard } from "../components/merchant";
-import { LiveMerchantGrid } from "../components/live";
-import { Recommendations } from "../components/recommendations";
-import { Trending } from "../components/trending";
-import { CategoryTiles, BestReviewed } from "../components/home-sections";
-import { PromoBanners } from "../components/promo-banners";
-import { FoodImage, PlateArt, type Recipe } from "../components/plate";
-import { fc, favourites, MERCHANTS } from "../lib/catalogue";
+import { PlateArt } from "../components/plate";
 import fees from "@tunakula/ts-contracts/published/fee-comparison.json";
 
-const CRAVINGS: [string, Recipe, string][] = [
-  ["Moambe", "moambe", "moambe"],
-  ["Pondu & greens", "pondu", "pondu"],
-  ["Brochettes", "brochettes", "brochettes"],
-  ["Fish", "liboke", "poisson"],
-  ["Plantain", "makemba", "makemba"],
-  ["Bread & beignets", "beignets", "mikate"],
-  ["Fresh juice", "jus", "gingembre"],
-  ["Groceries", "fruits", "fruit"],
-];
-
-
+// The LANDING page: what Tunakula is and why, with a clear way into the storefront. The actual
+// browsing/ordering (restaurants, categories, trending, recommendations) lives in the storefront at
+// /order — this page is marketing + the one "Start an order" door, not a shopping surface.
 export default function Home() {
-  const picks = favourites(8);
   return (
     <>
       <SiteNav current="/" />
@@ -105,69 +87,27 @@ export default function Home() {
             <span><b>M-Pesa, Orange Money, Airtel Money</b> or card.</span>
             <span><b>A code at your door.</b> Your food reaches you, not a neighbour.</span>
           </div>
-        </div>
-      </section>
-
-      <PromoBanners />
-
-      <CategoryTiles />
-
-      <section className="tight crave-sec">
-        <div className="wrap">
-          <h2 className="sec-title">What are you craving?</h2>
-          <nav className="crave" aria-label="Cravings">
-            {CRAVINGS.map(([label, recipe, q]) => (
-              <Link key={label} href={`/order/?q=${encodeURIComponent(q)}`} data-reveal>
-                <PlateArt className="crave-pic" recipe={recipe} seed={`crave-${q}`} />
-                <span>{label}</span>
-              </Link>
-            ))}
-          </nav>
-        </div>
-      </section>
-
-      <section className="tight" id="near">
-        <div className="wrap">
-          <div className="sec-head">
-            <div>
-              <h2 className="sec-title">Near you</h2>
-              <PlaceLine />
-            </div>
-            <Link className="link" href="/order/">See everything</Link>
-          </div>
-          <StoreSorter scope="home" />
-          <div className="mgrid" data-scope="home">
-            <LiveMerchantGrid fallback={MERCHANTS} />
-            <JoinCard />
+          <div className="cta-row" style={{ marginTop: 22 }}>
+            <Link className="btn accent wide" href="/order/">Start an order</Link>
+            <Link className="link" href="/how-it-works/">How it works</Link>
           </div>
         </div>
       </section>
 
-      <Trending />
-
-      <BestReviewed />
-
-      <Recommendations />
-
-      <section className="tight">
-        <div className="wrap">
-          <div className="sec-head">
-            <h2 className="sec-title">Popular dishes</h2>
-            <Link className="link" href="/order/">Browse menus</Link>
+      <section>
+        <div className="wrap split">
+          <div className="stack">
+            <h2 className="display">Order in three taps. <em>Follow it to your gate.</em></h2>
+            <ol className="steps3">
+              <li><b>Choose your food.</b> Every dish at the kitchen&rsquo;s counter price, with the service charge as its own line.</li>
+              <li><b>Pay on your phone.</b> M-Pesa, Orange Money, Airtel Money or card, in francs or dollars, with the total in front of you before you approve.</li>
+              <li><b>Meet your rider.</b> Watch them on the map. Give your four-digit code at the door, and only then is it delivered.</li>
+            </ol>
+            <div className="cta-row"><Link className="btn accent" href="/order/">Start an order</Link><Link className="link" href="/how-it-works/">How it works</Link></div>
           </div>
-          <div className="fav-grid">
-            {picks.map(({ merchant: m, item }) => (
-              <Link key={`${m.slug}-${item.id}`} className="fav" href={`/r/${m.slug}/`} data-reveal>
-                <div className="fav-pic" style={{ background: m.tone.bg }}>
-                  <FoodImage slug={item.id} recipe={item.recipe} alt={item.name} className="pic" />
-                  <span className="fav-add" aria-hidden>+</span>
-                </div>
-                <h3>{item.name}</h3>
-                <p className="muted">{m.name} · {m.commune}</p>
-                <p className="fav-foot"><b className="num">{fc(item.price)}</b></p>
-                <EtaChip slug={m.slug} />
-              </Link>
-            ))}
+          <div className="stage" style={{ position: "relative", height: 640, overflow: "hidden" }}>
+            <Phone className="p1"><TrackingScreen /></Phone>
+            <Phone className="p2"><PayScreen /></Phone>
           </div>
         </div>
       </section>
@@ -202,24 +142,6 @@ export default function Home() {
                 <span className="chef-card-price"><b className="num">$15</b> fixed</span>
               </div>
             </div>
-          </div>
-        </div>
-      </section>
-
-      <section>
-        <div className="wrap split">
-          <div className="stack">
-            <h2 className="display">Order in three taps. <em>Follow it to your gate.</em></h2>
-            <ol className="steps3">
-              <li><b>Choose your food.</b> Every dish at the kitchen&rsquo;s counter price, with the service charge as its own line.</li>
-              <li><b>Pay on your phone.</b> M-Pesa, Orange Money, Airtel Money or card, in francs or dollars, with the total in front of you before you approve.</li>
-              <li><b>Meet your rider.</b> Watch them on the map. Give your four-digit code at the door, and only then is it delivered.</li>
-            </ol>
-            <div className="cta-row"><Link className="btn accent" href="/order/">Start an order</Link><Link className="link" href="/how-it-works/">How it works</Link></div>
-          </div>
-          <div className="stage" style={{ position: "relative", height: 640, overflow: "hidden" }}>
-            <Phone className="p1"><TrackingScreen /></Phone>
-            <Phone className="p2"><PayScreen /></Phone>
           </div>
         </div>
       </section>
