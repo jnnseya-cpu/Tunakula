@@ -58,6 +58,32 @@ export function toMinorUnits(decimal: string, fractionDigits = 2): string | null
 }
 
 /**
+ * Convert a source decimal amount into the TARGET currency's integer minor units, by BigInt math (no
+ * float), rescaling from the source's own precision to the target's and rounding half-up only when the
+ * target has fewer digits. StackFood stores money as DECIMAL(x,2), so a CDF (0-minor-digit) market needs
+ * "1500.00" → "1500", while a USD (2-digit) market needs "1500.00" → "150000". Unlike `toMinorUnits`, this
+ * never rejects a value for having more source decimals than the target — that is the normal case here.
+ * Returns null only when the string is not a clean non-negative decimal.
+ */
+export function moneyToMinor(decimal: string, targetFractionDigits: number): string | null {
+  const m = /^(\d+)(?:\.(\d+))?$/.exec(decimal.trim());
+  if (!m) return null;
+  const whole = m[1]!;
+  const frac = m[2] ?? "";
+  const srcScaled = BigInt(whole + frac); // = value × 10^(frac.length)
+  const srcDigits = frac.length;
+  if (targetFractionDigits >= srcDigits) {
+    return (srcScaled * 10n ** BigInt(targetFractionDigits - srcDigits)).toString();
+  }
+  const drop = srcDigits - targetFractionDigits;
+  const divisor = 10n ** BigInt(drop);
+  const q = srcScaled / divisor;
+  const r = srcScaled % divisor;
+  const rounded = r * 2n >= divisor ? q + 1n : q; // round half-up
+  return rounded.toString();
+}
+
+/**
  * Normalise a raw phone to E.164 (+<digits>). Strips spaces, dashes and parentheses; turns a leading 00
  * into +; prefixes the market's country calling code when the number is given in national form (a single
  * leading 0, or no + at all). Returns null when there are too few digits to be a real number.
@@ -191,7 +217,7 @@ export function mapItem(row: Row, cfg: MigratorConfig): Mapped<MenuItemRecord> {
   if (!name) return { ok: false, problem: problem("item", sourceId, f.name, "missing name") };
   const priceRaw = str(row, f.price);
   if (!priceRaw) return { ok: false, problem: problem("item", sourceId, f.price, "missing price") };
-  const priceMinor = toMinorUnits(priceRaw, cfg.fractionDigits);
+  const priceMinor = moneyToMinor(priceRaw, cfg.fractionDigits);
   if (priceMinor === null) return { ok: false, problem: problem("item", sourceId, f.price, `bad price: ${priceRaw}`) };
   const available = f.available ? str(row, f.available) !== "0" : true;
   return { ok: true, value: { sourceId, branchSourceId, name, priceMinor, currency: cfg.currency, available } };
@@ -205,7 +231,7 @@ export function mapOrder(row: Row, cfg: MigratorConfig): Mapped<OrderRecord> {
   if (!branchSourceId) return { ok: false, problem: problem("order", sourceId, f.branchId, "missing branch id") };
   const totalRaw = str(row, f.total);
   if (!totalRaw) return { ok: false, problem: problem("order", sourceId, f.total, "missing total") };
-  const totalMinor = toMinorUnits(totalRaw, cfg.fractionDigits);
+  const totalMinor = moneyToMinor(totalRaw, cfg.fractionDigits);
   if (totalMinor === null) return { ok: false, problem: problem("order", sourceId, f.total, `bad total: ${totalRaw}`) };
   const status = str(row, f.status) ?? "";
   return {

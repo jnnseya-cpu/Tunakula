@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  int, mapAll, mapBranch, mapItem, mapOrder, mapUser, normalizePhone, str, toMinorUnits,
+  int, mapAll, mapBranch, mapItem, mapMerchant, mapOrder, mapUser, moneyToMinor, normalizePhone, str, toMinorUnits,
   type MigratorConfig, type Row,
 } from "../src/migrator/transform.ts";
 import { DRC_CONFIG, stackfoodStateFor, stackfoodStoreTypeFor } from "../src/migrator/mapping.ts";
@@ -11,10 +11,23 @@ test("toMinorUnits converts decimals by string math, refusing over-precision", (
   assert.equal(toMinorUnits("12.50", 2), "1250");
   assert.equal(toMinorUnits("12", 2), "1200");
   assert.equal(toMinorUnits("0.05", 2), "5");
-  assert.equal(toMinorUnits("1500", 0), "1500"); // CDF, no minor unit
-  assert.equal(toMinorUnits("12.509", 2), null); // more precision than the currency has
+  assert.equal(toMinorUnits("1500", 0), "1500");
+  assert.equal(toMinorUnits("12.509", 2), null);
   assert.equal(toMinorUnits("abc", 2), null);
-  assert.equal(toMinorUnits("0", 2), "0");
+});
+
+test("moneyToMinor rescales StackFood 2-decimal amounts to the target currency", () => {
+  // CDF (0 minor digits): StackFood "1500.00" must become 1500, not 150000.
+  assert.equal(moneyToMinor("1500.00", 0), "1500");
+  assert.equal(moneyToMinor("1500", 0), "1500");
+  assert.equal(moneyToMinor("21890.00", 0), "21890");
+  assert.equal(moneyToMinor("1500.50", 0), "1501"); // half-up when the target is coarser
+  assert.equal(moneyToMinor("1500.49", 0), "1500");
+  // USD (2 minor digits): "1500.00" → 150000 cents; "12.5" → 1250.
+  assert.equal(moneyToMinor("1500.00", 2), "150000");
+  assert.equal(moneyToMinor("12.5", 2), "1250");
+  assert.equal(moneyToMinor("0", 0), "0");
+  assert.equal(moneyToMinor("bad", 0), null);
 });
 
 test("normalizePhone produces E.164 from national, 00 and + forms", () => {
@@ -23,7 +36,7 @@ test("normalizePhone produces E.164 from national, 00 and + forms", () => {
   assert.equal(normalizePhone("00243810000000", "243"), "+243810000000");
   assert.equal(normalizePhone("+243 81 000 0000", "243"), "+243810000000");
   assert.equal(normalizePhone("243810000000", "243"), "+243810000000");
-  assert.equal(normalizePhone("123", "243"), null); // too short
+  assert.equal(normalizePhone("123", "243"), null);
 });
 
 test("str and int read and validate cells", () => {
@@ -33,7 +46,7 @@ test("str and int read and validate cells", () => {
   assert.equal(str(row, "f"), null);
   assert.equal(int(row, "c"), 7);
   assert.equal(int(row, "d"), 42);
-  assert.equal(int(row, "e"), null); // not an integer
+  assert.equal(int(row, "e"), null);
 });
 
 test("mapUser normalises the phone and reports a missing one", () => {
@@ -49,15 +62,29 @@ test("mapUser normalises the phone and reports a missing one", () => {
   if (!bad.ok) assert.match(bad.problem.reason, /missing phone/);
 });
 
-test("mapItem and mapOrder carry money as integer minor units in the market currency", () => {
-  const item = mapItem({ id: "3", restaurant_id: "1", name: "Poulet", price: "5000", status: "1" }, DRC_CONFIG);
+test("mapMerchant maps a StackFood vendor to the owner account", () => {
+  const m = mapMerchant({ id: "4", f_name: "Jean", l_name: "Mbala", phone: "0812223344" }, DRC_CONFIG);
+  assert.ok(m.ok);
+  if (m.ok) {
+    assert.equal(m.value.sourceId, "4");
+    assert.equal(m.value.name, "Jean");
+    assert.equal(m.value.ownerPhoneE164, "+243812223344");
+  }
+});
+
+test("mapItem and mapOrder carry StackFood 2-decimal money as CDF minor units", () => {
+  // StackFood stores DECIMAL(x,2); CDF has no minor unit, so "5000.00" → "5000".
+  const item = mapItem({ id: "3", restaurant_id: "1", name: "Poulet", price: "5000.00", status: "1" }, DRC_CONFIG);
   assert.ok(item.ok);
   if (item.ok) {
-    assert.equal(item.value.priceMinor, "5000"); // CDF, fractionDigits 0
+    assert.equal(item.value.priceMinor, "5000");
     assert.equal(item.value.currency, "CDF");
     assert.equal(item.value.available, true);
   }
-  const order = mapOrder({ id: "77", restaurant_id: "1", user_id: "9", order_amount: "21890", order_status: "delivered", created_at: "2025-03-01" }, DRC_CONFIG);
+  const soldOut = mapItem({ id: "3b", restaurant_id: "1", name: "Pondu", price: "3000", status: "0" }, DRC_CONFIG);
+  assert.ok(soldOut.ok && soldOut.value.available === false);
+
+  const order = mapOrder({ id: "77", restaurant_id: "1", user_id: "9", order_amount: "21890.00", order_status: "delivered", created_at: "2025-03-01" }, DRC_CONFIG);
   assert.ok(order.ok);
   if (order.ok) {
     assert.equal(order.value.totalMinor, "21890");
@@ -66,29 +93,45 @@ test("mapItem and mapOrder carry money as integer minor units in the market curr
   }
 });
 
-test("mapBranch derives the store type and parses coordinates", () => {
-  const b = mapBranch({ id: "1", restaurant_id: "1", name: "BigBite", latitude: "-4.3217", longitude: "15.3126", module_type: "pharmacy" }, DRC_CONFIG);
+test("mapBranch links to the vendor owner, derives store type, parses coordinates", () => {
+  const b = mapBranch({ id: "1", vendor_id: "4", name: "BigBite", latitude: "-4.3217", longitude: "15.3126", zone_id: "7", module_type: "pharmacy" }, DRC_CONFIG);
   assert.ok(b.ok);
   if (b.ok) {
+    assert.equal(b.value.merchantSourceId, "4"); // vendor_id → owner
     assert.equal(b.value.storeType, "PHARMACY");
     assert.equal(b.value.lat, -4.3217);
     assert.equal(b.value.lng, 15.3126);
+    assert.equal(b.value.commune, "7");
   }
+  const missingOwner = mapBranch({ id: "2", name: "No owner" }, DRC_CONFIG);
+  assert.ok(!missingOwner.ok);
 });
 
-test("stackfoodStateFor and storeTypeFor map known values with safe defaults", () => {
+test("stackfoodStateFor covers the v8.0 status set with a safe default", () => {
   assert.equal(stackfoodStateFor("pending"), "PLACED");
+  assert.equal(stackfoodStateFor("scheduled"), "PLACED");
   assert.equal(stackfoodStateFor("Cooking"), "PREPARING");
+  assert.equal(stackfoodStateFor("ready_for_handover"), "READY");
+  assert.equal(stackfoodStateFor("out_for_delivery"), "PICKED_UP");
   assert.equal(stackfoodStateFor("delivered"), "DELIVERED");
-  assert.equal(stackfoodStateFor("whatever"), "PLACED"); // unknown → safe default
-  assert.equal(stackfoodStoreTypeFor({ module: "grocery store" }), "GROCERY");
+  assert.equal(stackfoodStateFor("refund_requested"), "DELIVERED");
+  assert.equal(stackfoodStateFor("refunded"), "CANCELLED");
+  assert.equal(stackfoodStateFor("canceled"), "CANCELLED");
+  assert.equal(stackfoodStateFor("whatever"), "PLACED");
+});
+
+test("stackfoodStoreTypeFor reads the joined module_type", () => {
+  assert.equal(stackfoodStoreTypeFor({ module_type: "grocery" }), "GROCERY");
+  assert.equal(stackfoodStoreTypeFor({ module_type: "pharmacy" }), "PHARMACY");
+  assert.equal(stackfoodStoreTypeFor({ module_type: "ecommerce" }), "CONVENIENCE");
+  assert.equal(stackfoodStoreTypeFor({ module_type: "food" }), "RESTAURANT");
   assert.equal(stackfoodStoreTypeFor({}), "RESTAURANT");
 });
 
 test("mapAll splits clean records from problems", () => {
   const rows: Row[] = [
     { id: "1", phone: "0810000001", f_name: "A" },
-    { id: "2", phone: "" }, // bad
+    { id: "2", phone: "" },
     { id: "3", phone: "0810000003" },
   ];
   const { records, problems } = mapAll(rows, (r) => mapUser(r, DRC_CONFIG));
@@ -111,16 +154,18 @@ test("reconcile passes when loaded = source - skipped and sums match", () => {
   assert.match(formatReport(ok), /RECONCILE OK/);
 
   const bad = reconcile(
-    [{ entity: "orders", source: 100, loaded: 90, skipped: 2 }], // 8 missing
+    [{ entity: "orders", source: 100, loaded: 90, skipped: 2 }],
     [{ label: "order value (minor)", sourceMinor: "500000", loadedMinor: "499000" }],
   );
   assert.ok(!bad.ok);
   assert.match(formatReport(bad), /RECONCILE FAILED/);
 });
 
-test("DRC_CONFIG targets CDF with no minor unit", () => {
+test("DRC_CONFIG targets CDF with no minor unit, StackFood vendors/restaurants mapping", () => {
   const cfg: MigratorConfig = DRC_CONFIG;
   assert.equal(cfg.currency, "CDF");
   assert.equal(cfg.fractionDigits, 0);
   assert.equal(cfg.countryCallingCode, "243");
+  assert.equal(cfg.fields.merchant.name, "f_name");
+  assert.equal(cfg.fields.branch.merchantId, "vendor_id");
 });

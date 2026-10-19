@@ -88,9 +88,16 @@ async function main(): Promise<void> {
     return (await my.query(`SELECT * FROM \`${table}\``))[0];
   };
 
+  // Branches (StackFood restaurants) carry only module_id; LEFT JOIN modules so each row also has the
+  // module_type the store-type mapping reads. Table/column names here are constants, not user data.
+  const branchRows = async (): Promise<Row[]> =>
+    (await my.query(
+      "SELECT r.*, m.module_type AS module_type FROM `restaurants` r LEFT JOIN `modules` m ON m.id = r.module_id",
+    ))[0];
+
   const users = mapAll(await rowsOf(SOURCE_TABLES.users), (r) => mapUser(r, cfg));
   const merchants = mapAll(await rowsOf(SOURCE_TABLES.merchants), (r) => mapMerchant(r, cfg));
-  const branches = mapAll(await rowsOf(SOURCE_TABLES.branches), (r) => mapBranch(r, cfg));
+  const branches = mapAll(await branchRows(), (r) => mapBranch(r, cfg));
   const items = mapAll(await rowsOf(SOURCE_TABLES.items), (r) => mapItem(r, cfg));
   const orders = mapAll(await rowsOf(SOURCE_TABLES.orders), (r) => mapOrder(r, cfg));
   await my.end();
