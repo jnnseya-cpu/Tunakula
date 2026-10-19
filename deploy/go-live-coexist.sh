@@ -100,38 +100,65 @@ EOF
 else
   MARKER="# >>> tunakula (managed by go-live-coexist.sh) >>>"
   END_MARKER="# <<< tunakula <<<"
-  if grep -qF "$MARKER" "$CADDYFILE"; then
-    ok "Tunakula blocks already present in $CADDYFILE — leaving them as is."
+
+  # Each subdomain and the container it must reach. We verify EACH route independently and add only the
+  # ones that are missing — so a re-run repairs a partial earlier setup (e.g. the common case where the API
+  # and customer site got wired but admin did not, leaving admin.<domain> showing some other/old page).
+  declare -A UPSTREAM=( ["$API_DOMAIN"]="tunakula-api:8080" ["$CUSTOMER_DOMAIN"]="tunakula-web:80" ["$ADMIN_DOMAIN"]="tunakula-admin:80" )
+
+  # Is this exact domain already used as a site address anywhere in the Caddyfile? (Start of a line, optionally
+  # with other addresses, before the opening brace — Caddy's "site address {" form.)
+  domain_routed() { grep -Eq "(^|[[:space:],])$(printf '%s' "$1" | sed 's/[.]/\\./g')([[:space:],{]|$)" "$CADDYFILE"; }
+  # Does OUR managed block already carry a route for this domain?
+  in_managed_block() { sed -n "/$MARKER/,/$END_MARKER/p" "$CADDYFILE" 2>/dev/null | grep -Eq "(^|[[:space:],])$(printf '%s' "$1" | sed 's/[.]/\\./g')([[:space:],{]|$)"; }
+
+  MISSING=()        # domains with no route at all → we will add them
+  FOREIGN=()        # domains routed OUTSIDE our block → a different/old block owns them; we must not duplicate
+  for d in "$API_DOMAIN" "$CUSTOMER_DOMAIN" "$ADMIN_DOMAIN"; do
+    if in_managed_block "$d"; then
+      :                                   # already ours — fine
+    elif domain_routed "$d"; then
+      FOREIGN+=("$d")
+    else
+      MISSING+=("$d")
+    fi
+  done
+
+  if [[ ${#FOREIGN[@]} -gt 0 ]]; then
+    warn "These domains are already routed by ANOTHER block in $CADDYFILE (an old/leftover site):"
+    for d in "${FOREIGN[@]}"; do warn "    $d  → should be  reverse_proxy ${UPSTREAM[$d]}"; done
+    warn "That foreign block is why $d may show an old/placeholder page instead of Tunakula."
+    warn "Remove those domains' existing block(s) from $CADDYFILE, then re-run this script so it can wire them."
+  fi
+
+  if [[ ${#MISSING[@]} -eq 0 ]]; then
+    [[ ${#FOREIGN[@]} -eq 0 ]] && ok "All three Tunakula routes are already present in $CADDYFILE."
   else
     BACKUP="$CADDYFILE.bak.$(date +%Y%m%d%H%M%S)"
     cp "$CADDYFILE" "$BACKUP"
     ok "Backed up Caddyfile → $BACKUP"
-    cat >> "$CADDYFILE" <<EOF
-
-$MARKER
-$API_DOMAIN {
-    reverse_proxy tunakula-api:8080
+    # Append the missing routes inside the managed markers (create the markers on first use).
+    grep -qF "$MARKER" "$CADDYFILE" || printf '\n%s\n%s\n' "$MARKER" "$END_MARKER" >> "$CADDYFILE"
+    BLOCKS=""
+    for d in "${MISSING[@]}"; do BLOCKS+="$d {
+    reverse_proxy ${UPSTREAM[$d]}
 }
-$CUSTOMER_DOMAIN {
-    reverse_proxy tunakula-web:80
-}
-$ADMIN_DOMAIN {
-    reverse_proxy tunakula-admin:80
-}
-$END_MARKER
-EOF
+"; done
+    # Insert the new blocks just before the end marker (portable awk, no in-place sed dependency).
+    awk -v end="$END_MARKER" -v blocks="$BLOCKS" '$0==end && !done {printf "%s", blocks; done=1} {print}' "$CADDYFILE" > "$CADDYFILE.tmp" && mv "$CADDYFILE.tmp" "$CADDYFILE"
+    say "Adding ${#MISSING[@]} missing route(s): ${MISSING[*]}"
     # Validate inside the running Caddy container; revert on failure so the box is never left broken.
     if docker exec "$CADDY_CONTAINER" caddy validate --config /etc/caddy/Caddyfile >/dev/null 2>&1 \
        || docker exec "$CADDY_CONTAINER" caddy validate --config "$CADDYFILE" >/dev/null 2>&1; then
       docker exec "$CADDY_CONTAINER" caddy reload --config /etc/caddy/Caddyfile 2>/dev/null \
         || docker exec "$CADDY_CONTAINER" caddy reload --config "$CADDYFILE" 2>/dev/null \
         || docker restart "$CADDY_CONTAINER" >/dev/null
-      ok "Caddy reloaded with the Tunakula sites."
+      ok "Caddy reloaded with the Tunakula route(s)."
     else
       warn "Caddy rejected the new config — reverting and leaving your sites untouched."
       cp "$BACKUP" "$CADDYFILE"
-      warn "The three blocks printed below need adjusting for your Caddyfile's format:"
-      sed -n "/$MARKER/,/$END_MARKER/p" "$BACKUP" 2>/dev/null || true
+      warn "The route(s) below need adjusting for your Caddyfile's format:"
+      printf '%s' "$BLOCKS"
       exit 1
     fi
   fi
@@ -142,6 +169,12 @@ say "Create your first Super Admin (sign in with this phone number)."
 PHONE=$(ask "  Admin phone in full international form (e.g. +243810000000)")
 NAME=$(ask  "  Admin display name" "Launch Owner")
 $COMPOSE exec -T api npm run bootstrap-admin -w @tunakula/api -- "$PHONE" "$NAME"
+
+# 6b. Publish the DRC market so the storefront serves a real market instead of falling back to its built-in
+# preview. Idempotent (skips if already published) and seeds NO sample data — only the market itself. The
+# owner completes the real company/legal/payment/zone details in the admin Markets console afterwards.
+say "Publishing the DRC (CD) market…"
+$COMPOSE exec -T api npm run publish-market -w @tunakula/api -- CD || warn "Market publish skipped/failed — publish it from the admin Markets console instead."
 
 # 7. Done --------------------------------------------------------------------
 cat <<EOF
