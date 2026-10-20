@@ -96,6 +96,7 @@ export function PayScreen() {
         ["M-Pesa", "+243 81 ••• 4410", true],
         ["Orange Money", "", false],
         ["Airtel Money", "", false],
+        ["Afrimoney", "", false],
       ].map(([name, sub, on]) => (
         <div className="card" key={name as string} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "11px 14px", borderColor: on ? "#141b33" : undefined }}>
           <div>

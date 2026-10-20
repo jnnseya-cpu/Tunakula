@@ -32,7 +32,7 @@ type Pay = "MOBILE_MONEY_PUSH" | "CARD" | "QR" | "CASH_ON_DELIVERY" | "WALLET";
 const LINE_LABEL: Record<string, string> = { GOODS: "Food", SERVICE_CHARGE: "Service charge (10%)", DELIVERY_FEE: "Delivery", DELIVERY_PROMOTION: "Delivery offer", TIP: "Tip for your rider" };
 const PAY_LABEL: Record<string, [string, string]> = {
   WALLET: ["Wallet", "Pay instantly from your Tunakula balance"],
-  MOBILE_MONEY_PUSH: ["Mobile money", "M-Pesa, Orange Money or Airtel Money — approve on your phone"],
+  MOBILE_MONEY_PUSH: ["Mobile money", "M-Pesa, Orange Money, Airtel Money or Afrimoney — approve on your phone"],
   CARD: ["Card", "Visa or Mastercard"],
   QR: ["QR code", "Scan with your mobile-money or bank app"],
   CASH_ON_DELIVERY: ["Cash on delivery", "Pay the rider in francs or dollars"],

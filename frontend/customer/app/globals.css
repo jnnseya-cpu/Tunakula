@@ -1629,3 +1629,16 @@ section.tight { padding: 44px 0; }
 .r-coach-metric { font-weight: 850; font-size: 16px; font-variant-numeric: tabular-nums; color: #fff; }
 .r-coach-card.tone-action .r-coach-metric { color: #35d08a; }
 @media (max-width: 420px) { .r-coach-summary { grid-template-columns: 1fr; } }
+
+/* Merchant self-serve signup wizard (/restaurants/apply) */
+.apply-steps { display: flex; flex-wrap: wrap; gap: 6px 14px; list-style: none; padding: 0; margin: 0 0 18px; }
+.apply-steps li { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--muted); }
+.apply-steps .apply-num { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid var(--rule); font-size: 12px; font-weight: 700; }
+.apply-steps li.now { color: var(--ink); font-weight: 650; }
+.apply-steps li.now .apply-num { border-color: var(--orange); color: var(--orange-text); }
+.apply-steps li.done .apply-num { background: var(--orange); border-color: var(--orange); color: #fff; }
+.apply-dishes { list-style: none; padding: 0; margin: 4px 0 10px; display: grid; gap: 6px; }
+.apply-dishes li { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 9px 12px; border: 1px solid var(--rule); border-radius: var(--radius); background: var(--card); }
+.apply-dish-row { display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 8px; align-items: center; margin-bottom: 12px; }
+.apply-dish-row input { min-width: 0; padding: 10px 12px; border: 1px solid var(--rule); border-radius: var(--radius); background: var(--card); color: var(--ink); font: inherit; }
+@media (max-width: 480px) { .apply-dish-row { grid-template-columns: 1fr 1fr; } }

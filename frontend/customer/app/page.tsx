@@ -86,7 +86,7 @@ export default function Home() {
           />
           <div className="trust-row">
             <span><b>Counter prices.</b> Restaurants pay 0% commission.</span>
-            <span><b>M-Pesa, Orange Money, Airtel Money</b> or card.</span>
+            <span><b>M-Pesa, Orange Money, Airtel Money, Afrimoney</b> or card.</span>
             <span><b>A code at your door.</b> Your food reaches you, not a neighbour.</span>
           </div>
           <div className="cta-row" style={{ marginTop: 22 }}>
@@ -114,7 +114,7 @@ export default function Home() {
             <h2 className="display">Order in three taps. <em>Follow it to your gate.</em></h2>
             <ol className="steps3">
               <li><b>Choose your food.</b> Every dish at the kitchen&rsquo;s counter price, with the service charge as its own line.</li>
-              <li><b>Pay on your phone.</b> M-Pesa, Orange Money, Airtel Money or card, in francs or dollars, with the total in front of you before you approve.</li>
+              <li><b>Pay on your phone.</b> M-Pesa, Orange Money, Airtel Money, Afrimoney or card, in francs or dollars, with the total in front of you before you approve.</li>
               <li><b>Meet your rider.</b> Watch them on the map. Give your four-digit code at the door, and only then is it delivered.</li>
             </ol>
             <div className="cta-row"><Link className="btn accent" href="/order/">Start an order</Link><Link className="link" href="/how-it-works/">How it works</Link></div>

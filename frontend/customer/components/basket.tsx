@@ -135,7 +135,7 @@ function Summary() {
       <button type="button" className="btn accent b-go" onClick={() => b.setCheckout(true)}>
         Go to checkout
       </button>
-      <p className="b-note">Same prices as at the counter. Pay with M-Pesa, Orange Money, Airtel Money or card, in francs or dollars.</p>
+      <p className="b-note">Same prices as at the counter. Pay with M-Pesa, Orange Money, Airtel Money, Afrimoney or card, in francs or dollars.</p>
     </>
   );
 }

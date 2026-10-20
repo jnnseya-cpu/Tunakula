@@ -19,7 +19,7 @@ export default function Riders() {
             <p className="eyebrow"><b>Moto, bicycle, car or on foot</b></p>
             <h1 className="display">Paid today. <em>Into your own wallet.</em></h1>
             <p className="lede">
-              You keep 70% of every delivery fee and all of your tips, sent to M-Pesa, Orange Money or Airtel Money the same
+              You keep 70% of every delivery fee and all of your tips, sent to M-Pesa, Orange Money, Airtel Money or Afrimoney the same
               day. You see what a job pays before you take it — and turning one down never costs you the next.
             </p>
             <div className="cta-row" style={{ marginTop: 34 }}>

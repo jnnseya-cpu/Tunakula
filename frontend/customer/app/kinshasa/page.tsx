@@ -85,7 +85,7 @@ export default function Kinshasa() {
           </div>
           <ul className="ticks">
             <li>See every price in Congolese francs or US dollars, and switch at any time.</li>
-            <li>Pay with M-Pesa, Orange Money, Airtel Money or a card. The rate is shown and held while you pay.</li>
+            <li>Pay with M-Pesa, Orange Money, Airtel Money, Afrimoney or a card. The rate is shown and held while you pay.</li>
             <li>Amounts in francs are rounded to the nearest 100 FC, so the total is one you can actually pay.</li>
             <li>Keep a wallet in each currency. We never convert your balance without asking.</li>
           </ul>

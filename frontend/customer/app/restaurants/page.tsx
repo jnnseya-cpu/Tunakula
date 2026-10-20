@@ -28,8 +28,8 @@ export default function Restaurants() {
               visible service charge instead, so you never have to raise your menu to pay us.
             </p>
             <div className="cta-row" style={{ marginTop: 34 }}>
-              <Link className="btn accent" href="/restaurants/">Join in 48 hours</Link>
-              <Link className="btn light" href="/restaurants/">See the till</Link>
+              <Link className="btn accent" href="/restaurants/apply/">Join in 48 hours</Link>
+              <Link className="btn light" href="/restaurants/apply/">Start now</Link>
             </div>
           </div>
           <div className="stage" style={{ height: 600 }}>
