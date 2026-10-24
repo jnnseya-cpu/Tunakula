@@ -316,8 +316,8 @@ export class AdminService {
       let auditStats: unknown = null;
       if (this.#can(principal, "audit:read", marketWide, profile)) {
         const rows = await sql.query<{ day: string; action: string; n: string }>(
-          `SELECT (at AT TIME ZONE $3)::date::text AS day, action, count(*) AS n FROM identity.audit_log WHERE at >= $1 AND at < $2 GROUP BY 1, 2 ORDER BY 1`,
-          [start, end, tz],
+          `SELECT (at AT TIME ZONE $3)::date::text AS day, action, count(*) AS n FROM identity.audit_log WHERE at >= $1 AND at < $2 AND country_iso2 = $4 GROUP BY 1, 2 ORDER BY 1`,
+          [start, end, tz, country],
         );
         auditStats = { by_day: rows.map((r) => ({ day: r.day, action: r.action, count: Number(r.n) })), chain: await verifyAuditChain(sql) };
       }
@@ -638,8 +638,8 @@ export class AdminService {
     if (!this.#can(principal, "audit:read", { type: "scope", country }, profile)) throw forbidden("Audit access needs audit:read");
     return this.db.tx({}, async (sql) => {
       const rows = await sql.query<Record<string, unknown>>(
-        "SELECT id::text, at, actor, action, target, country_iso2, detail, hash FROM identity.audit_log ORDER BY audit_log.id DESC LIMIT $1",
-        [Math.min(Math.max(limit, 1), 500)],
+        "SELECT id::text, at, actor, action, target, country_iso2, detail, hash FROM identity.audit_log WHERE country_iso2 = $2 ORDER BY audit_log.id DESC LIMIT $1",
+        [Math.min(Math.max(limit, 1), 500), country],
       );
       return { chain: await verifyAuditChain(sql), data: rows };
     });

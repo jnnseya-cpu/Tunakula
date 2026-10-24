@@ -170,11 +170,13 @@ PHONE=$(ask "  Admin phone in full international form (e.g. +243810000000)")
 NAME=$(ask  "  Admin display name" "Launch Owner")
 $COMPOSE exec -T api npm run bootstrap-admin -w @tunakula/api -- "$PHONE" "$NAME"
 
-# 6b. Publish the DRC market so the storefront serves a real market instead of falling back to its built-in
-# preview. Idempotent (skips if already published) and seeds NO sample data — only the market itself. The
-# owner completes the real company/legal/payment/zone details in the admin Markets console afterwards.
-say "Publishing the DRC (CD) market…"
-$COMPOSE exec -T api npm run publish-market -w @tunakula/api -- CD || warn "Market publish skipped/failed — publish it from the admin Markets console instead."
+# 6b. Publish the DRC market as a PILOT PLACEHOLDER so the storefront serves a market instead of falling back to
+# its built-in preview. Idempotent (skips if already published) and seeds NO sample data — only the market itself.
+# --starter acknowledges this is a placeholder with machine-signed readiness; the owner MUST complete the real
+# company/legal/payment/zone details, re-sign readiness, and move the market to LIVE in admin → Markets before
+# taking real money.
+say "Publishing the DRC (CD) market as a PILOT placeholder…"
+$COMPOSE exec -T api npm run publish-market -w @tunakula/api -- CD --starter || warn "Market publish skipped/failed — publish it from the admin Markets console instead."
 
 # 7. Done --------------------------------------------------------------------
 cat <<EOF

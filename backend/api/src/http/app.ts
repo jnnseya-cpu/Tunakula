@@ -77,6 +77,10 @@ export interface ApiDeps {
   readonly trustProxy?: boolean;
   /** Opt-in per-IP rate limit (requests per minute per instance). Omit or 0 to disable. */
   readonly rateLimit?: { readonly rpm: number };
+  /** Per-IP cap on sign-in-code requests (POST /v1/auth/otp/request), independent of `rateLimit`, to blunt
+   *  SMS-pumping / denial-of-wallet: requests per IP per 10 minutes. Omit or 0 to disable (default off; wired
+   *  on in production — see main.ts). The per-phone cap in AuthService does not stop a cross-number flood. */
+  readonly authOtpPerIp?: number;
   /** Opt-in Prometheus metrics at GET /metrics. Provide a token to require `Authorization: Bearer <token>`. */
   readonly metrics?: { readonly token?: string };
   /** Channel adapters for notifications. Defaults to the sandbox sender (records, never sends). */
@@ -224,6 +228,36 @@ export async function createApi(deps: ApiDeps): Promise<NestFastifyApplication> 
       if (recent.length >= rpm) {
         void reply.code(429).header("retry-after", "60").type("application/problem+json").send(
           JSON.stringify({ type: "https://www.tunakula.com/problems/rate-limited", title: "RATE_LIMITED", status: 429, detail: "Too many requests; slow down.", code: "RATE_LIMITED" }),
+        );
+        return;
+      }
+      recent.push(now);
+      hits.set(ip, recent);
+      done();
+    });
+    const prune = setInterval(() => {
+      const now = Date.now();
+      for (const [ip, arr] of hits) { const keep = arr.filter((t) => now - t < windowMs); if (keep.length) hits.set(ip, keep); else hits.delete(ip); }
+    }, windowMs);
+    prune.unref();
+  }
+
+  // Opt-in per-IP cap on sign-in-code requests, independent of the general rate limit above. The per-phone cap
+  // in AuthService stops one number being hammered, but not a single device cycling through many numbers to pump
+  // SMS (denial-of-wallet). This counts POST /v1/auth/otp/request per IP over a 10-minute window. Pair with a
+  // shared edge limiter for a fleet; enabled only when a positive count is given.
+  if (deps.authOtpPerIp && deps.authOtpPerIp > 0) {
+    const cap = deps.authOtpPerIp;
+    const windowMs = 10 * 60_000;
+    const hits = new Map<string, number[]>();
+    app.getHttpAdapter().getInstance().addHook("onRequest", (req, reply, done) => {
+      if (req.method !== "POST" || req.url.split("?")[0] !== "/v1/auth/otp/request") return done();
+      const now = Date.now();
+      const ip = req.ip || "unknown";
+      const recent = (hits.get(ip) ?? []).filter((t) => now - t < windowMs);
+      if (recent.length >= cap) {
+        void reply.code(429).header("retry-after", "600").type("application/problem+json").send(
+          JSON.stringify({ type: "https://www.tunakula.com/problems/rate-limited", title: "RATE_LIMITED", status: 429, detail: "Too many sign-in codes from this device; try again later.", code: "RATE_LIMITED" }),
         );
         return;
       }

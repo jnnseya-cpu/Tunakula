@@ -208,6 +208,7 @@ const app = await createApi({
   corsOrigins: (env("TUNAKULA_CONSOLE_ORIGINS") ?? "").split(",").map((o) => o.trim()).filter(Boolean),
   ...(env("TUNAKULA_TRUST_PROXY") === "1" ? { trustProxy: true } : {}),
   ...(Number(env("TUNAKULA_RATE_LIMIT_RPM") ?? 0) > 0 ? { rateLimit: { rpm: Number(env("TUNAKULA_RATE_LIMIT_RPM")) } } : {}),
+  authOtpPerIp: Number(env("TUNAKULA_OTP_PER_IP") ?? 20),
   ...(env("TUNAKULA_METRICS") === "1" ? { metrics: { ...(env("TUNAKULA_METRICS_TOKEN") ? { token: required("TUNAKULA_METRICS_TOKEN") } : {}) } } : {}),
   onError: (e) => log.error("unhandled", { error: e }),
 });
