@@ -1,0 +1,108 @@
+# Manual-dispatch StackFood → Tunakula DATA PROMOTION, run on the VPS inside the already-running `api` container
+# (the only place the production Postgres is reachable — it lives on the internal compose network with no host
+# port). This runs the SAME migrator you ran locally, through the app's persistence layer under FORCE RLS.
+#
+# Why the container, not the host or a GitHub runner: the host checkout has no node_modules and host Node may be
+# the wrong major; a GitHub runner cannot reach the compose-internal Postgres at all. The `api` image, however,
+# is built with `npm ci --include=dev` scoped to @tunakula/api, so it already carries tsx + mysql2 + the migrator
+# source, with DATABASE_OWNER_URL=…@db:5432/tunakula already in its environment.
+#
+# Prerequisites (one-time): the coexist stack is up (`deploy/go-live-coexist.sh`), the VPS_* secrets and
+# VPS_APP_DIR are set (same ones Deploy web uses), and — only for a staging run — a MySQL holding the StackFood
+# dump is reachable from the compose network, its URL stored in the STACKFOOD_MYSQL_URL secret.
+#
+# Inputs let you do a dry run, promote, or promote+publish; `stage_first` loads the migration.* staging schema
+# from StackFood first. Applying anything requires typing the confirm phrase, so a stray click cannot write.
+name: Promote data
+
+on:
+  workflow_dispatch:
+    inputs:
+      country:
+        description: "Market ISO-2 (the published market to promote into)"
+        type: string
+        default: "CD"
+        required: true
+      mode:
+        description: "What to do in the live tables"
+        type: choice
+        options: [dry-run, promote, promote-and-publish]
+        default: dry-run
+        required: true
+      stage_first:
+        description: "Re-stage from StackFood first (needs STACKFOOD_MYSQL_URL secret)"
+        type: boolean
+        default: false
+      confirm:
+        description: 'Type PROMOTE to allow writes (ignored for dry-run)'
+        type: string
+        default: ""
+
+concurrency:
+  group: promote-data
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  promote:
+    name: Promote on VPS
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    steps:
+      - name: Guard — writes require the confirm phrase
+        if: ${{ inputs.mode != 'dry-run' && inputs.confirm != 'PROMOTE' }}
+        run: |
+          echo "::error::mode '${{ inputs.mode }}' writes to the live database but the confirm phrase was not 'PROMOTE'. Re-run and type PROMOTE."
+          exit 1
+
+      - name: Run the migrator inside the api container
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          envs: APP_DIR,COUNTRY,MODE,STAGE_FIRST,STACKFOOD_MYSQL_URL
+          script_stop: true
+          script: |
+            set -euo pipefail
+            APP_DIR="${APP_DIR:-/root/Tunakula}"
+            cd "$APP_DIR"
+            C="docker compose --env-file deploy/.env.staging -f deploy/docker-compose.coexist.yml"
+            # Run from the api service's workdir (/app/backend/api); tsx + mysql2 + DATABASE_OWNER_URL are already there.
+            RUN="$C exec -T api node --import tsx"
+
+            if [ "$STAGE_FIRST" = "true" ]; then
+              if [ -z "${STACKFOOD_MYSQL_URL:-}" ]; then echo "STAGE_FIRST needs the STACKFOOD_MYSQL_URL secret"; exit 1; fi
+              echo "== Staging from StackFood (migration.* schema) =="
+              $C exec -T -e STACKFOOD_MYSQL_URL="$STACKFOOD_MYSQL_URL" api node --import tsx src/migrator/run.ts --apply
+            fi
+
+            case "$MODE" in
+              dry-run)             ARGS="$COUNTRY" ;;
+              promote)             ARGS="$COUNTRY --apply" ;;
+              promote-and-publish) ARGS="$COUNTRY --apply --publish" ;;
+              *) echo "unknown mode $MODE"; exit 1 ;;
+            esac
+            echo "== Promotion: promote.ts $ARGS =="
+            $RUN src/migrator/promote.ts $ARGS
+
+            echo "== Live catalogue after this run =="
+            # Best-effort verification read; never fail the job on a psql quirk when the promotion itself succeeded.
+            $C exec -T db psql -U tunakula -d tunakula -c "SET app.country='$COUNTRY';
+              SELECT
+                (SELECT count(*) FROM catalogue.restaurant_group) AS groups,
+                (SELECT count(*) FROM catalogue.branch)           AS branches,
+                (SELECT count(*) FROM catalogue.branch WHERE published_at IS NOT NULL) AS published,
+                (SELECT count(*) FROM catalogue.menu_item)        AS items,
+                (SELECT count(*) FROM catalogue.menu_item WHERE jsonb_array_length(addons)>0)     AS with_addons,
+                (SELECT count(*) FROM catalogue.menu_item WHERE jsonb_array_length(variations)>0) AS with_variations;" || echo "(verification read skipped — promotion above already succeeded)"
+        env:
+          APP_DIR: ${{ vars.VPS_APP_DIR }}
+          COUNTRY: ${{ inputs.country }}
+          MODE: ${{ inputs.mode }}
+          STAGE_FIRST: ${{ inputs.stage_first }}
+          STACKFOOD_MYSQL_URL: ${{ secrets.STACKFOOD_MYSQL_URL }}

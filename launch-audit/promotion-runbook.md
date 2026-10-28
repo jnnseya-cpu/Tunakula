@@ -5,28 +5,41 @@ Promote the StackFood data into the **live** Tunakula tables. This is the second
 Proven end-to-end on the real export (16 merchants, 16 branches, 1,912 dishes with 10,632 add-ons / 2,887 variation options) and covered by `backend/api/test-http/migrator-promote.test.ts`.
 
 ## Prerequisites
-- The production Postgres is reachable and you have its **owner** URL (the role migrations use; `NOBYPASSRLS`, so the per-country RLS still gates every write).
+- The coexist stack is up on the VPS (`deploy/go-live-coexist.sh`), so the `api` and `db` containers are running.
 - The target market is **published** (admin → Markets, or the `publish-market` CLI). Promotion refuses to run into an unpublished market.
-- A fresh StackFood dump loaded into a MySQL the migrator can read (or the live StackFood MySQL).
-- `npm i -D mysql2` in `backend/api` (already in devDependencies).
+- For staging only: a MySQL holding the StackFood dump, reachable from the compose network.
 
-## One run, three commands
+## IMPORTANT — run it inside the container, not on the host
+The production Postgres runs **only on the internal compose network with no host port**, so neither the VPS host shell nor a GitHub runner can reach it. And the host checkout has no `node_modules`. So `npx tsx …` on the host fails (that is exactly the `ERR_MODULE_NOT_FOUND` / wrong-directory error you hit).
+
+Run the migrator **inside the already-running `api` container**, which the image builds with `tsx` + `mysql2` + the migrator source and with `DATABASE_OWNER_URL=…@db:5432/tunakula` already set. From the Tunakula repo checkout on the VPS (your deploy `APP_DIR`, e.g. `/root/Tunakula` — NOT `/srv/construx/app`):
+
 ```bash
-cd backend/api
-export STACKFOOD_MYSQL_URL="mysql://readonly:***@<stackfood-host>:3306/<stackfood-db>"
-export DATABASE_OWNER_URL="postgres://<owner>:***@<pg-host>:5432/<tunakula-db>"
+cd "$APP_DIR"                                  # the Tunakula monorepo checkout (has deploy/)
+C="docker compose --env-file deploy/.env.staging -f deploy/docker-compose.coexist.yml"
 
-# 1. Stage + reconcile (writes only to the reviewable migration.* schema)
-npx tsx src/migrator/run.ts --apply          # expect: RECONCILE OK, 0 skipped
+# 1. Stage + reconcile (only needed to (re)load migration.* from StackFood).
+#    Point STACKFOOD_MYSQL_URL at a MySQL on the compose network holding the dump.
+$C exec -T -e STACKFOOD_MYSQL_URL="mysql://mig:***@<mysql-host>:3306/stackfood" \
+    api node --import tsx src/migrator/run.ts --apply      # expect: RECONCILE OK
 
-# 2. Dry-run the promotion (writes nothing; shows exactly what would be created)
-npx tsx src/migrator/promote.ts CD           # review the counts
+# 2. Dry-run the promotion (writes nothing).
+$C exec -T api node --import tsx src/migrator/promote.ts CD
 
-# 3. Promote into the live tables (branches stay unpublished unless you add --publish)
-npx tsx src/migrator/promote.ts CD --apply            # import, leave unpublished for review
-# …review in the admin console, then either publish per-branch there, or:
-npx tsx src/migrator/promote.ts CD --apply --publish  # publish every branch that has ≥1 available dish
+# 3. Promote into the live tables (branches stay unpublished unless you add --publish).
+$C exec -T api node --import tsx src/migrator/promote.ts CD --apply
+# …review in the admin console, then publish there, or publish all at once:
+$C exec -T api node --import tsx src/migrator/promote.ts CD --apply --publish
 ```
+
+## Or: the one-button GitHub Actions workflow (no SSH)
+`.github/workflows/promote-data.yml` → Actions tab → **Promote data** → **Run workflow**. It SSHes to the VPS and runs exactly the container commands above, then prints the live catalogue counts. Inputs:
+- **country** — the published market (default `CD`).
+- **mode** — `dry-run` (default, safe), `promote`, or `promote-and-publish`.
+- **stage_first** — also re-stage from StackFood first (needs the `STACKFOOD_MYSQL_URL` repo secret).
+- **confirm** — must be typed as `PROMOTE` for any write mode, so a stray click can't touch live data.
+
+It reuses the same `VPS_*` secrets and `VPS_APP_DIR` variable as the Deploy web workflow.
 
 ## What it does / does not do
 - **Creates:** restaurant groups (merchants), an owner account + `RESTAURANT_OWNER` binding per vendor that has a phone, branches (store type, commune, lat/lng), and menu items with their add-ons and variations.
