@@ -88,12 +88,25 @@ async function main(): Promise<void> {
     return (await my.query(`SELECT * FROM \`${table}\``))[0];
   };
 
-  // Branches (StackFood restaurants) carry only module_id; LEFT JOIN modules so each row also has the
-  // module_type the store-type mapping reads. Table/column names here are constants, not user data.
-  const branchRows = async (): Promise<Row[]> =>
-    (await my.query(
-      "SELECT r.*, m.module_type AS module_type FROM `restaurants` r LEFT JOIN `modules` m ON m.id = r.module_id",
-    ))[0];
+  // Branches (StackFood restaurants). Multi-module installs tag each store via restaurants.module_id →
+  // modules.module_type; older single-module (food-only) installs have neither the column nor the table. We
+  // detect that and adapt the query, so the migrator reads a live source DB of either shape without needing
+  // the schema altered. Store type then falls back to RESTAURANT. Names here are constants, not user data.
+  const columnExists = async (table: string, column: string): Promise<boolean> =>
+    Number((await my.query(
+      `SELECT COUNT(*) AS n FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = '${table}' AND column_name = '${column}'`,
+    ))[0][0]?.n ?? 0) > 0;
+  const tableExists = async (table: string): Promise<boolean> =>
+    Number((await my.query(
+      `SELECT COUNT(*) AS n FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = '${table}'`,
+    ))[0][0]?.n ?? 0) > 0;
+  const branchRows = async (): Promise<Row[]> => {
+    const canJoinModules = (await columnExists("restaurants", "module_id")) && (await tableExists("modules"));
+    const sql = canJoinModules
+      ? "SELECT r.*, m.module_type AS module_type FROM `restaurants` r LEFT JOIN `modules` m ON m.id = r.module_id"
+      : "SELECT r.*, NULL AS module_type FROM `restaurants` r";
+    return (await my.query(sql))[0];
+  };
 
   // The add-ons catalogue: id → {name, price}. A food's `add_ons` column lists ids into this, which
   // mapItem resolves. A dump without the table (older install) just yields no add-ons, never an error.
