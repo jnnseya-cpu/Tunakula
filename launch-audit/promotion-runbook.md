@@ -7,7 +7,22 @@ Proven end-to-end on the real export (16 merchants, 16 branches, 1,912 dishes wi
 ## Prerequisites
 - The coexist stack is up on the VPS (`deploy/go-live-coexist.sh`), so the `api` and `db` containers are running.
 - The target market is **published** (admin → Markets, or the `publish-market` CLI). Promotion refuses to run into an unpublished market.
-- For staging only: a MySQL holding the StackFood dump, reachable from the compose network.
+- For staging: either a StackFood `.sql` dump on the VPS (use the helper below — no MySQL to wire), or an external StackFood MySQL reachable from the compose network.
+
+## First: find the deployment (if `$APP_DIR` / `deploy/.env.staging` is missing)
+If `cd "$APP_DIR"` lands nowhere or there's no `deploy/.env.staging`, the Tunakula stack isn't where you're standing. Locate it:
+```bash
+docker compose ls                      # lists compose projects + their config file paths
+docker ps --format '{{.Names}}\t{{.Image}}' | grep -i -E 'tunakula|api|postgres'   # is the stack even up?
+```
+`docker compose ls` prints each project's config file — the Tunakula one points at a `deploy/docker-compose.coexist.yml`; its directory is your `APP_DIR`. `cd` there (it must contain `deploy/.env.staging`) before running anything below. If no Tunakula project/containers show, the coexist stack was never brought up — run `deploy/go-live-coexist.sh` first.
+
+## Stage straight from a .sql dump (no MySQL to wire)
+Copy the StackFood dump onto the VPS, then from the Tunakula checkout:
+```bash
+bash deploy/stage-from-dump.sh /path/to/stackfood.sql
+```
+It spins up a throwaway MariaDB on the compose network, loads the dump, applies the older-install compatibility shims, stages into `migration.*` via the `api` container, and removes the MariaDB afterwards (nothing lingers). Then promote with the commands below. (The **Promote data** workflow does this for you when you set `stage_first` + `dump_path`.)
 
 ## IMPORTANT — run it inside the container, not on the host
 The production Postgres runs **only on the internal compose network with no host port**, so neither the VPS host shell nor a GitHub runner can reach it. And the host checkout has no `node_modules`. So `npx tsx …` on the host fails (that is exactly the `ERR_MODULE_NOT_FOUND` / wrong-directory error you hit).

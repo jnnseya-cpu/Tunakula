@@ -59,6 +59,25 @@ services:
       edge:
         aliases: [tunakula-api]
 
+  # One-shot StackFood MySQL for staging a .sql dump, on the same internal network as `api` so the migrator can
+  # reach it by name. Gated behind the "migrate" profile, so a normal `up -d` NEVER starts it; deploy/stage-from-dump.sh
+  # brings it up, loads the dump, stages, then removes it (anonymous data volume, so nothing lingers on disk).
+  stackfood-mysql:
+    profiles: ["migrate"]
+    image: mariadb:10.11
+    restart: "no"
+    environment:
+      MARIADB_ROOT_PASSWORD: ${STACKFOOD_DB_PASSWORD:-stackfood}
+      MARIADB_DATABASE: stackfood
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    networks:
+      default:
+        aliases: [stackfood-mysql]
+
   customer-web:
     build:
       context: ..

@@ -30,9 +30,13 @@ on:
         default: dry-run
         required: true
       stage_first:
-        description: "Re-stage from StackFood first (needs STACKFOOD_MYSQL_URL secret)"
+        description: "Re-stage from StackFood first (via dump_path, else STACKFOOD_MYSQL_URL secret)"
         type: boolean
         default: false
+      dump_path:
+        description: "Path on the VPS to a StackFood .sql dump (used by stage_first; spins up a throwaway MySQL)"
+        type: string
+        default: ""
       confirm:
         description: 'Type PROMOTE to allow writes (ignored for dry-run)'
         type: string
@@ -65,7 +69,7 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_PORT || 22 }}
-          envs: APP_DIR,COUNTRY,MODE,STAGE_FIRST,STACKFOOD_MYSQL_URL
+          envs: APP_DIR,COUNTRY,MODE,STAGE_FIRST,DUMP_PATH,STACKFOOD_MYSQL_URL
           script_stop: true
           script: |
             set -euo pipefail
@@ -76,9 +80,16 @@ jobs:
             RUN="$C exec -T api node --import tsx"
 
             if [ "$STAGE_FIRST" = "true" ]; then
-              if [ -z "${STACKFOOD_MYSQL_URL:-}" ]; then echo "STAGE_FIRST needs the STACKFOOD_MYSQL_URL secret"; exit 1; fi
-              echo "== Staging from StackFood (migration.* schema) =="
-              $C exec -T -e STACKFOOD_MYSQL_URL="$STACKFOOD_MYSQL_URL" api node --import tsx src/migrator/run.ts --apply
+              if [ -n "${DUMP_PATH:-}" ]; then
+                echo "== Staging from dump $DUMP_PATH (throwaway MySQL) =="
+                [ -f "$DUMP_PATH" ] || { echo "dump not found on the VPS: $DUMP_PATH"; exit 1; }
+                COUNTRY="$COUNTRY" bash deploy/stage-from-dump.sh "$DUMP_PATH"
+              elif [ -n "${STACKFOOD_MYSQL_URL:-}" ]; then
+                echo "== Staging from external StackFood MySQL =="
+                $C exec -T -e STACKFOOD_MYSQL_URL="$STACKFOOD_MYSQL_URL" api node --import tsx src/migrator/run.ts --apply
+              else
+                echo "stage_first needs either the dump_path input or the STACKFOOD_MYSQL_URL secret"; exit 1
+              fi
             fi
 
             case "$MODE" in
@@ -105,4 +116,5 @@ jobs:
           COUNTRY: ${{ inputs.country }}
           MODE: ${{ inputs.mode }}
           STAGE_FIRST: ${{ inputs.stage_first }}
+          DUMP_PATH: ${{ inputs.dump_path }}
           STACKFOOD_MYSQL_URL: ${{ secrets.STACKFOOD_MYSQL_URL }}
