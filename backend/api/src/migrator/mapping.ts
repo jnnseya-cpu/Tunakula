@@ -25,7 +25,7 @@ export const SOURCE_TABLES = {
   users: "users",
   merchants: "vendors", // the owner accounts
   branches: "restaurants", // the stores (each has a vendor_id owner + a module_id)
-  items: "items",
+  items: "food", // StackFood/6amMart v8.0 names the menu-item table `food` (not `items`)
   addons: "add_ons", // the per-restaurant paid-extras catalogue; a food's add_ons column lists ids into this
   orders: "orders",
   orderLines: "order_details",
