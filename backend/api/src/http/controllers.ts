@@ -1971,6 +1971,13 @@ export class TrendController {
   async draft(@Req() req: FastifyRequest, @Query("locale") locale: string, @Query("topic") topic: string, @Query("channel") channel: string, @Query("market") market?: string) {
     return this.trend.draft(country(req), await this.#p(req), { locale, topic_id: topic, channel: channel as BriefChannel, ...(market ? { market } : {}) });
   }
+
+  /** A brief-steered PROPOSAL of the existing storefront content. The admin applies it via the existing
+   *  PUT /v1/site-content (the current approval path); nothing is published here. */
+  @Get("ops/trend/site-content/proposal")
+  async siteContentProposal(@Req() req: FastifyRequest, @Query("locale") locale: string, @Query("topic") topic: string) {
+    return this.trend.proposeSiteContent(country(req), await this.#p(req), { locale, topic_id: topic });
+  }
 }
 
 /** Book-a-chef: public discovery, customer bookings, the chef console, and ops review. */

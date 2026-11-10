@@ -206,6 +206,34 @@ export class TrendService {
   }
 
   /**
+   * Propose a brief-steered version of the EXISTING storefront content (spec §7 owned placement). This steers
+   * what customers see only through Tunakula's existing CMS and ONLY as a proposal — it never writes: a market
+   * admin reviews and applies it through the existing SiteContentService.save (the current approval path), so
+   * there is no new visible surface and no silent publish. The hero subtitle is enriched from the effective
+   * brief's audience and intent; prohibited claims can never appear. With no effective brief the current content
+   * is returned unchanged (steered_by null).
+   */
+  async proposeSiteContent(country: string, principal: Principal, scope: { locale: string; topic_id: string }): Promise<{ steered_by: string | null; home: Record<string, unknown> }> {
+    this.#assertOps(principal, country);
+    const brief = (await this.effectiveBrief(country, { ...scope, channel: "owned_placement" }))
+      ?? (await this.effectiveBrief(country, { ...scope, channel: "seo" }));
+    const current = await this.db.tx({ country }, async (sql) => {
+      const rows = await sql.query<{ value: Record<string, unknown> }>("SELECT value FROM comms.site_content WHERE key = 'home'");
+      return rows[0]?.value ?? {};
+    });
+    if (!brief) return { steered_by: null, home: current };
+
+    const hero = (current.hero ?? {}) as Record<string, unknown>;
+    const steeredSubtitle = `${brief.audience} — ${brief.intent}.`.slice(0, 240);
+    const haystack = `${String(hero.title ?? "")}\n${steeredSubtitle}`.toLowerCase();
+    for (const phrase of brief.prohibited_claims) {
+      if (phrase && haystack.includes(phrase.toLowerCase())) throw unprocessable("PROHIBITED_CLAIM", `Proposal would contain a prohibited claim: ${phrase}`);
+    }
+    const home = { ...current, hero: { ...hero, subtitle: steeredSubtitle } };
+    return { steered_by: brief.brief_id, home };
+  }
+
+  /**
    * The autonomous background sweep (spec §2 automatic reading, §5 detection). Runs HEADLESS and INVISIBLE in the
    * operations loop — no UI, nothing user-visible: it reads Tunakula's own first-party order signal, measures
    * each published branch's demand this complete window against its prior windows (robust z), and freezes a
