@@ -32,6 +32,7 @@ import type { GrowthService } from "../app/growth.ts";
 import type { TrendService, BriefDraftInput } from "../app/trend.ts";
 import type { ObservationInput } from "../persistence/trend.ts";
 import type { Band } from "../modules/trend/scoring.ts";
+import type { BriefChannel } from "../modules/trend/brief.ts";
 import type { MerchantCopilotService } from "../app/merchant-copilot.ts";
 import type { MenuWriterService } from "../app/menu-writer.ts";
 import type { UpsellService } from "../app/upsell.ts";
@@ -1963,6 +1964,12 @@ export class TrendController {
     const brief = await this.trend.effectiveBrief(country(req), { locale, topic_id: topic, channel, ...(market ? { market } : {}) });
     if (!brief) { void reply.code(204).send(); return; }
     void reply.code(200).send(brief);
+  }
+
+  /** A deterministic channel draft steered by the effective brief (or a flagged baseline template). */
+  @Get("ops/trend/draft")
+  async draft(@Req() req: FastifyRequest, @Query("locale") locale: string, @Query("topic") topic: string, @Query("channel") channel: string, @Query("market") market?: string) {
+    return this.trend.draft(country(req), await this.#p(req), { locale, topic_id: topic, channel: channel as BriefChannel, ...(market ? { market } : {}) });
   }
 }
 

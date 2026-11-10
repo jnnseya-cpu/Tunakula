@@ -14,7 +14,8 @@ import type { Action } from "../modules/identity/roles.ts";
 import { audit } from "../persistence/identity.ts";
 import { badRequest, forbidden, notFound, unprocessable } from "./errors.ts";
 import { opportunityScore, confidence as confidenceScore, decide, hasVeto, type Band } from "../modules/trend/scoring.ts";
-import { validateBriefShape, type BriefChannel, type GrowthBriefV1 } from "../modules/trend/brief.ts";
+import { permitsChannel, validateBriefShape, type BriefChannel, type GrowthBriefV1 } from "../modules/trend/brief.ts";
+import { baselineDraft, draftFromBrief, type ChannelDraft } from "../modules/trend/draft.ts";
 import {
   approveBrief as approveBriefRow, effectiveBrief as resolveBrief, ingestObservations,
   saveBriefDraft, saveOpportunity, type ObservationInput,
@@ -176,5 +177,19 @@ export class TrendService {
     return this.db.tx({ country }, (sql) => resolveBrief(sql, {
       market: (scope.market ?? country).toUpperCase(), locale: scope.locale, topic_id: scope.topic_id, channel: scope.channel, now: this.now(),
     }));
+  }
+
+  /**
+   * Generate a deterministic channel draft for a topic, steered by the effective brief (spec §2 "Generate
+   * actions", §7). This is how an existing agent's output is shaped by the control layer: the draft's audience,
+   * intent, CTA and claims come from the approved brief and exclude every prohibited claim; with no effective
+   * brief (or a channel the brief does not allow) it returns an honestly-flagged baseline template. No AI — the
+   * template path keeps the workflow available during a model outage.
+   */
+  async draft(country: string, principal: Principal, scope: { locale: string; topic_id: string; channel: BriefChannel; market?: string }): Promise<ChannelDraft> {
+    this.#assertOps(principal, country);
+    const brief = await this.effectiveBrief(country, scope);
+    if (brief && permitsChannel(brief, scope.channel)) return draftFromBrief(brief, scope.channel);
+    return baselineDraft(scope.channel, scope.topic_id);
   }
 }
