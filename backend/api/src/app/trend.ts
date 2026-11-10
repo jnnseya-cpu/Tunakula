@@ -16,10 +16,10 @@ import { badRequest, forbidden, notFound, unprocessable } from "./errors.ts";
 import { opportunityScore, confidence as confidenceScore, decide, hasVeto, type Band } from "../modules/trend/scoring.ts";
 import { permitsChannel, validateBriefShape, type BriefChannel, type GrowthBriefV1 } from "../modules/trend/brief.ts";
 import { baselineDraft, draftFromBrief, type ChannelDraft } from "../modules/trend/draft.ts";
-import { corroborationFor, demandFromZ, robustZ } from "../modules/trend/scoring.ts";
+import { corroborationFor, demandFromZ, logLift, robustZ, round2 } from "../modules/trend/scoring.ts";
 import {
-  approveBrief as approveBriefRow, branchMeta, branchOrderBuckets, effectiveBrief as resolveBrief,
-  ingestObservations, lastSweepAt, recordSweepRun, saveBriefDraft, saveOpportunity, type ObservationInput,
+  approveBrief as approveBriefRow, branchMeta, branchOrderBuckets, countBranchOrders, effectiveBrief as resolveBrief,
+  ingestObservations, lastSweepAt, latestApprovedBrief, recordSweepRun, saveBriefDraft, saveOpportunity, type ObservationInput,
 } from "../persistence/trend.ts";
 
 /** Deterministic proxies the autonomous sweep uses for the inputs it cannot read from a single order signal.
@@ -231,6 +231,48 @@ export class TrendService {
     }
     const home = { ...current, hero: { ...hero, subtitle: steeredSubtitle } };
     return { steered_by: brief.brief_id, home };
+  }
+
+  /**
+   * Measure the effect of an approved brief and recommend continue / revise / rollback (spec §10, §18). Invisible
+   * and READ-ONLY: it compares the first-party outcome (non-cancelled orders on the topic's branch) in the
+   * treated window since the brief took effect against a MATCHED baseline window of equal length just before it,
+   * and reports the lift. It never acts — a rollback still goes through the existing approval path. Honest about
+   * evidence: below a minimum sample, or with no approved brief / no first-party outcome source, it returns
+   * `inconclusive` rather than a false signal (spec §10 "record inconclusive").
+   */
+  async measure(country: string, principal: Principal, scope: { topic_id: string; now?: Date; minSample?: number }) {
+    this.#assertOps(principal, country);
+    const now = scope.now ?? this.now();
+    const minSample = scope.minSample ?? 20;
+    const nowIso = now.toISOString();
+    return this.db.tx({ country }, async (sql) => {
+      const brief = await latestApprovedBrief(sql, scope.topic_id);
+      if (!brief) return { recommendation: "inconclusive" as const, reason: "no approved brief for this topic", sufficient: false };
+      // First-party outcome source: the sweep names branch topics `branch-<uuid>`.
+      const branchId = scope.topic_id.startsWith("branch-") ? scope.topic_id.slice("branch-".length) : null;
+      if (!branchId) return { recommendation: "inconclusive" as const, reason: "no first-party outcome source for this topic", sufficient: false, brief_id: brief.brief_id };
+
+      const sinceMs = Date.parse(brief.valid_from);
+      const lengthMs = now.getTime() - sinceMs;
+      if (lengthMs <= 0) return { recommendation: "inconclusive" as const, reason: "brief has not taken effect yet", sufficient: false, brief_id: brief.brief_id };
+      const baselineFromIso = new Date(sinceMs - lengthMs).toISOString();
+
+      const treated = await countBranchOrders(sql, branchId, brief.valid_from, nowIso);
+      const baseline = await countBranchOrders(sql, branchId, baselineFromIso, brief.valid_from);
+      const lift = logLift(treated, baseline); // ln((treated+1)/(baseline+1))
+      const sufficient = treated + baseline >= minSample;
+      const recommendation = !sufficient ? "inconclusive" as const
+        : lift > Math.log(1.1) ? "continue" as const      // ≥ ~10% up
+        : lift < Math.log(0.9) ? "rollback" as const      // ≥ ~10% down
+        : "revise" as const;                               // flat
+      return {
+        brief_id: brief.brief_id, objective: brief.objective, recommendation, sufficient,
+        treated, baseline, lift: round2(lift),
+        treated_window: { from: brief.valid_from, to: nowIso },
+        baseline_window: { from: baselineFromIso, to: brief.valid_from },
+      };
+    });
   }
 
   /**

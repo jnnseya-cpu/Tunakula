@@ -1978,6 +1978,13 @@ export class TrendController {
   async siteContentProposal(@Req() req: FastifyRequest, @Query("locale") locale: string, @Query("topic") topic: string) {
     return this.trend.proposeSiteContent(country(req), await this.#p(req), { locale, topic_id: topic });
   }
+
+  /** Read-only measurement of an approved brief's effect vs a matched baseline, with a continue/revise/rollback
+   *  recommendation (spec §10). It never acts — a rollback goes through the existing approval path. */
+  @Get("ops/trend/measure")
+  async measure(@Req() req: FastifyRequest, @Query("topic") topic: string) {
+    return this.trend.measure(country(req), await this.#p(req), { topic_id: topic });
+  }
 }
 
 /** Book-a-chef: public discovery, customer bookings, the chef console, and ops review. */

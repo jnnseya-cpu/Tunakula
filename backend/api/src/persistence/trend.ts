@@ -107,6 +107,24 @@ export async function recordSweepRun(sql: Sql, r: { dry_run: boolean; observatio
   );
 }
 
+/** Count non-cancelled orders on a branch within [from, to) — the first-party outcome the measurement compares. */
+export async function countBranchOrders(sql: Sql, branchId: string, from: string, to: string): Promise<number> {
+  const [row] = await sql.query<{ n: string }>(
+    "SELECT count(*)::text AS n FROM ordering.order_view WHERE branch_id = $1 AND state <> 'CANCELLED' AND created_at >= $2::timestamptz AND created_at < $3::timestamptz",
+    [branchId, from, to],
+  );
+  return Number(row?.n ?? 0);
+}
+
+/** The latest APPROVED brief for a topic (any channel) and when it took effect — the measurement's change point. */
+export async function latestApprovedBrief(sql: Sql, topicId: string): Promise<{ brief_id: string; valid_from: string; objective: string } | null> {
+  const [row] = await sql.query<{ brief_id: string; valid_from: string; payload: GrowthBriefV1 }>(
+    "SELECT brief_id, valid_from::text AS valid_from, payload FROM trend.growth_brief WHERE topic_id = $1 AND status = 'APPROVED' ORDER BY approved_at DESC NULLS LAST LIMIT 1",
+    [topicId],
+  );
+  return row ? { brief_id: row.brief_id, valid_from: row.valid_from, objective: row.payload.objective } : null;
+}
+
 export interface OpportunityRecord {
   readonly topic_id: string;
   readonly market: string;
