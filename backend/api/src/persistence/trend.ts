@@ -62,6 +62,51 @@ export async function ingestObservations(sql: Sql, rows: readonly ObservationInp
   return r;
 }
 
+/** Per-branch meta the sweep needs for readiness (spec §5.4): a branch with no available dish cannot be served. */
+export interface BranchMeta { branch_id: string; name: string; status: string; available_items: number }
+
+export async function branchMeta(sql: Sql): Promise<BranchMeta[]> {
+  const rows = await sql.query<{ branch_id: string; name: string; status: string; available_items: string }>(
+    `SELECT b.id::text AS branch_id, b.name, b.status,
+            (SELECT count(*) FILTER (WHERE mi.available) FROM catalogue.menu_item mi WHERE mi.branch_id = b.id)::text AS available_items
+       FROM catalogue.branch b WHERE b.published_at IS NOT NULL`,
+  );
+  return rows.map((r) => ({ branch_id: r.branch_id, name: r.name, status: r.status, available_items: Number(r.available_items) }));
+}
+
+/**
+ * Count completed/active orders per branch, bucketed into fixed windows (spec §5.2 complete source-native
+ * windows). Returns one row per (branch, window). The caller separates the latest complete window (current)
+ * from the prior windows (history) to compute the robust z. Cancelled orders are excluded (spec §5.2).
+ */
+export async function branchOrderBuckets(
+  sql: Sql, opts: { intervalMinutes: number; since: string; origin: string },
+): Promise<{ branch_id: string; bucket: string; n: number }[]> {
+  const rows = await sql.query<{ branch_id: string; bucket: string; n: string }>(
+    `SELECT branch_id::text AS branch_id,
+            date_bin(($1 || ' minutes')::interval, created_at, $2::timestamptz) AS bucket,
+            count(*)::text AS n
+       FROM ordering.order_view
+      WHERE created_at >= $3::timestamptz AND state <> 'CANCELLED'
+      GROUP BY 1, 2`,
+    [String(opts.intervalMinutes), opts.origin, opts.since],
+  );
+  return rows.map((r) => ({ branch_id: r.branch_id, bucket: new Date(r.bucket).toISOString(), n: Number(r.n) }));
+}
+
+/** When did the sweep last run for this country? Drives the cadence guard so it runs ~hourly, not every tick. */
+export async function lastSweepAt(sql: Sql): Promise<Date | null> {
+  const [row] = await sql.query<{ ran_at: Date }>("SELECT ran_at FROM trend.sweep_run ORDER BY ran_at DESC LIMIT 1");
+  return row?.ran_at ?? null;
+}
+
+export async function recordSweepRun(sql: Sql, r: { dry_run: boolean; observations: number; opportunities: number; briefs: number; window_end: string | null }): Promise<void> {
+  await sql.query(
+    "INSERT INTO trend.sweep_run (country_iso2, dry_run, observations, opportunities, briefs, window_end) VALUES (platform.current_country(), $1,$2,$3,$4,$5)",
+    [r.dry_run, r.observations, r.opportunities, r.briefs, r.window_end],
+  );
+}
+
 export interface OpportunityRecord {
   readonly topic_id: string;
   readonly market: string;

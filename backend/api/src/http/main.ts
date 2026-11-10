@@ -47,6 +47,7 @@ import type { LoyaltyService } from "../app/loyalty.ts";
 import type { CashbackService } from "../app/cashback.ts";
 import type { SubscriptionService } from "../app/subscriptions.ts";
 import type { MerchantPlanService } from "../app/merchant-plans.ts";
+import type { TrendService } from "../app/trend.ts";
 import { loadIntegrationConfig } from "../app/integrations.ts";
 import { LlmAssistantBrain } from "../modules/assistant/llm-brain.ts";
 import { SandboxBrain } from "../modules/assistant/sandbox-brain.ts";
@@ -230,6 +231,7 @@ if (dispatchMs > 0) {
   const cashback = app.get<CashbackService>(TOKENS.cashback);
   const subscriptions = app.get<SubscriptionService>(TOKENS.subscriptions);
   const merchantPlans = app.get<MerchantPlanService>(TOKENS.merchantPlans);
+  const trend = app.get<TrendService>(TOKENS.trend);
   let running = false;
   loop = setInterval(async () => {
     if (running) return;
@@ -260,6 +262,10 @@ if (dispatchMs > 0) {
         // Merchants on a paid plan are billed this month's fee (netted from their payout).
         const planBills = await merchantPlans.billSweep(c.iso2);
         if (planBills.billed) log.info("merchant plans", { country: c.iso2, ...planBills });
+        // Trend Intelligence reads first-party demand and scores opportunities, headless and invisible. Its own
+        // cadence guard keeps it to ~hourly per country, so calling it every tick is cheap.
+        const tr = await trend.sweep(c.iso2);
+        if (tr.ran && (tr.opportunities || tr.observations)) log.info("trend", { country: c.iso2, ...tr });
       }
     } catch (error) { log.error("dispatch failed", { error }); } finally { running = false; }
   }, dispatchMs);

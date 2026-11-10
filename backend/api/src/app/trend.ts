@@ -16,10 +16,22 @@ import { badRequest, forbidden, notFound, unprocessable } from "./errors.ts";
 import { opportunityScore, confidence as confidenceScore, decide, hasVeto, type Band } from "../modules/trend/scoring.ts";
 import { permitsChannel, validateBriefShape, type BriefChannel, type GrowthBriefV1 } from "../modules/trend/brief.ts";
 import { baselineDraft, draftFromBrief, type ChannelDraft } from "../modules/trend/draft.ts";
+import { corroborationFor, demandFromZ, robustZ } from "../modules/trend/scoring.ts";
 import {
-  approveBrief as approveBriefRow, effectiveBrief as resolveBrief, ingestObservations,
-  saveBriefDraft, saveOpportunity, type ObservationInput,
+  approveBrief as approveBriefRow, branchMeta, branchOrderBuckets, effectiveBrief as resolveBrief,
+  ingestObservations, lastSweepAt, recordSweepRun, saveBriefDraft, saveOpportunity, type ObservationInput,
 } from "../persistence/trend.ts";
+
+/** Deterministic proxies the autonomous sweep uses for the inputs it cannot read from a single order signal.
+ *  Honest and conservative: orders are in-market completed purchases (high fit/intent), the signal is from the
+ *  just-closed window (fresh), and a single first-party family caps confidence at 69 (so the sweep watches, it
+ *  never silently makes a live change). Readiness is real: a branch with no available dish is vetoed. */
+const SWEEP_FIT = 100;
+const SWEEP_INTENT = 80;
+const SWEEP_TIMING = 100;
+const SWEEP_SOURCE_QUALITY = 80;
+const SWEEP_ORIGIN = "2020-01-01T00:00:00Z"; // date_bin alignment origin
+const SWEEP_COUNT_MIN = 10;                   // minimum current-window orders to consider a branch (per-source gate)
 
 /** Authorable brief fields; the server stamps schema_version, ids, market and version (spec §6 "IDs resolve server-side"). */
 export interface BriefDraftInput {
@@ -191,5 +203,93 @@ export class TrendService {
     const brief = await this.effectiveBrief(country, scope);
     if (brief && permitsChannel(brief, scope.channel)) return draftFromBrief(brief, scope.channel);
     return baselineDraft(scope.channel, scope.topic_id);
+  }
+
+  /**
+   * The autonomous background sweep (spec §2 automatic reading, §5 detection). Runs HEADLESS and INVISIBLE in the
+   * operations loop — no UI, nothing user-visible: it reads Tunakula's own first-party order signal, measures
+   * each published branch's demand this complete window against its prior windows (robust z), and freezes a
+   * scored opportunity for every branch that passes the gate. A single first-party family caps confidence at 69,
+   * so the sweep WATCHES demand; it never silently approves or activates a live, user-facing change. A cadence
+   * guard keeps it to roughly one run per interval per country. No principal: this is a system job.
+   */
+  async sweep(
+    country: string,
+    opts: { dryRun?: boolean; now?: Date; intervalMinutes?: number; historyWindows?: number; force?: boolean } = {},
+  ): Promise<{ ran: boolean; observations: number; opportunities: number; briefs: number; window_end: string | null }> {
+    if (!this.registry.published(country)) return { ran: false, observations: 0, opportunities: 0, briefs: 0, window_end: null };
+    const dryRun = opts.dryRun ?? false;
+    const interval = opts.intervalMinutes ?? 60;
+    const historyWindows = opts.historyWindows ?? 8;
+    const now = opts.now ?? this.now();
+
+    return this.db.tx({ country }, async (sql) => {
+      if (!opts.force && !dryRun) {
+        const last = await lastSweepAt(sql);
+        if (last && now.getTime() - last.getTime() < interval * 60_000) {
+          return { ran: false, observations: 0, opportunities: 0, briefs: 0, window_end: null };
+        }
+      }
+      const intervalMs = interval * 60_000;
+      const originMs = Date.parse(SWEEP_ORIGIN);
+      const k = Math.floor((now.getTime() - originMs) / intervalMs); // bucket index containing `now` (incomplete)
+      const currentStartMs = originMs + (k - 1) * intervalMs;        // the latest COMPLETE window
+      const windowEndMs = originMs + k * intervalMs;
+      const sinceMs = originMs + (k - 1 - historyWindows) * intervalMs;
+
+      const buckets = await branchOrderBuckets(sql, { intervalMinutes: interval, since: new Date(sinceMs).toISOString(), origin: SWEEP_ORIGIN });
+      const meta = new Map((await branchMeta(sql)).map((m) => [m.branch_id, m]));
+
+      // Group each branch's window counts by bucket start.
+      const byBranch = new Map<string, Map<number, number>>();
+      for (const b of buckets) {
+        const t = Date.parse(b.bucket);
+        if (!byBranch.has(b.branch_id)) byBranch.set(b.branch_id, new Map());
+        byBranch.get(b.branch_id)!.set(t, b.n);
+      }
+
+      let observations = 0, opportunities = 0, briefs = 0;
+      const windowEndIso = new Date(windowEndMs).toISOString();
+      for (const [branchId, m] of meta) {
+        const counts = byBranch.get(branchId) ?? new Map<number, number>();
+        const current = counts.get(currentStartMs) ?? 0;
+        if (current < SWEEP_COUNT_MIN) continue;
+        const history: number[] = [];
+        for (let i = 1; i <= historyWindows; i++) history.push(counts.get(currentStartMs - i * intervalMs) ?? 0);
+        const z = robustZ(current, history);
+        if (z < 2) continue; // not a rising signal
+
+        const readiness = m.status === "OPEN" && m.available_items > 0 ? 100 : 0;
+        const demand = demandFromZ(z);
+        const score = opportunityScore({ demand, fit: SWEEP_FIT, intent: SWEEP_INTENT, timing: SWEEP_TIMING, readiness });
+        const conf = confidenceScore({ sourceQuality: SWEEP_SOURCE_QUALITY, corroboration: corroborationFor(1), coverage: 100, freshness: 100 }, 1);
+        const veto = hasVeto({}, readiness);
+        const band = decide(score, conf, { veto });
+        if (band === "ARCHIVE") continue;
+
+        const topicId = `branch-${branchId}`;
+        const breakdown = { demand, fit: SWEEP_FIT, intent: SWEEP_INTENT, timing: SWEEP_TIMING, readiness, current, history, z, source: "first_party_orders" };
+        const digest = Buffer.from(JSON.stringify({ topicId, windowEndIso, breakdown })).toString("base64").slice(0, 64);
+
+        if (!dryRun) {
+          await ingestObservations(sql, [{
+            source_id: "first_party_orders", source_family: "first_party", source_record_id: `${branchId}@${windowEndIso}`,
+            observed_at: windowEndIso, window_start: new Date(currentStartMs).toISOString(), window_end: windowEndIso,
+            metric: "orders", value: current, evidence_hash: digest,
+          }]);
+          observations++;
+          const saved = await saveOpportunity(sql, {
+            topic_id: topicId, market: country.toUpperCase(), locale: "und", window_end: windowEndIso,
+            scoring_version: SCORING_VERSION, input_digest: digest, opportunity_score: score, confidence: conf,
+            band, breakdown, vetoes: veto ? ["readiness"] : [], evidence_ids: [],
+          });
+          if (!saved.frozen) opportunities++;
+        } else {
+          opportunities++;
+        }
+      }
+      if (!dryRun) await recordSweepRun(sql, { dry_run: false, observations, opportunities, briefs, window_end: windowEndIso });
+      return { ran: true, observations, opportunities, briefs, window_end: windowEndIso };
+    });
   }
 }
