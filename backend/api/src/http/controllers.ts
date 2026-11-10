@@ -29,6 +29,9 @@ import type { SiteContentService } from "../app/site-content.ts";
 import type { ChefService } from "../app/chef.ts";
 import type { AssistantService } from "../app/assistant.ts";
 import type { GrowthService } from "../app/growth.ts";
+import type { TrendService, BriefDraftInput } from "../app/trend.ts";
+import type { ObservationInput } from "../persistence/trend.ts";
+import type { Band } from "../modules/trend/scoring.ts";
 import type { MerchantCopilotService } from "../app/merchant-copilot.ts";
 import type { MenuWriterService } from "../app/menu-writer.ts";
 import type { UpsellService } from "../app/upsell.ts";
@@ -1908,6 +1911,58 @@ export class GrowthController {
   @HttpCode(200)
   async sweep(@Req() req: FastifyRequest, @Body() body: { dry_run?: boolean }) {
     return this.growth.runSweep(country(req), await this.#p(req), { dryRun: body?.dry_run !== false });
+  }
+}
+
+/** Trend Intelligence (spec §16): ingest signals, score and list opportunities, author and approve Growth
+ *  Briefs, and resolve the effective brief that steers Tunakula's existing agents at run time. */
+@Controller("v1")
+export class TrendController {
+  constructor(
+    @Inject(TOKENS.db) private readonly db: Db,
+    @Inject(TOKENS.tokens) private readonly tokens: TokenService,
+    @Inject(TOKENS.trend) private readonly trend: TrendService,
+  ) {}
+
+  #p(req: FastifyRequest) {
+    return this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+  }
+
+  @Post("ops/trend/observations")
+  @HttpCode(200)
+  async ingest(@Req() req: FastifyRequest, @Body() body: { observations?: ObservationInput[] }) {
+    return this.trend.ingest(country(req), await this.#p(req), body?.observations ?? []);
+  }
+
+  @Get("ops/trend/opportunities")
+  async opportunities(@Req() req: FastifyRequest, @Query("topic") topic?: string, @Query("status") status?: string, @Query("limit") limit?: string) {
+    return this.trend.opportunities(country(req), await this.#p(req), { ...(topic ? { topic } : {}), ...(status ? { status: status as Band } : {}), ...(limit ? { limit: Number(limit) } : {}) });
+  }
+
+  @Post("ops/trend/score")
+  @HttpCode(200)
+  async score(@Req() req: FastifyRequest, @Body() body: Parameters<TrendService["score"]>[2]) {
+    return this.trend.score(country(req), await this.#p(req), body);
+  }
+
+  @Post("ops/trend/briefs")
+  @HttpCode(201)
+  async createBrief(@Req() req: FastifyRequest, @Body() body: BriefDraftInput) {
+    return this.trend.createBrief(country(req), await this.#p(req), body);
+  }
+
+  @Post("ops/trend/briefs/:id/approve")
+  @HttpCode(200)
+  async approve(@Req() req: FastifyRequest, @Param("id") id: string, @Body() body: { version?: number }) {
+    return this.trend.approveBrief(country(req), await this.#p(req), id, body?.version ?? 1);
+  }
+
+  /** The run-time resolution an existing agent calls. 204 when no brief is effective (agent uses its baseline). */
+  @Get("ops/trend/briefs/effective")
+  async effective(@Req() req: FastifyRequest, @Res() reply: FastifyReply, @Query("locale") locale: string, @Query("topic") topic: string, @Query("channel") channel: string, @Query("market") market?: string) {
+    const brief = await this.trend.effectiveBrief(country(req), { locale, topic_id: topic, channel, ...(market ? { market } : {}) });
+    if (!brief) { void reply.code(204).send(); return; }
+    void reply.code(200).send(brief);
   }
 }
 
