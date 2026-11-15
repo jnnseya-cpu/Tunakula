@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { PlateArt } from "./plate-art";
+import { NutriBadge } from "./nutri-badge";
 import { EtaChip } from "./location";
 import { fc } from "../lib/catalogue";
 import { trending } from "../lib/trending";
@@ -40,7 +41,7 @@ export function Trending({ n = 8 }: { n?: number }) {
                     <span className="trend-rank" aria-label={`Number ${i + 1} trending`}>#{i + 1}</span>
                     <span className="fav-add" aria-hidden>+</span>
                   </div>
-                  <h3>{it.name}</h3>
+                  <h3>{it.name} <NutriBadge grade={it.nutri_score} basis={it.nutri_score_basis} /></h3>
                   <p className="muted">{it.branch_name}</p>
                   <p className="fav-foot">
                     <b className="num">{it.price ? money(it.price) : ""}</b>

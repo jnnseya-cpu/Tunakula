@@ -8,6 +8,7 @@ import { useEffect, useMemo, useState } from "react";
 import { api, ApiError, foodPhotoUrl, getSession, listFavourites, loadCart, lineSig, money, mulMinor, addMinor, saveCart, toggleFavourite, type Cart, type CartLine, type CartLineOption, type MoneyWire } from "../lib/api";
 import { ClockIcon, PinIcon, useLocationCtx, type LiveStoreRow } from "./location";
 import { PlateArt, recipeFor } from "./plate-art";
+import { NutriBadge } from "./nutri-badge";
 import { BookTable } from "./book-table";
 import { t, lang } from "../lib/i18n";
 
@@ -164,13 +165,7 @@ export function LiveStore() {
           {isScheduled(i) ? <p className="li-hours">🕒 {i.available_now === false ? (window ? `Available ${window}` : "Not available today") : (window ? `Available ${window}` : "Available at set times")}</p> : null}
           {dietaryOf(i).length || i.nutrition?.kcal !== undefined || i.age_restricted || i.nutri_score ? (
             <p className="diet-badges">
-              {i.nutri_score ? (
-                <span
-                  className={`nutri nutri-${i.nutri_score}${i.nutri_score_basis === "ai_estimate" ? " est" : ""}`}
-                  title={`Nutri-Score ${i.nutri_score}${i.nutri_score_basis === "ai_estimate" ? " — estimated" : ""}`}
-                  aria-label={`Nutri-Score ${i.nutri_score}${i.nutri_score_basis === "ai_estimate" ? ", estimated" : ""}`}
-                >{i.nutri_score}{i.nutri_score_basis === "ai_estimate" ? <sup aria-hidden="true">~</sup> : null}</span>
-              ) : null}
+              <NutriBadge grade={i.nutri_score} basis={i.nutri_score_basis} />
               {i.age_restricted ? <span className="diet-tag age">18+</span> : null}
               {dietaryOf(i).map((d) => <span key={d} className="diet-tag">{DIETARY_LABEL[d] ?? d}</span>)}
               {i.nutrition?.kcal !== undefined ? <span className="kcal">{i.nutrition.kcal} kcal</span> : null}

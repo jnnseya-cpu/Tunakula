@@ -6,8 +6,9 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { api, getSession, money, type MoneyWire } from "../lib/api";
+import { NutriBadge } from "./nutri-badge";
 
-interface Pick { item_id: string; name: string; branch_name: string | null; reason: "ORDER_AGAIN" | "KITCHEN_PICK" | "POPULAR"; price: MoneyWire | null }
+interface Pick { item_id: string; name: string; branch_name: string | null; reason: "ORDER_AGAIN" | "KITCHEN_PICK" | "POPULAR"; price: MoneyWire | null; nutri_score?: "A" | "B" | "C" | "D" | "E" | null; nutri_score_basis?: string | null }
 
 const lang = () => { try { return localStorage.getItem("tk-lang") ?? "fr"; } catch { return "fr"; } };
 const EN = () => lang() === "en";
@@ -38,7 +39,7 @@ export function Recommendations() {
           {picks.map((p) => (
             <Link key={p.item_id} className="rec-card" href={`/order/?q=${encodeURIComponent(p.name)}`} data-reveal>
               <span className={`rec-reason r-${p.reason.toLowerCase()}`}>{EN() ? REASON[p.reason].en : REASON[p.reason].fr}</span>
-              <h3>{p.name}</h3>
+              <h3>{p.name} <NutriBadge grade={p.nutri_score} basis={p.nutri_score_basis} /></h3>
               {p.branch_name ? <p className="muted">{p.branch_name}</p> : null}
               {p.price ? <p className="rec-price"><b className="num">{money(p.price)}</b></p> : null}
             </Link>

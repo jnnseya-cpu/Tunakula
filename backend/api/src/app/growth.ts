@@ -15,6 +15,7 @@ import type { CountryConfigRegistry } from "../modules/config/config-registry.ts
 import type { NotificationService } from "./comms.ts";
 import type { WalletService } from "./wallet.ts";
 import { authorize, type Principal } from "../modules/identity/policy.ts";
+import { classifyBeverage, gradeFromFacts } from "../modules/nutriscore/nutriscore.ts";
 import type { Action } from "../modules/identity/roles.ts";
 import { audit, langOf } from "../persistence/identity.ts";
 import { badRequest, forbidden } from "./errors.ts";
@@ -83,7 +84,10 @@ export class GrowthService {
         item_id: p.itemId, name: p.name, branch_id: p.branchId, branch_name: p.branchName ?? null,
         reason: p.reason, rank: p.rank, price: p.price ? { amount_minor: p.price.minor, currency: p.price.currency } : null,
       }));
-      return { currency: ccy, recommendations: picks };
+      // Attach the automatic Nutri-Score for the chosen dishes in one lookup (null when the dish lacks the data).
+      const grades = await nutriGradesFor(sql, picks.map((p) => p.item_id));
+      const recommendations = picks.map((p) => ({ ...p, ...(grades.get(p.item_id) ?? { nutri_score: null, nutri_score_basis: null }) }));
+      return { currency: ccy, recommendations };
     });
   }
 
@@ -415,28 +419,50 @@ function toCandidate(row: MenuRow, lang: string, ccy: string, reason: Recommenda
 interface DiscoveryWire {
   item_id: string; name: string; branch_id: string; branch_name: string; image_id: string | null;
   price: { amount_minor: string; currency: string } | null; qty?: number; rating?: number; ratings?: number;
+  nutri_score?: string | null; nutri_score_basis?: string | null;
 }
 type MenuImgRow = MenuRow & { image_id: string | null } & Record<string, unknown>;
 
+/** The Nutri-Score (grade + basis) for a set of menu items, computed from each dish's own facts. */
+async function nutriGradesFor(sql: Sql, ids: readonly string[]): Promise<Map<string, { nutri_score: string | null; nutri_score_basis: string | null }>> {
+  const out = new Map<string, { nutri_score: string | null; nutri_score_basis: string | null }>();
+  if (ids.length === 0) return out;
+  const rows = await sql.query<{ id: string; names: Record<string, string>; category: string | null; tags: string[]; nutrition: Record<string, number>; nutrition_source: string | null }>(
+    "SELECT id::text, names, category, tags, nutrition, nutrition_source FROM catalogue.menu_item WHERE id = ANY($1::uuid[])",
+    [ids],
+  );
+  for (const r of rows) {
+    const hay = [String(r.category ?? ""), ...Object.values(r.names ?? {}), ...(r.tags ?? [])].join(" ");
+    const g = gradeFromFacts(r.nutrition ?? {}, classifyBeverage(hay) ? { kind: "beverage" } : {});
+    out.set(r.id, { nutri_score: g?.grade ?? null, nutri_score_basis: g ? r.nutrition_source : null });
+  }
+  return out;
+}
+
 function toWire(row: MenuImgRow, lang: string, ccy: string): DiscoveryWire {
   const price = priceOf(row.prices, ccy);
+  // Automatic Nutri-Score for the discovery card, from the dish's own per-100g facts; null when incomplete.
+  const nutrition = (row.nutrition ?? {}) as Record<string, number>;
+  const hay = [String(row.category ?? ""), ...Object.values((row.names ?? {}) as Record<string, string>), ...(((row.tags as string[]) ?? []))].join(" ");
+  const graded = gradeFromFacts(nutrition, classifyBeverage(hay) ? { kind: "beverage" } : {});
   return {
     item_id: row.id, name: name(row.names, lang), branch_id: row.branch_id, branch_name: row.branch_name,
     image_id: row.image_id ?? null, price: price ? { amount_minor: price.minor, currency: price.currency } : null,
+    nutri_score: graded?.grade ?? null, nutri_score_basis: graded ? ((row.nutrition_source as string | null) ?? null) : null,
   };
 }
 
 /** Trending: the dishes ordered most across the market in the last 45 days. */
 async function trendingItems(sql: Sql, lang: string, ccy: string, limit: number): Promise<DiscoveryWire[]> {
   const rows = await sql.query<MenuImgRow & { qty: string }>(
-    `SELECT m.id, m.names, m.prices, m.image_id, m.branch_id, b.name AS branch_name, SUM((line->>'quantity')::int)::text AS qty
+    `SELECT m.id, m.names, m.prices, m.image_id, m.branch_id, m.nutrition, m.category, m.tags, m.nutrition_source, b.name AS branch_name, SUM((line->>'quantity')::int)::text AS qty
        FROM ordering.order_view o
        JOIN ordering.order_event d ON d.order_id = o.order_id AND d.type = 'ORDER_DRAFTED'
        CROSS JOIN LATERAL jsonb_array_elements(d.payload->'snapshot'->'lines') AS line
        JOIN catalogue.menu_item m ON m.id = (line->>'itemId')::uuid AND m.available
        JOIN catalogue.branch b ON b.id = m.branch_id
       WHERE o.created_at > now() - interval '45 days' AND o.state IN ${COUNTED_STATES}
-      GROUP BY m.id, m.names, m.prices, m.image_id, m.branch_id, b.name ORDER BY qty DESC LIMIT $1`,
+      GROUP BY m.id, m.names, m.prices, m.image_id, m.branch_id, m.nutrition, m.category, m.tags, m.nutrition_source, b.name ORDER BY qty DESC LIMIT $1`,
     [limit],
   );
   return rows.map((r) => ({ ...toWire(r, lang, ccy), qty: Number(r.qty) }));
@@ -450,7 +476,7 @@ async function topRatedItems(sql: Sql, lang: string, ccy: string, limit: number)
        FROM (SELECT branch_id, round(AVG(restaurant_rating), 1) AS avg, COUNT(*) AS cnt
                FROM reviews.order_review GROUP BY branch_id) r
        JOIN catalogue.branch b ON b.id = r.branch_id
-       JOIN LATERAL (SELECT id, names, prices, image_id FROM catalogue.menu_item mi
+       JOIN LATERAL (SELECT id, names, prices, image_id, nutrition, category, tags, nutrition_source FROM catalogue.menu_item mi
                       WHERE mi.branch_id = b.id AND mi.available
                       ORDER BY mi.recommended DESC NULLS LAST, mi.id LIMIT 1) m ON true
       ORDER BY r.avg DESC, r.cnt DESC LIMIT $1`,

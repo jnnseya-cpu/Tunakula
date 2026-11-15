@@ -198,6 +198,7 @@ export interface DiscoveryItem {
   readonly item_id: string; readonly name: string; readonly branch_id: string; readonly branch_name: string;
   readonly image_id: string | null; readonly price: MoneyWire | null;
   readonly qty?: number; readonly rating?: number; readonly ratings?: number;
+  readonly nutri_score?: "A" | "B" | "C" | "D" | "E" | null; readonly nutri_score_basis?: string | null;
 }
 export interface Discovery { readonly currency: string; readonly trending: DiscoveryItem[]; readonly top_rated: DiscoveryItem[] }
 export const fetchDiscovery = () => api<Discovery>("/v1/discovery", { auth: false });
