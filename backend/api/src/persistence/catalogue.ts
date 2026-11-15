@@ -71,6 +71,8 @@ export interface MenuItemRow {
   availability_hours: Record<string, [string, string][]>;
   /** Grocery unit/pack label shown under the price, e.g. "1 kg", "500 ml", "6-pack". Null for prepared dishes. */
   unit_label: string | null;
+  /** Where the per-100 g nutrition came from: merchant | import | ai_estimate | verified. Null = unset. */
+  nutrition_source: string | null;
 }
 
 export interface MenuItemInput {
@@ -93,7 +95,7 @@ export interface MenuItemInput {
   unitLabel?: string | null;
 }
 
-const ITEM_COLUMNS = "id, branch_id, names, description, prices, category, veg, tags, allergens, available, recommended, variations, addons, dietary, nutrition, age_restricted, image_id, source_item_id, availability_hours, unit_label";
+const ITEM_COLUMNS = "id, branch_id, names, description, prices, category, veg, tags, allergens, available, recommended, variations, addons, dietary, nutrition, age_restricted, image_id, source_item_id, availability_hours, unit_label, nutrition_source";
 
 export interface GroupRow { id: string; country_iso2: string; name: string; invite_code: string | null; created_by: string | null }
 

@@ -100,6 +100,11 @@ export const NUTRISCORE_FACT_KEYS = [
   "energy_kj_100g", "sugars_g_100g", "sat_fat_g_100g", "salt_g_100g", "fibre_g_100g", "protein_g_100g", "fruit_veg_legume_pct",
 ] as const;
 
+/** Conservative drink detector (beverages use a different Nutri-Score scale). Matches clear drink words only. */
+export function classifyBeverage(text: string): boolean {
+  return /\b(boisson|drink|beverage|juice|jus|soda|cola|th[eé]|tea|caf[eé]|coffee|smoothie|limonade|lemonade|milkshake)\b/.test(text.toLowerCase());
+}
+
 /** Map a dish's stored nutrition facts to a Nutri-Score, or null when the per-100 g inputs are incomplete. */
 export function gradeFromFacts(facts: Record<string, number> | null | undefined, opts: { kind?: "food" | "beverage"; isWater?: boolean } = {}): NutriScoreResult | null {
   if (!facts) return null;

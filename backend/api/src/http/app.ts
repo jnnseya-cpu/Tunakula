@@ -30,6 +30,9 @@ import { AssistantService } from "../app/assistant.ts";
 import { SandboxBrain } from "../modules/assistant/sandbox-brain.ts";
 import { GrowthService } from "../app/growth.ts";
 import { TrendService } from "../app/trend.ts";
+import { NutritionService } from "../app/nutrition.ts";
+import { SandboxNutritionEstimator } from "../modules/nutriscore/sandbox-nutrition-estimator.ts";
+import type { NutritionEstimatorBrain } from "@tunakula/ts-contracts";
 import { SandboxGrowthBrain } from "../modules/growth/sandbox-growth-brain.ts";
 import { TemplateWinBackWriter } from "../modules/growth/template-win-back-writer.ts";
 import { TemplateReviewReplyWriter } from "../modules/merchant/template-review-reply-writer.ts";
@@ -106,6 +109,8 @@ export interface ApiDeps {
   readonly upsellWriter?: UpsellWriter;
   /** The menu writer brain. Defaults to the offline TemplateMenuWriter (describes; can't translate without a model). */
   readonly menuWriterBrain?: MenuWriterBrain;
+  /** The nutrition estimator brain. Defaults to the deterministic SandboxNutritionEstimator, which makes no estimate. */
+  readonly nutritionEstimatorBrain?: NutritionEstimatorBrain;
 }
 
 export async function createApi(deps: ApiDeps): Promise<NestFastifyApplication> {
@@ -141,6 +146,7 @@ export async function createApi(deps: ApiDeps): Promise<NestFastifyApplication> 
   const assistant = new AssistantService(deps.db, deps.registry, deps.assistantBrain ?? new SandboxBrain(), now);
   const growth = new GrowthService(deps.db, deps.registry, deps.growthBrain ?? new SandboxGrowthBrain(), wallet, comms, deps.winBackWriter ?? new TemplateWinBackWriter(), now);
   const trend = new TrendService(deps.db, deps.registry, now);
+  const nutrition = new NutritionService(deps.db, deps.registry, deps.nutritionEstimatorBrain ?? new SandboxNutritionEstimator(), () => now().getTime());
   const catalogue = new CatalogueService(deps.db, deps.registry);
   const admin = new AdminService(deps.db, deps.registry, now);
   const merchantCopilot = new MerchantCopilotService(deps.db, deps.registry, deps.merchantBrain ?? new SandboxMerchantBrain(), catalogue, admin);
@@ -195,6 +201,7 @@ export async function createApi(deps: ApiDeps): Promise<NestFastifyApplication> 
           { provide: TOKENS.assistant, useValue: assistant },
           { provide: TOKENS.growth, useValue: growth },
           { provide: TOKENS.trend, useValue: trend },
+          { provide: TOKENS.nutrition, useValue: nutrition },
           { provide: TOKENS.merchantCopilot, useValue: merchantCopilot },
           { provide: TOKENS.menuWriter, useValue: menuWriter },
           { provide: TOKENS.upsell, useValue: upsell },

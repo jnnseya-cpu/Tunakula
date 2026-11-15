@@ -14,6 +14,7 @@ export * from "./growth.ts";
 export * from "./merchant-copilot.ts";
 export * from "./rider-copilot.ts";
 export * from "./menu-writer.ts";
+export * from "./nutrition-estimator.ts";
 export * from "./win-back-writer.ts";
 export * from "./review-reply-writer.ts";
 export * from "./rider-brief-writer.ts";

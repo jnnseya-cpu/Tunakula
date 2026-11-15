@@ -9,14 +9,12 @@ import { audit } from "../persistence/identity.ts";
 import { badRequest, notFound, unprocessable } from "./errors.ts";
 import { require } from "./principal.ts";
 import { isOpenNow, parseWeekly, type WeeklyHours } from "../modules/catalogue/hours.ts";
-import { gradeFromFacts, NUTRISCORE_FACT_KEYS } from "../modules/nutriscore/nutriscore.ts";
+import { classifyBeverage, gradeFromFacts, NUTRISCORE_FACT_KEYS } from "../modules/nutriscore/nutriscore.ts";
 
-/** Conservative food/beverage classifier for the Nutri-Score (beverages use a different scale). Infers "beverage"
- *  only from clear drink words in the category/name/tags; never auto-flags plain water (that would mis-grade a
- *  flavoured drink as A). Everything else is treated as a food. */
+/** Food/beverage hint for the Nutri-Score (beverages use a different scale), inferred from the dish's own text. */
 function nutriScoreKindFor(i: { category?: string | null; names?: Record<string, string>; tags?: readonly string[] }): { kind?: "food" | "beverage" } {
-  const hay = [i.category ?? "", ...Object.values(i.names ?? {}), ...(i.tags ?? [])].join(" ").toLowerCase();
-  return /\b(boisson|drink|beverage|juice|jus|soda|cola|th[eé]|tea|caf[eé]|coffee|smoothie|limonade|lemonade|milkshake)\b/.test(hay) ? { kind: "beverage" } : {};
+  const hay = [i.category ?? "", ...Object.values(i.names ?? {}), ...(i.tags ?? [])].join(" ");
+  return classifyBeverage(hay) ? { kind: "beverage" } : {};
 }
 
 export class CatalogueService {
@@ -639,6 +637,8 @@ function publicItem(i: MenuItemRow, at?: Date, tz?: string, promos?: PromotionRo
     nutrition: i.nutrition,
     // Automatic Nutri-Score (A–E), computed per 100 g from the dish's own facts; null when the data is incomplete.
     nutri_score: gradeFromFacts(i.nutrition, nutriScoreKindFor(i))?.grade ?? null,
+    // Where that nutrition came from — so an AI estimate is shown as estimated, never as measured/verified.
+    nutri_score_basis: (gradeFromFacts(i.nutrition, nutriScoreKindFor(i)) ? i.nutrition_source : null) ?? null,
     age_restricted: i.age_restricted,
     available: i.available,
     recommended: i.recommended,

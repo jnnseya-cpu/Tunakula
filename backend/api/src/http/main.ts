@@ -52,6 +52,10 @@ import { loadIntegrationConfig } from "../app/integrations.ts";
 import { LlmAssistantBrain } from "../modules/assistant/llm-brain.ts";
 import { SandboxBrain } from "../modules/assistant/sandbox-brain.ts";
 import { LlmMenuWriter } from "../modules/merchant/llm-menu-writer.ts";
+import { LlmNutritionEstimator } from "../modules/nutriscore/llm-nutrition-estimator.ts";
+import { SandboxNutritionEstimator } from "../modules/nutriscore/sandbox-nutrition-estimator.ts";
+import type { NutritionEstimatorBrain } from "@tunakula/ts-contracts";
+import type { NutritionService } from "../app/nutrition.ts";
 import { TemplateMenuWriter } from "../modules/merchant/template-menu-writer.ts";
 import { LlmWinBackWriter } from "../modules/growth/llm-win-back-writer.ts";
 import { TemplateWinBackWriter } from "../modules/growth/template-win-back-writer.ts";
@@ -164,6 +168,7 @@ let winBackWriter: WinBackWriter | undefined;
 let reviewReplyWriter: ReviewReplyWriter | undefined;
 let riderBriefWriter: RiderBriefWriter | undefined;
 let upsellWriter: UpsellWriter | undefined;
+let nutritionEstimatorBrain: NutritionEstimatorBrain | undefined;
 const assistantKey = env("TUNAKULA_ASSISTANT_API_KEY");
 const assistantProvider = (env("TUNAKULA_ASSISTANT_PROVIDER") ?? "anthropic").toLowerCase();
 if (assistantKey && assistantProvider === "anthropic") {
@@ -179,7 +184,10 @@ if (assistantKey && assistantProvider === "anthropic") {
   riderBriefWriter = new LlmRiderBriefWriter({ apiKey: assistantKey, model }, new TemplateRiderBriefWriter());
   // …and the storefront upsell line, pitching one complementary dish the service chose, template fallback.
   upsellWriter = new LlmUpsellWriter({ apiKey: assistantKey, model }, new TemplateUpsellWriter());
-  log.info("AI assistant, menu, win-back, review-reply, rider-brief and upsell writers: hosted model enabled", { model });
+  // …and the nutrition estimator, which fills missing per-100g figures so dishes can be Nutri-Scored; the
+  // deterministic fallback makes no estimate, so with no model nothing is fabricated.
+  nutritionEstimatorBrain = new LlmNutritionEstimator({ apiKey: assistantKey, model }, new SandboxNutritionEstimator());
+  log.info("AI assistant, menu, win-back, review-reply, rider-brief, upsell and nutrition writers: hosted model enabled", { model });
 }
 
 // Map provider for distances and travel times; any outage falls back to the estimate, never to an error.
@@ -205,6 +213,7 @@ const app = await createApi({
   ...(reviewReplyWriter ? { reviewReplyWriter } : {}),
   ...(riderBriefWriter ? { riderBriefWriter } : {}),
   ...(upsellWriter ? { upsellWriter } : {}),
+  ...(nutritionEstimatorBrain ? { nutritionEstimatorBrain } : {}),
   routing,
   corsOrigins: (env("TUNAKULA_CONSOLE_ORIGINS") ?? "").split(",").map((o) => o.trim()).filter(Boolean),
   ...(env("TUNAKULA_TRUST_PROXY") === "1" ? { trustProxy: true } : {}),
@@ -232,6 +241,7 @@ if (dispatchMs > 0) {
   const subscriptions = app.get<SubscriptionService>(TOKENS.subscriptions);
   const merchantPlans = app.get<MerchantPlanService>(TOKENS.merchantPlans);
   const trend = app.get<TrendService>(TOKENS.trend);
+  const nutrition = app.get<NutritionService>(TOKENS.nutrition);
   let running = false;
   loop = setInterval(async () => {
     if (running) return;
@@ -266,6 +276,10 @@ if (dispatchMs > 0) {
         // cadence guard keeps it to ~hourly per country, so calling it every tick is cheap.
         const tr = await trend.sweep(c.iso2);
         if (tr.ran && (tr.opportunities || tr.observations)) log.info("trend", { country: c.iso2, ...tr });
+        // AI agent fills missing per-100g nutrition so dishes can be Nutri-Scored. No-op unless a model is
+        // configured; rate-limited per country and bounded per run so it never floods the model.
+        const nutri = await nutrition.estimateMissing(c.iso2, { limit: 5, minIntervalMs: 300_000 });
+        if (nutri.estimated) log.info("nutrition estimates", { country: c.iso2, ...nutri });
       }
     } catch (error) { log.error("dispatch failed", { error }); } finally { running = false; }
   }, dispatchMs);

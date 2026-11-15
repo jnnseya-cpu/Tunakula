@@ -40,6 +40,7 @@ export const TOKENS = {
   assistant: "ASSISTANT_SERVICE",
   growth: "GROWTH_SERVICE",
   trend: "TREND_SERVICE",
+  nutrition: "NUTRITION_SERVICE",
   merchantCopilot: "MERCHANT_COPILOT_SERVICE",
   menuWriter: "MENU_WRITER_SERVICE",
   upsell: "UPSELL_SERVICE",
