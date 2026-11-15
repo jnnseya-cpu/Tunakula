@@ -9,6 +9,15 @@ import { audit } from "../persistence/identity.ts";
 import { badRequest, notFound, unprocessable } from "./errors.ts";
 import { require } from "./principal.ts";
 import { isOpenNow, parseWeekly, type WeeklyHours } from "../modules/catalogue/hours.ts";
+import { gradeFromFacts, NUTRISCORE_FACT_KEYS } from "../modules/nutriscore/nutriscore.ts";
+
+/** Conservative food/beverage classifier for the Nutri-Score (beverages use a different scale). Infers "beverage"
+ *  only from clear drink words in the category/name/tags; never auto-flags plain water (that would mis-grade a
+ *  flavoured drink as A). Everything else is treated as a food. */
+function nutriScoreKindFor(i: { category?: string | null; names?: Record<string, string>; tags?: readonly string[] }): { kind?: "food" | "beverage" } {
+  const hay = [i.category ?? "", ...Object.values(i.names ?? {}), ...(i.tags ?? [])].join(" ").toLowerCase();
+  return /\b(boisson|drink|beverage|juice|jus|soda|cola|th[eé]|tea|caf[eé]|coffee|smoothie|limonade|lemonade|milkshake)\b/.test(hay) ? { kind: "beverage" } : {};
+}
 
 export class CatalogueService {
   private readonly db: Db;
@@ -573,7 +582,9 @@ interface ItemInput {
 export const DIETARY_TAGS = ["VEGETARIAN", "VEGAN", "HALAL", "KOSHER", "GLUTEN_FREE", "DAIRY_FREE", "NUT_FREE", "ORGANIC", "SPICY"] as const;
 /** The 14 EU major allergens; a dish's `allergens` are validated against this set when provided. */
 export const EU_ALLERGENS = ["gluten", "crustaceans", "eggs", "fish", "peanuts", "soybeans", "milk", "nuts", "celery", "mustard", "sesame", "sulphites", "lupin", "molluscs"] as const;
-const NUTRITION_KEYS = ["kcal", "protein_g", "carbs_g", "fat_g", "sugar_g", "salt_g"] as const;
+// Per-serving display figures, plus the explicit per-100 g inputs the Nutri-Score needs (NUTRISCORE_FACT_KEYS).
+// When all the per-100 g inputs are present, each dish is scored automatically on read; otherwise no grade is shown.
+const NUTRITION_KEYS = ["kcal", "protein_g", "carbs_g", "fat_g", "sugar_g", "salt_g", ...NUTRISCORE_FACT_KEYS] as const;
 
 function dietaryTags(value: unknown): string[] {
   if (!Array.isArray(value)) throw badRequest("DIETARY_INVALID", "dietary is a list of tags");
@@ -626,6 +637,8 @@ function publicItem(i: MenuItemRow, at?: Date, tz?: string, promos?: PromotionRo
     allergens: i.allergens,
     dietary: i.dietary,
     nutrition: i.nutrition,
+    // Automatic Nutri-Score (A–E), computed per 100 g from the dish's own facts; null when the data is incomplete.
+    nutri_score: gradeFromFacts(i.nutrition, nutriScoreKindFor(i))?.grade ?? null,
     age_restricted: i.age_restricted,
     available: i.available,
     recommended: i.recommended,
