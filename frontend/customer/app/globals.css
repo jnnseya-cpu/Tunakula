@@ -1344,6 +1344,16 @@ section.tight { padding: 44px 0; }
 .r-age { background: color-mix(in srgb, var(--bad, #c0391b) 10%, #fff); border: 1px solid color-mix(in srgb, var(--bad, #c0391b) 35%, transparent); color: var(--bad, #c0391b); border-radius: 12px; padding: 10px 12px; font-weight: 600; overflow-wrap: anywhere; }
 .kcal { font-size: 11px; font-weight: 600; color: var(--muted); background: var(--tint); border-radius: 6px; padding: 2px 7px; }
 
+/* Nutri-Score badge: the official five-colour A–E scale. An AI estimate is marked with a ~ and softened. */
+.nutri { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 6px; font-size: 12px; font-weight: 800; line-height: 1; color: #fff; }
+.nutri sup { font-size: 9px; font-weight: 700; margin-left: 1px; }
+.nutri-A { background: #038141; }
+.nutri-B { background: #85bb2f; }
+.nutri-C { background: #fecb02; color: #1a1a1a; }
+.nutri-D { background: #ee8100; }
+.nutri-E { background: #e63e11; }
+.nutri.est { opacity: .85; outline: 1px dashed color-mix(in srgb, #fff 55%, transparent); outline-offset: -2px; }
+
 /* Group ordering (additive) */
 .group-cta { display: block; margin: 10px 0; padding: 12px 14px; border-radius: var(--radius); background: var(--tint); color: var(--ink); font-weight: 600; font-size: 14px; text-decoration: none; border: 1px dashed var(--rule-strong); }
 .group-cta:hover { background: var(--paper); }

@@ -14,7 +14,7 @@ import { t, lang } from "../lib/i18n";
 interface VOption { id: string; name: string; price: string }
 interface Variation { id: string; name: string; type: "SINGLE" | "MULTI"; required: boolean; min: number; max: number; options: VOption[] }
 interface Promo { name: string; percent: number; was: MoneyWire; now: MoneyWire }
-interface MenuItem { id: string; names: Record<string, string>; prices: Record<string, MoneyWire>; tags: string[]; allergens: string[]; available: boolean; variations?: Variation[]; addons?: VOption[]; veg?: boolean | null; dietary?: string[]; nutrition?: Record<string, number>; age_restricted?: boolean; image_id?: string | null; availability_hours?: Record<string, [string, string][]>; available_now?: boolean; promo?: Promo; unit_label?: string | null; category?: string | null }
+interface MenuItem { id: string; names: Record<string, string>; prices: Record<string, MoneyWire>; tags: string[]; allergens: string[]; available: boolean; variations?: Variation[]; addons?: VOption[]; veg?: boolean | null; dietary?: string[]; nutrition?: Record<string, number>; age_restricted?: boolean; image_id?: string | null; availability_hours?: Record<string, [string, string][]>; available_now?: boolean; promo?: Promo; unit_label?: string | null; category?: string | null; nutri_score?: "A" | "B" | "C" | "D" | "E" | null; nutri_score_basis?: string | null }
 
 /** Dayparting: whether the dish has a schedule, and a short label of today's window (for the storefront badge). */
 const isScheduled = (i: MenuItem) => Object.keys(i.availability_hours ?? {}).length > 0;
@@ -162,8 +162,15 @@ export function LiveStore() {
           {i.promo ? <p className="promo-name">🏷️ {i.promo.name}</p> : null}
           {optioned ? <p className="muted small">{(i.variations?.length ?? 0) > 0 ? "Choices" : "Add-ons"} available</p> : null}
           {isScheduled(i) ? <p className="li-hours">🕒 {i.available_now === false ? (window ? `Available ${window}` : "Not available today") : (window ? `Available ${window}` : "Available at set times")}</p> : null}
-          {dietaryOf(i).length || i.nutrition?.kcal !== undefined || i.age_restricted ? (
+          {dietaryOf(i).length || i.nutrition?.kcal !== undefined || i.age_restricted || i.nutri_score ? (
             <p className="diet-badges">
+              {i.nutri_score ? (
+                <span
+                  className={`nutri nutri-${i.nutri_score}${i.nutri_score_basis === "ai_estimate" ? " est" : ""}`}
+                  title={`Nutri-Score ${i.nutri_score}${i.nutri_score_basis === "ai_estimate" ? " — estimated" : ""}`}
+                  aria-label={`Nutri-Score ${i.nutri_score}${i.nutri_score_basis === "ai_estimate" ? ", estimated" : ""}`}
+                >{i.nutri_score}{i.nutri_score_basis === "ai_estimate" ? <sup aria-hidden="true">~</sup> : null}</span>
+              ) : null}
               {i.age_restricted ? <span className="diet-tag age">18+</span> : null}
               {dietaryOf(i).map((d) => <span key={d} className="diet-tag">{DIETARY_LABEL[d] ?? d}</span>)}
               {i.nutrition?.kcal !== undefined ? <span className="kcal">{i.nutrition.kcal} kcal</span> : null}
