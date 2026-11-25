@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  int, mapAll, mapBranch, mapItem, mapMerchant, mapOrder, mapUser, moneyToMinor, normalizePhone,
+  int, mapAddress, mapAll, mapBranch, mapItem, mapMerchant, mapOrder, mapUser, moneyToMinor, normalizePhone,
   parseIdList, parseVariations, resolveAddons, str, toMinorUnits,
   type AddonSource, type MigratorConfig, type Row,
 } from "../src/migrator/transform.ts";
@@ -92,6 +92,29 @@ test("mapItem and mapOrder carry StackFood 2-decimal money as CDF minor units", 
     assert.equal(order.value.state, "DELIVERED");
     assert.equal(order.value.customerSourceId, "9");
   }
+});
+
+test("mapAddress maps a StackFood saved address, labels it and requires a map pin", () => {
+  const ok = mapAddress({ id: "5", user_id: "9", latitude: "-4.32", longitude: "15.31", address_type: "home", address: "12 Av. du Commerce, Gombe", contact_person_number: "0810000000" }, DRC_CONFIG);
+  assert.ok(ok.ok);
+  if (ok.ok) {
+    assert.equal(ok.value.customerSourceId, "9");
+    assert.equal(ok.value.label, "Home");
+    assert.equal(ok.value.lat, -4.32);
+    assert.equal(ok.value.lng, 15.31);
+    assert.equal(ok.value.landmark, "12 Av. du Commerce, Gombe");
+    assert.equal(ok.value.contactPhoneE164, "+243810000000");
+    assert.equal(ok.value.preferDefault, true);
+  }
+  // office → Work, and no default preference.
+  const work = mapAddress({ id: "6", user_id: "9", latitude: "-4.3", longitude: "15.3", address_type: "office", address: "Office" }, DRC_CONFIG);
+  assert.ok(work.ok && work.value.label === "Work" && work.value.preferDefault === false);
+  // A row with no usable pin is reported, never silently inserted (the target requires lat/lng).
+  const noPin = mapAddress({ id: "7", user_id: "9", latitude: "", longitude: "", address_type: "home" }, DRC_CONFIG);
+  assert.equal(noPin.ok, false);
+  // A missing customer link is reported.
+  const noUser = mapAddress({ id: "8", user_id: "", latitude: "-4.3", longitude: "15.3" }, DRC_CONFIG);
+  assert.equal(noUser.ok, false);
 });
 
 test("parseIdList reads a food's add_ons column as JSON or CSV", () => {

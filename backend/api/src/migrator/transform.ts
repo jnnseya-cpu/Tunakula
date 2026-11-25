@@ -241,6 +241,17 @@ export interface OrderRecord {
   readonly state: string;
   readonly placedAt: string | null;
 }
+/** A customer's saved delivery address (StackFood customer_addresses → identity.saved_address). */
+export interface AddressRecord {
+  readonly sourceId: string;
+  readonly customerSourceId: string;
+  readonly label: string; // e.g. Home / Work / Other (<=60 chars; the target requires a non-empty label)
+  readonly lat: number;
+  readonly lng: number;
+  readonly landmark: string | null; // the free-text address line
+  readonly contactPhoneE164: string | null;
+  readonly preferDefault: boolean; // a home/default address — a hint for which to mark default per customer
+}
 
 // Which source column holds each canonical field. Required keys are read unconditionally; optional keys
 // (a column the dump may or may not carry) are read only when present.
@@ -254,6 +265,12 @@ export interface ItemFields {
   readonly variations?: string; // older variations JSON column (fallback)
 }
 export interface OrderFields { readonly id: string; readonly branchId: string; readonly total: string; readonly status: string; readonly customerId?: string; readonly placedAt?: string }
+export interface AddressFields {
+  readonly id: string; readonly customerId: string; readonly lat: string; readonly lng: string;
+  readonly label?: string; // StackFood address_type (home/office/others)
+  readonly landmark?: string; // the free-text address line
+  readonly contactPhone?: string;
+}
 
 export interface MigratorConfig {
   readonly countryCallingCode: string; // e.g. "243" for DRC
@@ -267,6 +284,7 @@ export interface MigratorConfig {
     readonly branch: BranchFields;
     readonly item: ItemFields;
     readonly order: OrderFields;
+    readonly address?: AddressFields; // optional: a dump may not carry saved addresses
   };
 }
 
@@ -358,6 +376,42 @@ export function mapOrder(row: Row, cfg: MigratorConfig): Mapped<OrderRecord> {
       currency: cfg.currency,
       state: cfg.stateFor(status),
       placedAt: f.placedAt ? str(row, f.placedAt) : null,
+    },
+  };
+}
+
+/** StackFood address_type → a friendly, length-capped Tunakula label. */
+const ADDRESS_LABELS: Readonly<Record<string, string>> = { home: "Home", house: "Home", office: "Work", work: "Work", others: "Other", other: "Other" };
+
+export function mapAddress(row: Row, cfg: MigratorConfig): Mapped<AddressRecord> {
+  const f = cfg.fields.address;
+  if (!f) return { ok: false, problem: problem("address", null, "address", "no address field map configured") };
+  const sourceId = str(row, f.id);
+  if (!sourceId) return { ok: false, problem: problem("address", null, f.id, "missing id") };
+  const customerSourceId = str(row, f.customerId);
+  if (!customerSourceId) return { ok: false, problem: problem("address", sourceId, f.customerId, "missing customer id") };
+  const latS = str(row, f.lat);
+  const lngS = str(row, f.lng);
+  const lat = latS !== null && /^-?\d+(\.\d+)?$/.test(latS) ? Number(latS) : null;
+  const lng = lngS !== null && /^-?\d+(\.\d+)?$/.test(lngS) ? Number(lngS) : null;
+  if (lat === null || lng === null || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
+    return { ok: false, problem: problem("address", sourceId, f.lat, "missing or invalid map pin") }; // target requires a valid lat/lng
+  }
+  const typeRaw = (f.label ? str(row, f.label) : null) ?? "";
+  const label = (ADDRESS_LABELS[typeRaw.toLowerCase()] ?? (typeRaw ? typeRaw.slice(0, 60) : "Home")) || "Home";
+  const landmark = f.landmark ? str(row, f.landmark) : null;
+  const contactRaw = f.contactPhone ? str(row, f.contactPhone) : null;
+  return {
+    ok: true,
+    value: {
+      sourceId,
+      customerSourceId,
+      label,
+      lat,
+      lng,
+      landmark: landmark ? landmark.slice(0, 280) : null,
+      contactPhoneE164: contactRaw ? normalizePhone(contactRaw, cfg.countryCallingCode) : null,
+      preferDefault: ["home", "house", "default"].includes(typeRaw.toLowerCase()),
     },
   };
 }

@@ -27,7 +27,8 @@ CREATE TABLE migration."user"   (source_id text PRIMARY KEY, phone_e164 text NOT
 CREATE TABLE migration.merchant (source_id text PRIMARY KEY, record jsonb NOT NULL);
 CREATE TABLE migration.branch   (source_id text PRIMARY KEY, record jsonb NOT NULL);
 CREATE TABLE migration.item     (source_id text PRIMARY KEY, record jsonb NOT NULL);
-CREATE TABLE migration.order_hdr(source_id text PRIMARY KEY, total_minor numeric NOT NULL, record jsonb NOT NULL);`;
+CREATE TABLE migration.order_hdr(source_id text PRIMARY KEY, total_minor numeric NOT NULL, record jsonb NOT NULL);
+CREATE TABLE migration.address (source_id text PRIMARY KEY, record jsonb NOT NULL);`;
 
 before(async () => {
   t = await testDatabase();
@@ -65,6 +66,13 @@ before(async () => {
       [JSON.stringify(rich), JSON.stringify(gone), JSON.stringify(orphan)]);
     await sql.query(`INSERT INTO migration.order_hdr (source_id, total_minor, record) VALUES ('o1', 100, $1)`,
       [JSON.stringify({ sourceId: "o1", branchSourceId: "b1", customerSourceId: "u1", totalMinor: "100", currency: "CDF", state: "DELIVERED", placedAt: null })]);
+    // Two saved addresses for u1 (home + work) and one for a customer that will promote (u2). The orphan
+    // address 'a-gone' points at a customer that does not exist, so it must be skipped.
+    await sql.query(`INSERT INTO migration.address (source_id, record) VALUES ('a1',$1),('a2',$2),('a3',$3),('a-gone',$4)`,
+      [JSON.stringify({ sourceId: "a1", customerSourceId: "u1", label: "Home", lat: -4.32, lng: 15.31, landmark: "12 Av. du Commerce", contactPhoneE164: "+243810000001", preferDefault: true }),
+       JSON.stringify({ sourceId: "a2", customerSourceId: "u1", label: "Work", lat: -4.3, lng: 15.3, landmark: null, contactPhoneE164: null, preferDefault: false }),
+       JSON.stringify({ sourceId: "a3", customerSourceId: "u2", label: "Home", lat: -4.34, lng: 15.27, landmark: null, contactPhoneE164: null, preferDefault: true }),
+       JSON.stringify({ sourceId: "a-gone", customerSourceId: "u999", label: "Home", lat: -4.3, lng: 15.3, landmark: null, contactPhoneE164: null, preferDefault: false })]);
   });
 });
 after(async () => { await owner.close(); await t.drop(); });
@@ -75,6 +83,7 @@ test("dry run writes nothing and reports what would promote", async () => {
   assert.equal(s.branches, 2);
   assert.equal(s.items, 2, "2 promotable items (the orphan is excluded)");
   assert.equal(s.itemsUnavailable, 1);
+  assert.equal(s.addresses, 3, "3 promotable addresses (the orphan customer's is excluded)");
   // Nothing written.
   const c = one(await db.tx({ country: "CD" }, (sql) => sql.query<{ n: string }>("SELECT count(*)::text AS n FROM catalogue.branch")));
   assert.equal(c.n, "0", "dry run created no branches");
@@ -106,6 +115,18 @@ test("apply promotes merchants, branches, items (with add-ons + variations) and 
     const orphan = await sql.query("SELECT 1 FROM catalogue.menu_item WHERE names->>'fr' = 'Perdu'");
     assert.equal(orphan.length, 0, "the orphan item (missing branch) was not promoted");
   });
+  assert.equal(s.addresses, 3, "all three resolvable addresses promoted");
+
+  await db.tx({ country: "CD" }, async (sql) => {
+    // u1 has both saved addresses, with exactly one default.
+    const u1 = one(await sql.query<{ id: string }>("SELECT id FROM identity.app_user WHERE phone_e164 = $1", ["+243810000001"]));
+    const addrs = await sql.query<{ label: string; is_default: boolean; contact_phone: string | null }>(
+      "SELECT label, is_default, contact_phone FROM identity.saved_address WHERE user_id = $1 AND country_iso2 = 'CD' ORDER BY label", [u1.id]);
+    assert.equal(addrs.length, 2, "both of u1's addresses carried over");
+    assert.equal(addrs.filter((a) => a.is_default).length, 1, "exactly one default per customer");
+    assert.deepEqual(addrs.map((a) => a.label).sort(), ["Home", "Work"]);
+  });
+
   // Owner account exists and is bound RESTAURANT_OWNER (global identity).
   const binds = await db.tx({}, (sql) => sql.query("SELECT 1 FROM identity.role_binding WHERE role = 'RESTAURANT_OWNER'"));
   assert.equal(binds.length, 1);
@@ -116,8 +137,11 @@ test("a second apply is idempotent — creates nothing new", async () => {
   assert.equal(s.merchants, 0);
   assert.equal(s.branches, 0);
   assert.equal(s.items, 0);
+  assert.equal(s.addresses, 0, "no addresses re-created on a second apply");
   const b2 = one(await db.tx({ country: "CD" }, (sql) => sql.query<{ n: string }>("SELECT count(*)::text AS n FROM catalogue.branch")));
   assert.equal(b2.n, "2", "still exactly two branches after re-run");
+  const a2 = one(await db.tx({ country: "CD" }, (sql) => sql.query<{ n: string }>("SELECT count(*)::text AS n FROM identity.saved_address")));
+  assert.equal(a2.n, "3", "still exactly three addresses after re-run");
 });
 
 test("refuses to promote into an unpublished market", async () => {

@@ -29,6 +29,7 @@ export const SOURCE_TABLES = {
   addons: "add_ons", // the per-restaurant paid-extras catalogue; a food's add_ons column lists ids into this
   orders: "orders",
   orderLines: "order_details",
+  addresses: "customer_addresses", // a customer's saved delivery pins
 } as const;
 
 /** Map a StackFood v8.0 order status to a Tunakula order state. */
@@ -95,5 +96,7 @@ export const DRC_CONFIG: MigratorConfig = {
     // installs use `variations`, kept as the fallback). The runner loads the add_ons table and resolves ids.
     item: { id: "id", branchId: "restaurant_id", name: "name", price: "price", available: "status", addOns: "add_ons", foodVariations: "food_variations", variations: "variations" },
     order: { id: "id", branchId: "restaurant_id", customerId: "user_id", total: "order_amount", status: "order_status", placedAt: "created_at" },
+    // customer_addresses: a saved delivery pin. address_type is home/office/others; `address` is the free-text line.
+    address: { id: "id", customerId: "user_id", lat: "latitude", lng: "longitude", label: "address_type", landmark: "address", contactPhone: "contact_person_number" },
   },
 };

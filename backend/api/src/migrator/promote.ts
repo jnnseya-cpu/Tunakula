@@ -34,7 +34,7 @@ import { CountryConfigRegistry } from "../modules/config/config-registry.ts";
 import { GROUP_INTERNAL_BRAND, TUNAKULA_BRAND } from "../modules/config/brand.ts";
 import { loadVersions } from "../persistence/config.ts";
 import type {
-  BranchRecord, MenuItemRecord, MerchantRecord, MigratedVariation, UserRecord,
+  AddressRecord, BranchRecord, MenuItemRecord, MerchantRecord, MigratedVariation, UserRecord,
 } from "./transform.ts";
 
 const MAP_DDL = `
@@ -88,12 +88,12 @@ function toVariations(record: MenuItemRecord): Variation[] {
   }));
 }
 
-export interface PromotionSummary { merchants: number; owners: number; branches: number; items: number; itemsUnavailable: number; published: number; skipped: number; customers: number; orders: number }
+export interface PromotionSummary { merchants: number; owners: number; branches: number; items: number; itemsUnavailable: number; published: number; skipped: number; customers: number; orders: number; addresses: number }
 
 /** Promote the staged `migration.*` records into the live tables for one country. Pure of argv/env so it is testable. */
 export async function promote(db: Db, country: string, opts: { apply: boolean; doPublish: boolean }): Promise<PromotionSummary> {
   const { apply, doPublish } = opts;
-  const summary: PromotionSummary = { merchants: 0, owners: 0, branches: 0, items: 0, itemsUnavailable: 0, published: 0, skipped: 0, customers: 0, orders: 0 };
+  const summary: PromotionSummary = { merchants: 0, owners: 0, branches: 0, items: 0, itemsUnavailable: 0, published: 0, skipped: 0, customers: 0, orders: 0, addresses: 0 };
   {
     // The market must be published: its profile names the brand every promoted store belongs to.
     const registry = new CountryConfigRegistry({ brands: [TUNAKULA_BRAND, GROUP_INTERNAL_BRAND], connectors: [], apiHosts: {} });
@@ -113,21 +113,51 @@ export async function promote(db: Db, country: string, opts: { apply: boolean; d
     ]);
     // users read separately (reserved word as a table name)
     const users = await db.tx({}, (sql) => sql.query<{ source_id: string; record: UserRecord }>(`SELECT source_id, record FROM migration."user"`));
+    const addresses = await db.tx({}, (sql) => readStaged<AddressRecord>(sql, "address")).catch(() => [] as Staged<AddressRecord>[]);
 
     const groupMap = await db.tx({}, (sql) => loadMap(sql, "merchant"));
     const branchMap = await db.tx({}, (sql) => loadMap(sql, "branch"));
     const itemMap = await db.tx({}, (sql) => loadMap(sql, "item"));
     const userMap = await db.tx({}, (sql) => loadMap(sql, "customer"));
+    const addressMap = await db.tx({}, (sql) => loadMap(sql, "address"));
 
     // 1) Customers → global identity (phone + OTP). Idempotent by phone and by the promotion map.
     for (const { source_id, record } of users) {
       if (userMap.has(source_id)) { summary.skipped++; continue; }
-      if (!apply) { summary.skipped++; continue; }
-      await db.tx({}, async (sql) => {
+      if (!apply) { userMap.set(source_id, "(new)"); summary.skipped++; continue; } // populate the map so a dry run can resolve addresses/orders
+      const liveId = await db.tx({}, async (sql) => {
         const existing = await userByPhone(sql, record.phoneE164);
         const u = existing ?? (await createUser(sql, { phone: record.phoneE164, displayName: record.displayName ?? record.phoneE164.slice(-4), homeCountry: country }));
         await remember(sql, "customer", source_id, u.id);
+        return u.id;
       });
+      userMap.set(source_id, liveId); // so addresses/orders in THIS run resolve their customer
+    }
+
+    // 1b) Saved addresses → the customer's live address book. Keyed to the promoted customer via the user map;
+    //     the first address a customer gets (with no existing default) is marked default to satisfy the one-
+    //     default-per-customer invariant. Idempotent via the promotion map.
+    const defaulted = new Set<string>(); // live user ids given a default in THIS run
+    for (const { source_id, record } of addresses) {
+      if (addressMap.has(source_id)) { summary.skipped++; continue; }
+      const liveUserId = userMap.get(record.customerSourceId);
+      if (!liveUserId) { summary.skipped++; continue; } // address for a customer that did not promote
+      if (!apply) { summary.addresses++; continue; }
+      await db.tx({ country }, async (sql) => {
+        const [has] = await sql.query<{ n: string }>(
+          "SELECT count(*)::text AS n FROM identity.saved_address WHERE user_id = $1 AND country_iso2 = $2 AND is_default", [liveUserId, country],
+        );
+        const makeDefault = Number(has?.n ?? 0) === 0 && !defaulted.has(liveUserId);
+        const [row] = await sql.query<{ id: string }>(
+          `INSERT INTO identity.saved_address (country_iso2, user_id, label, lat, lng, landmark, contact_phone, is_default)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
+          [country, liveUserId, record.label.slice(0, 60) || "Home", record.lat, record.lng, record.landmark, record.contactPhoneE164, makeDefault],
+        );
+        if (makeDefault) defaulted.add(liveUserId);
+        await remember(sql, "address", source_id, row!.id);
+      });
+      addressMap.set(source_id, "(new)");
+      summary.addresses++;
     }
 
     // 2) Merchants → restaurant groups (+ an owner account bound RESTAURANT_OWNER when a vendor phone exists).
@@ -219,6 +249,7 @@ export async function promote(db: Db, country: string, opts: { apply: boolean; d
 function report(country: string, apply: boolean, doPublish: boolean, s: PromotionSummary): void {
   console.log(`\n${apply ? "PROMOTED to live tables" : "DRY RUN (no writes)"} — country ${country}\n`);
   console.log(`  customers : ${s.customers} staged`);
+  console.log(`  addresses : ${s.addresses} ${apply ? "created" : "would create"}`);
   console.log(`  merchants : ${s.merchants} ${apply ? "created" : "would create"} (${s.owners} owner account(s) bound)`);
   console.log(`  branches  : ${s.branches} ${apply ? "created" : "would create"}${doPublish ? `, ${s.published} published` : " (unpublished — publish after review, or re-run with --publish)"}`);
   console.log(`  items     : ${s.items} ${apply ? "created" : "would create"} (${s.itemsUnavailable} marked unavailable)`);

@@ -19,8 +19,8 @@
  */
 import pg from "pg";
 import {
-  mapAll, mapBranch, mapItem, mapMerchant, mapOrder, mapUser, str,
-  type AddonSource, type MigratorConfig, type Row, type RowProblem,
+  mapAddress, mapAll, mapBranch, mapItem, mapMerchant, mapOrder, mapUser, str,
+  type AddonSource, type AddressRecord, type MigratorConfig, type Row, type RowProblem,
 } from "./transform.ts";
 import { DRC_CONFIG, SOURCE_TABLES } from "./mapping.ts";
 import { formatReport, reconcile, sumMinor, type EntityCount, type SumCheck } from "./reconcile.ts";
@@ -47,12 +47,13 @@ CREATE TABLE IF NOT EXISTS migration.merchant (source_id text PRIMARY KEY, recor
 CREATE TABLE IF NOT EXISTS migration.branch   (source_id text PRIMARY KEY, record jsonb NOT NULL);
 CREATE TABLE IF NOT EXISTS migration.item     (source_id text PRIMARY KEY, record jsonb NOT NULL);
 CREATE TABLE IF NOT EXISTS migration.order_hdr(source_id text PRIMARY KEY, total_minor numeric NOT NULL, record jsonb NOT NULL);
+CREATE TABLE IF NOT EXISTS migration.address (source_id text PRIMARY KEY, record jsonb NOT NULL);
 `;
 
 // SQL identifiers (table + column names) are never user data in this tool — they come from the constants
 // above and the field map — but they are interpolated into SQL, so we allowlist/validate them before use.
 // That keeps the injection surface provably closed even if the config is later edited carelessly.
-const STAGING_TABLES: ReadonlySet<string> = new Set(["user", "merchant", "branch", "item", "order_hdr"]);
+const STAGING_TABLES: ReadonlySet<string> = new Set(["user", "merchant", "branch", "item", "order_hdr", "address"]);
 const SOURCE_TABLE_SET: ReadonlySet<string> = new Set(Object.values(SOURCE_TABLES));
 const SAFE_IDENT = /^[A-Za-z_][A-Za-z0-9_]*$/;
 function assertIdent(name: string, kind: string): void {
@@ -126,16 +127,25 @@ async function main(): Promise<void> {
   const branches = mapAll(await branchRows(), (r) => mapBranch(r, cfg));
   const items = mapAll(await rowsOf(SOURCE_TABLES.items), (r) => mapItem(r, cfg, addonsById));
   const orders = mapAll(await rowsOf(SOURCE_TABLES.orders), (r) => mapOrder(r, cfg));
+  // Saved delivery addresses. Optional: an older or trimmed dump may not carry the table — skip, never fail.
+  let addresses = { records: [] as AddressRecord[], problems: [] as RowProblem[] };
+  if (cfg.fields.address) {
+    try {
+      addresses = mapAll(await rowsOf(SOURCE_TABLES.addresses), (r) => mapAddress(r, cfg));
+    } catch {
+      console.log("note: customer_addresses table not found in the dump — importing without saved addresses.");
+    }
+  }
   await my.end();
 
-  const allProblems: RowProblem[] = [...users.problems, ...merchants.problems, ...branches.problems, ...items.problems, ...orders.problems];
+  const allProblems: RowProblem[] = [...users.problems, ...merchants.problems, ...branches.problems, ...items.problems, ...orders.problems, ...addresses.problems];
   if (allProblems.length) {
     console.log(`\n${allProblems.length} row(s) could not be migrated:`);
     for (const p of allProblems.slice(0, 50)) console.log(`  [${p.entity} ${p.sourceId ?? "?"}] ${p.field}: ${p.reason}`);
     if (allProblems.length > 50) console.log(`  … and ${allProblems.length - 50} more`);
   }
 
-  let loaded = { user: 0, merchant: 0, branch: 0, item: 0, order: 0 };
+  let loaded = { user: 0, merchant: 0, branch: 0, item: 0, order: 0, address: 0 };
   if (apply) {
     const client = new pg.Client({ connectionString: pgUrl });
     await client.connect();
@@ -146,10 +156,11 @@ async function main(): Promise<void> {
       branch: await load(client, "branch", branches.records.map((b) => ({ source_id: b.sourceId, record: b }))),
       item: await load(client, "item", items.records.map((i) => ({ source_id: i.sourceId, record: i }))),
       order: await load(client, "order_hdr", orders.records.map((o) => ({ source_id: o.sourceId, extra: { total_minor: o.totalMinor }, record: o }))),
+      address: await load(client, "address", addresses.records.map((a) => ({ source_id: a.sourceId, record: a }))),
     };
     await client.end();
   } else {
-    loaded = { user: users.records.length, merchant: merchants.records.length, branch: branches.records.length, item: items.records.length, order: orders.records.length };
+    loaded = { user: users.records.length, merchant: merchants.records.length, branch: branches.records.length, item: items.records.length, order: orders.records.length, address: addresses.records.length };
   }
 
   const counts: EntityCount[] = [
@@ -158,6 +169,7 @@ async function main(): Promise<void> {
     { entity: "branches", source: branches.records.length + branches.problems.length, loaded: loaded.branch, skipped: branches.problems.length },
     { entity: "items", source: items.records.length + items.problems.length, loaded: loaded.item, skipped: items.problems.length },
     { entity: "orders", source: orders.records.length + orders.problems.length, loaded: loaded.order, skipped: orders.problems.length },
+    { entity: "addresses", source: addresses.records.length + addresses.problems.length, loaded: loaded.address, skipped: addresses.problems.length },
   ];
   const sums: SumCheck[] = [{ label: "order value (minor)", sourceMinor: sumMinor(orders.records.map((o) => o.totalMinor)), loadedMinor: sumMinor(orders.records.map((o) => o.totalMinor)) }];
 
