@@ -1,5 +1,5 @@
 import { randomUUID } from "expo-crypto";
-import { API_URL, COUNTRY } from "../config";
+import { API_URL, APP_ID, APP_PLATFORM, APP_VERSION, COUNTRY } from "../config";
 
 /**
  * The one way the app talks to the Tunakula API. Mirrors the web storefront's `api()`:
@@ -20,12 +20,17 @@ export class ApiError extends Error {
 
 let authToken: string | null = null;
 let onUnauthorized: (() => void) | null = null;
+let onUpdateRequired: (() => void) | null = null;
 
 export function setAuthToken(token: string | null): void {
   authToken = token;
 }
 export function setUnauthorizedHandler(fn: () => void): void {
   onUnauthorized = fn;
+}
+/** Registered by the update gate: fires when the backend 426s this build (below the mandatory version floor). */
+export function setUpdateRequiredHandler(fn: () => void): void {
+  onUpdateRequired = fn;
 }
 
 export interface ApiOptions {
@@ -37,7 +42,7 @@ export interface ApiOptions {
 
 export async function api<T>(path: string, opts: ApiOptions = {}): Promise<T> {
   const method = opts.method ?? "GET";
-  const headers: Record<string, string> = { "x-country": COUNTRY, accept: "application/json" };
+  const headers: Record<string, string> = { "x-country": COUNTRY, accept: "application/json", "x-app-id": APP_ID, "x-app-platform": APP_PLATFORM, "x-app-version": APP_VERSION };
   if (opts.body !== undefined) headers["content-type"] = "application/json";
   if (method !== "GET") headers["idempotency-key"] = opts.key ?? randomUUID();
   if (opts.auth !== false && authToken) headers.authorization = `Bearer ${authToken}`;
@@ -56,6 +61,10 @@ export async function api<T>(path: string, opts: ApiOptions = {}): Promise<T> {
   if (res.status === 401) {
     onUnauthorized?.();
     throw new ApiError(401, "UNAUTHORIZED", "Please sign in again.");
+  }
+  if (res.status === 426) {
+    onUpdateRequired?.();
+    throw new ApiError(426, "UPDATE_REQUIRED", "Please update Tunakula to keep going.");
   }
 
   const text = await res.text();

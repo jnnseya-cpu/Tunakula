@@ -6,6 +6,7 @@ import { NavigationContainer, DefaultTheme } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { SessionProvider, useSession } from "./state/session";
 import { CartProvider } from "./state/cart";
+import { UpdateGate } from "./update-gate";
 import { configurePushHandler } from "./push";
 import { colors } from "./theme";
 import type { RootStackParamList } from "./navigation";
@@ -61,9 +62,11 @@ export default function App() {
       <SessionProvider>
         <CartProvider>
           <StatusBar style="dark" />
-          <NavigationContainer theme={navTheme}>
-            <Gate />
-          </NavigationContainer>
+          <UpdateGate>
+            <NavigationContainer theme={navTheme}>
+              <Gate />
+            </NavigationContainer>
+          </UpdateGate>
         </CartProvider>
       </SessionProvider>
     </SafeAreaProvider>

@@ -6,6 +6,7 @@ import { NavigationContainer, DefaultTheme } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { SessionProvider, useSession } from "./state/session";
 import { configurePushHandler } from "./push";
+import { UpdateGate } from "./update-gate";
 import { colors } from "./theme";
 import type { RootStackParamList } from "./navigation";
 import SignInScreen from "./screens/SignInScreen";
@@ -55,9 +56,11 @@ export default function App() {
     <SafeAreaProvider>
       <SessionProvider>
         <StatusBar style="dark" />
-        <NavigationContainer theme={navTheme}>
-          <Gate />
-        </NavigationContainer>
+        <UpdateGate>
+          <NavigationContainer theme={navTheme}>
+            <Gate />
+          </NavigationContainer>
+        </UpdateGate>
       </SessionProvider>
     </SafeAreaProvider>
   );
