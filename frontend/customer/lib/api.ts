@@ -8,6 +8,12 @@ import { COUNTRY } from "./country";
 export { COUNTRY } from "./country";
 const SESSION_KEY = "tk-session";
 
+/** Identifies the storefront build to the backend's app-version gate. Empty version => the gate stays inert (the
+ *  backend never blocks a version it can't read), so it only activates once a real build version is injected. */
+export const APP_ID = "storefront";
+export const APP_PLATFORM = "web";
+export const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION ?? "";
+
 export interface Session { readonly token: string; readonly userId: string; readonly phone: string }
 export interface MoneyWire { readonly amount_minor: string; readonly currency: string }
 
@@ -36,7 +42,7 @@ export function setSession(s: Session | null) {
 
 export async function api<T>(path: string, opts: { method?: string; body?: unknown; auth?: boolean; key?: string } = {}): Promise<T> {
   if (!API_URL) throw new ApiError(0, "OFFLINE", "Ordering opens at launch.");
-  const headers: Record<string, string> = { "x-country": COUNTRY };
+  const headers: Record<string, string> = { "x-country": COUNTRY, "x-app-id": APP_ID, "x-app-platform": APP_PLATFORM, ...(APP_VERSION ? { "x-app-version": APP_VERSION } : {}) };
   const method = opts.method ?? "GET";
   if (opts.body !== undefined) headers["content-type"] = "application/json";
   if (method !== "GET") headers["idempotency-key"] = opts.key ?? crypto.randomUUID();
@@ -52,9 +58,22 @@ export async function api<T>(path: string, opts: { method?: string; body?: unkno
   const body = text ? JSON.parse(text) : null;
   if (!res.ok) {
     if (res.status === 401) setSession(null);
+    if (res.status === 426) { try { window.dispatchEvent(new Event("tk-update-required")); } catch { /* no window */ } }
     throw new ApiError(res.status, body?.code ?? "ERROR", body?.detail ?? body?.title ?? `Request failed (${res.status})`);
   }
   return body as T;
+}
+
+export interface AppRequirements {
+  readonly status: "ok" | "update_optional" | "update_required";
+  readonly store_url: string;
+  readonly message: string;
+}
+/** Ask the backend whether this storefront build is current. Returns null on any failure (never blocks the site). */
+export async function appRequirements(): Promise<AppRequirements | null> {
+  try {
+    return await api<AppRequirements>(`/v1/app/requirements?app=${APP_ID}&platform=${APP_PLATFORM}&version=${encodeURIComponent(APP_VERSION)}`, { auth: false });
+  } catch { return null; }
 }
 
 export interface SiteContent {

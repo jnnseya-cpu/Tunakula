@@ -6,6 +6,7 @@ import { SITE_URL } from "../lib/site";
 import { MERCHANTS } from "../lib/catalogue";
 import { LocationProvider } from "../components/location";
 import { Reveal } from "../components/motion";
+import { UpdateGate } from "../components/update-gate";
 
 
 export const metadata: Metadata = {
@@ -25,6 +26,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         <LocationProvider stores={STORES}>{children}</LocationProvider>
         <Reveal />
+        <UpdateGate />
       </body>
     </html>
   );
