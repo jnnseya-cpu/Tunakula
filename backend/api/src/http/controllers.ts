@@ -30,6 +30,7 @@ import type { ChefService } from "../app/chef.ts";
 import type { AssistantService } from "../app/assistant.ts";
 import type { GrowthService } from "../app/growth.ts";
 import type { TrendService, BriefDraftInput } from "../app/trend.ts";
+import type { NutritionService } from "../app/nutrition.ts";
 import type { ObservationInput } from "../persistence/trend.ts";
 import type { Band } from "../modules/trend/scoring.ts";
 import type { BriefChannel } from "../modules/trend/brief.ts";
@@ -1984,6 +1985,27 @@ export class TrendController {
   @Get("ops/trend/measure")
   async measure(@Req() req: FastifyRequest, @Query("topic") topic: string) {
     return this.trend.measure(country(req), await this.#p(req), { topic_id: topic });
+  }
+}
+
+/** Nutrition: operator-triggered AI backfill of per-100g figures so dishes can be Nutri-Scored (§AI). */
+@Controller("v1")
+export class NutritionController {
+  constructor(
+    @Inject(TOKENS.db) private readonly db: Db,
+    @Inject(TOKENS.tokens) private readonly tokens: TokenService,
+    @Inject(TOKENS.nutrition) private readonly nutrition: NutritionService,
+  ) {}
+
+  #p(req: FastifyRequest) {
+    return this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+  }
+
+  /** Estimate a batch now and report how many dishes still need it; call until `remaining` is 0. */
+  @Post("ops/nutrition/backfill")
+  @HttpCode(200)
+  async backfill(@Req() req: FastifyRequest, @Body() body: { limit?: number }) {
+    return this.nutrition.backfill(country(req), await this.#p(req), { ...(body?.limit ? { limit: Number(body.limit) } : {}) });
   }
 }
 

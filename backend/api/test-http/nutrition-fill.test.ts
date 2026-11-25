@@ -11,17 +11,21 @@ import { testDatabase } from "../src/db/testing.ts";
 import { CountryConfigRegistry, READINESS_AREAS } from "../src/modules/config/config-registry.ts";
 import { GROUP_INTERNAL_BRAND, TUNAKULA_BRAND } from "../src/modules/config/brand.ts";
 import { saveVersions } from "../src/persistence/config.ts";
-import { addMenuItem, createBranch, ensureGroup, menuOf, publishBranch } from "../src/persistence/catalogue.ts";
-import { createUser } from "../src/persistence/identity.ts";
+import { addMenuItem, createBranch, ensureGroup, getBranch, menuOf, publishBranch } from "../src/persistence/catalogue.ts";
+import { addBinding, createUser } from "../src/persistence/identity.ts";
+import { loadPrincipal } from "../src/app/principal.ts";
 import { NutritionService } from "../src/app/nutrition.ts";
 import { SandboxNutritionEstimator } from "../src/modules/nutriscore/sandbox-nutrition-estimator.ts";
 import { gradeFromFacts } from "../src/modules/nutriscore/nutriscore.ts";
 import type { Db } from "../src/db/db.ts";
+import type { Principal } from "../src/modules/identity/policy.ts";
 
 let t: Awaited<ReturnType<typeof testDatabase>>;
 let db: Db;
 let registry: CountryConfigRegistry;
 let branchId: string;
+let admin: Principal;
+let outsider: Principal;
 
 // A fake estimator that returns a fixed, valid estimate for any dish.
 const fakeBrain: NutritionEstimatorBrain = {
@@ -42,6 +46,12 @@ before(async () => {
   await db.tx({}, (sql) => saveVersions(sql, registry.allVersions()));
   const brand = registry.published("CD")!.profile.experience.brand_id;
   const u = await db.tx({}, (sql) => createUser(sql, { phone: "+243810000040", displayName: "C", homeCountry: "CD" }));
+  admin = await db.tx({}, async (sql) => {
+    const a = await createUser(sql, { phone: "+243810000041", displayName: "Admin", homeCountry: "CD" });
+    await addBinding(sql, { userId: a.id, role: "COUNTRY_ADMIN", scope: { type: "COUNTRY", id: "CD" } });
+    return loadPrincipal(sql, a.id);
+  });
+  outsider = await db.tx({}, (sql) => loadPrincipal(sql, u.id));
   await db.tx({ country: "CD" }, async (sql) => {
     await ensureGroup(sql, { id: "rg-n", country: "CD", name: "N", createdBy: u.id });
     const branch = await createBranch(sql, { country_iso2: "CD", brand_id: brand, restaurant_group_id: "rg-n", name: "B", city: null, commune: "Gombe", lat: "-4.3", lng: "15.3", store_type: "RESTAURANT" }, true);
@@ -75,4 +85,26 @@ test("the AI fill estimates a dish, tags it ai_estimate, and the dish gets a Nut
   // Idempotent: a second run finds nothing new (the dish now has a basis).
   const again = await svc.estimateMissing("CD", { limit: 10 });
   assert.equal(again.estimated, 0);
+});
+
+test("operator backfill: a market admin grades a batch and sees the remaining count; others are forbidden", async () => {
+  // Seed three more dishes that still lack nutrition.
+  await db.tx({ country: "CD" }, async (sql) => {
+    const branch = await getBranch(sql, branchId);
+    for (const n of ["Frites", "Salade", "Jus de gingembre"]) await addMenuItem(sql, branch!, { names: { fr: n }, prices: { CDF: "3000" } });
+  });
+  const svc = new NutritionService(db, registry, fakeBrain);
+
+  // A plain customer cannot run it.
+  await assert.rejects(svc.backfill("CD", outsider, { limit: 50 }), /market admin/i);
+
+  // The admin grades the batch; remaining goes to 0.
+  const r = await svc.backfill("CD", admin, { limit: 50 });
+  assert.equal(r.estimated, 3);
+  assert.equal(r.remaining, 0, "no dish is left ungraded");
+});
+
+test("backfill refuses when no AI model is configured", async () => {
+  const noAi = new NutritionService(db, registry, new SandboxNutritionEstimator());
+  await assert.rejects(noAi.backfill("CD", admin, {}), /no ai model/i);
 });

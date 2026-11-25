@@ -30,6 +30,15 @@ export async function candidatesForEstimate(sql: Sql, limit: number): Promise<Nu
   return rows;
 }
 
+/** How many published dishes still lack a per-100 g nutrition basis — the remaining backfill backlog. */
+export async function countMissing(sql: Sql): Promise<number> {
+  const [row] = await sql.query<{ n: string }>(
+    `SELECT count(*)::text AS n FROM catalogue.menu_item mi JOIN catalogue.branch b ON b.id = mi.branch_id
+      WHERE b.published_at IS NOT NULL AND mi.nutrition_source IS NULL AND NOT (mi.nutrition ? 'energy_kj_100g')`,
+  );
+  return Number(row?.n ?? 0);
+}
+
 /** Merge the per-100 g estimate into the dish's nutrition and record its provenance (e.g. 'ai_estimate'). */
 export async function storeNutrition(sql: Sql, itemId: string, facts: Record<string, number>, source: string): Promise<void> {
   await sql.query(

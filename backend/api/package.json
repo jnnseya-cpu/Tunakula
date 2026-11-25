@@ -33,6 +33,7 @@
     "migrate": "node src/db/migrate-cli.ts",
     "bootstrap-admin": "node src/db/bootstrap-cli.ts",
     "publish-market": "tsx --tsconfig tsconfig.json src/db/publish-market-cli.ts",
-    "seed:demo": "tsx --tsconfig tsconfig.json src/db/seed-demo.ts"
+    "seed:demo": "tsx --tsconfig tsconfig.json src/db/seed-demo.ts",
+    "backfill-nutrition": "tsx --tsconfig tsconfig.json src/db/backfill-nutrition-cli.ts"
   }
 }

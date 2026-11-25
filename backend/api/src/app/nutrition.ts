@@ -10,8 +10,10 @@
 import type { NutritionEstimatorBrain } from "@tunakula/ts-contracts";
 import type { Db } from "../db/db.ts";
 import type { CountryConfigRegistry } from "../modules/config/config-registry.ts";
+import { authorize, type Principal } from "../modules/identity/policy.ts";
 import { classifyBeverage } from "../modules/nutriscore/nutriscore.ts";
-import { candidatesForEstimate, storeNutrition } from "../persistence/nutrition.ts";
+import { candidatesForEstimate, countMissing, storeNutrition } from "../persistence/nutrition.ts";
+import { badRequest, forbidden, notFound } from "./errors.ts";
 
 export class NutritionService {
   private readonly db: Db;
@@ -44,8 +46,32 @@ export class NutritionService {
     }
     this.lastRun.set(country, this.now());
     const limit = Math.min(Math.max(opts.limit ?? 10, 1), 100);
-    const candidates = await this.db.tx({ country }, (sql) => candidatesForEstimate(sql, limit));
+    const r = await this.#estimateBatch(country, limit);
+    return { ...r, ran: true };
+  }
 
+  /**
+   * Operator-triggered backfill (spec §AI): estimate up to `limit` dishes in one go, then report how many still
+   * need it (`remaining`), so an admin can grade a whole catalogue fast by calling it until remaining is 0 — far
+   * quicker than the gentle background trickle, yet still bounded per call so it never floods the model. Requires
+   * the campaign:write capability; no cadence guard.
+   */
+  async backfill(country: string, principal: Principal, opts: { limit?: number } = {}): Promise<{ scanned: number; estimated: number; skipped: number; remaining: number }> {
+    const v = this.registry.published(country);
+    if (!v) throw notFound(`Market ${country}`);
+    if (!authorize(principal, "campaign:write", { type: "order", country }, { activeCountry: country, profile: v.profile }).allowed) {
+      throw forbidden("Nutrition backfill is managed by a market admin");
+    }
+    if (!this.aiConfigured) throw badRequest("NO_AI", "No AI model is configured; set the AI provider in Integrations first");
+    const limit = Math.min(Math.max(opts.limit ?? 100, 1), 300);
+    const r = await this.#estimateBatch(country, limit);
+    const remaining = await this.db.tx({ country }, (sql) => countMissing(sql));
+    return { ...r, remaining };
+  }
+
+  /** Estimate and store nutrition for up to `limit` candidate dishes. The AI calls run outside any transaction. */
+  async #estimateBatch(country: string, limit: number): Promise<{ scanned: number; estimated: number; skipped: number }> {
+    const candidates = await this.db.tx({ country }, (sql) => candidatesForEstimate(sql, limit));
     let estimated = 0, skipped = 0;
     for (const c of candidates) {
       const name = c.names.fr || c.names.en || Object.values(c.names)[0] || "";
@@ -53,7 +79,6 @@ export class NutritionService {
       const description = c.description?.fr || c.description?.en || "";
       const ingredients = [...c.addons.map((a) => a.name), ...c.variations.flatMap((v) => v.options.map((o) => o.name))].filter(Boolean);
       const kind = classifyBeverage([c.category ?? "", ...Object.values(c.names), ...c.tags].join(" ")) ? "beverage" : "food";
-      // The AI call is outside any transaction, so a slow model never holds a DB connection.
       const res = await this.estimator.estimate({ name, ...(c.category ? { category: c.category } : {}), cuisines: c.tags, description, ingredients, kind, lang: "fr" });
       if (!res.estimate) { skipped++; continue; }
       const e = res.estimate;
@@ -64,6 +89,6 @@ export class NutritionService {
       await this.db.tx({ country }, (sql) => storeNutrition(sql, c.id, facts, "ai_estimate"));
       estimated++;
     }
-    return { scanned: candidates.length, estimated, skipped, ran: true };
+    return { scanned: candidates.length, estimated, skipped };
   }
 }
