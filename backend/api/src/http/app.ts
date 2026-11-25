@@ -32,6 +32,8 @@ import { GrowthService } from "../app/growth.ts";
 import { TrendService } from "../app/trend.ts";
 import { NutritionService } from "../app/nutrition.ts";
 import { SandboxNutritionEstimator } from "../modules/nutriscore/sandbox-nutrition-estimator.ts";
+import { AppReleaseService } from "../app/app-release.ts";
+import { isAppId, isAppPlatform, shouldBlock } from "../modules/appversion/app-version.ts";
 import type { NutritionEstimatorBrain } from "@tunakula/ts-contracts";
 import { SandboxGrowthBrain } from "../modules/growth/sandbox-growth-brain.ts";
 import { TemplateWinBackWriter } from "../modules/growth/template-win-back-writer.ts";
@@ -64,7 +66,7 @@ import type { CountryConfigRegistry } from "../modules/config/config-registry.ts
 import { PaymentRouter } from "../modules/payments/payment-router.ts";
 import { IdempotencyInterceptor, ProblemFilter, TOKENS } from "./common.ts";
 import { createMetrics } from "./metrics.ts";
-import { AdminConfigController, AdminController, AuthController, AddressController, FavouriteController, CommsController, CouponController, MerchantCouponController, BroadcastController, GroupController, KitchenController, MeController, MembershipController, NotificationsController, OnboardingController, OpsController, RefundController, ReferralController, LoyaltyController, CashbackController, ChatController, BannerController, SiteContentController, ChefController, SupportController, GrowthController, TrendController, NutritionController, MerchantCopilotController, IntegrationsController, SubscriptionController, PosController, KioskController, PushController, ReservationController, ReviewController, RiderController, WalletController, MerchantOnboardingController, CatalogueController, OrdersController, PaymentsController, PlatformController, WebhooksController } from "./controllers.ts";
+import { AdminConfigController, AdminController, AuthController, AddressController, FavouriteController, CommsController, CouponController, MerchantCouponController, BroadcastController, GroupController, KitchenController, MeController, MembershipController, NotificationsController, OnboardingController, OpsController, RefundController, ReferralController, LoyaltyController, CashbackController, ChatController, BannerController, SiteContentController, ChefController, SupportController, GrowthController, TrendController, NutritionController, AppReleaseController, MerchantCopilotController, IntegrationsController, SubscriptionController, PosController, KioskController, PushController, ReservationController, ReviewController, RiderController, WalletController, MerchantOnboardingController, CatalogueController, OrdersController, PaymentsController, PlatformController, WebhooksController } from "./controllers.ts";
 
 export interface ApiDeps {
   readonly db: Db;
@@ -147,6 +149,7 @@ export async function createApi(deps: ApiDeps): Promise<NestFastifyApplication> 
   const growth = new GrowthService(deps.db, deps.registry, deps.growthBrain ?? new SandboxGrowthBrain(), wallet, comms, deps.winBackWriter ?? new TemplateWinBackWriter(), now);
   const trend = new TrendService(deps.db, deps.registry, now);
   const nutrition = new NutritionService(deps.db, deps.registry, deps.nutritionEstimatorBrain ?? new SandboxNutritionEstimator(), () => now().getTime());
+  const appRelease = new AppReleaseService(deps.db, deps.registry);
   const catalogue = new CatalogueService(deps.db, deps.registry);
   const admin = new AdminService(deps.db, deps.registry, now);
   const merchantCopilot = new MerchantCopilotService(deps.db, deps.registry, deps.merchantBrain ?? new SandboxMerchantBrain(), catalogue, admin);
@@ -167,7 +170,7 @@ export async function createApi(deps: ApiDeps): Promise<NestFastifyApplication> 
     static register(): DynamicModule {
       return {
         module: ApiModule,
-        controllers: [AddressController, FavouriteController, AdminConfigController, AdminController, KitchenController, OpsController, OnboardingController, RiderController, MeController, MembershipController, GroupController, CouponController, MerchantCouponController, BroadcastController, ReviewController, ReservationController, RefundController, WalletController, ReferralController, LoyaltyController, CashbackController, ChatController, BannerController, SiteContentController, ChefController, SupportController, GrowthController, TrendController, NutritionController, MerchantCopilotController, IntegrationsController, SubscriptionController, PosController, KioskController, PushController, MerchantOnboardingController, PlatformController, AuthController, CatalogueController, OrdersController, PaymentsController, WebhooksController, NotificationsController, CommsController],
+        controllers: [AddressController, FavouriteController, AdminConfigController, AdminController, KitchenController, OpsController, OnboardingController, RiderController, MeController, MembershipController, GroupController, CouponController, MerchantCouponController, BroadcastController, ReviewController, ReservationController, RefundController, WalletController, ReferralController, LoyaltyController, CashbackController, ChatController, BannerController, SiteContentController, ChefController, SupportController, GrowthController, TrendController, NutritionController, AppReleaseController, MerchantCopilotController, IntegrationsController, SubscriptionController, PosController, KioskController, PushController, MerchantOnboardingController, PlatformController, AuthController, CatalogueController, OrdersController, PaymentsController, WebhooksController, NotificationsController, CommsController],
         providers: [
           { provide: TOKENS.db, useValue: deps.db },
           { provide: TOKENS.registry, useValue: deps.registry },
@@ -202,6 +205,7 @@ export async function createApi(deps: ApiDeps): Promise<NestFastifyApplication> 
           { provide: TOKENS.growth, useValue: growth },
           { provide: TOKENS.trend, useValue: trend },
           { provide: TOKENS.nutrition, useValue: nutrition },
+          { provide: TOKENS.appRelease, useValue: appRelease },
           { provide: TOKENS.merchantCopilot, useValue: merchantCopilot },
           { provide: TOKENS.menuWriter, useValue: menuWriter },
           { provide: TOKENS.upsell, useValue: upsell },
@@ -304,11 +308,49 @@ export async function createApi(deps: ApiDeps): Promise<NestFastifyApplication> 
     app.enableCors({
       origin: [...deps.corsOrigins],
       methods: ["GET", "POST", "DELETE", "PATCH", "PUT"],
-      allowedHeaders: ["authorization", "content-type", "idempotency-key", "x-country"],
+      allowedHeaders: ["authorization", "content-type", "idempotency-key", "x-country", "x-app-id", "x-app-platform", "x-app-version"],
       exposedHeaders: ["idempotent-replay"],
       maxAge: 600,
     });
   }
+  // App-version gate (cutover kill-switch). When a client identifies itself (x-app-id + x-app-platform) and the
+  // configured floor for it is `mandatory` and the client is below `min_supported`, refuse with 426 so a retired app
+  // cannot keep hitting this backend. Advisory by default — nothing blocks until an admin sets a mandatory floor.
+  // Health and the requirements lookup are always exempt so a blocked client can still discover what to do. Floors
+  // are cached briefly to keep this off the hot path; a flip takes effect within the TTL.
+  {
+    const floorCache = new Map<string, { floor: Awaited<ReturnType<typeof appRelease.floor>>; at: number }>();
+    const FLOOR_TTL_MS = 30_000;
+    app.getHttpAdapter().getInstance().addHook("onRequest", async (req, reply) => {
+      if (req.method === "OPTIONS") return;
+      const path = req.url.split("?")[0];
+      if (path === "/v1/health" || path === "/v1/app/requirements") return;
+      const appId = req.headers["x-app-id"];
+      const platform = req.headers["x-app-platform"];
+      if (!isAppId(appId) || !isAppPlatform(platform)) return;
+      const version = typeof req.headers["x-app-version"] === "string" ? req.headers["x-app-version"] : null;
+      const key = `${appId}:${platform}`;
+      const nowMs = now().getTime();
+      let hit = floorCache.get(key);
+      if (!hit || nowMs - hit.at > FLOOR_TTL_MS) {
+        hit = { floor: await appRelease.floor(appId, platform), at: nowMs };
+        floorCache.set(key, hit);
+      }
+      if (shouldBlock(version, hit.floor)) {
+        await reply.code(426).type("application/problem+json").send(JSON.stringify({
+          type: "https://www.tunakula.com/problems/update-required",
+          title: "UPDATE_REQUIRED",
+          status: 426,
+          code: "UPDATE_REQUIRED",
+          detail: hit.floor?.message || "Please update to the latest version to keep using Tunakula.",
+          min_supported: hit.floor?.min_supported ?? "",
+          store_url: hit.floor?.store_url ?? "",
+        }));
+        return reply;
+      }
+    });
+  }
+
   app.useGlobalFilters(new ProblemFilter(deps.onError ?? ((e) => console.error(e))));
   app.useGlobalInterceptors(new IdempotencyInterceptor(deps.db, tokens));
   await app.init();

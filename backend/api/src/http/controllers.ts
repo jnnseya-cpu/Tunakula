@@ -31,6 +31,7 @@ import type { AssistantService } from "../app/assistant.ts";
 import type { GrowthService } from "../app/growth.ts";
 import type { TrendService, BriefDraftInput } from "../app/trend.ts";
 import type { NutritionService } from "../app/nutrition.ts";
+import type { AppReleaseService } from "../app/app-release.ts";
 import type { ObservationInput } from "../persistence/trend.ts";
 import type { Band } from "../modules/trend/scoring.ts";
 import type { BriefChannel } from "../modules/trend/brief.ts";
@@ -2006,6 +2007,41 @@ export class NutritionController {
   @HttpCode(200)
   async backfill(@Req() req: FastifyRequest, @Body() body: { limit?: number }) {
     return this.nutrition.backfill(country(req), await this.#p(req), { ...(body?.limit ? { limit: Number(body.limit) } : {}) });
+  }
+}
+
+/** App-release gate: a public requirements check for clients, and the admin side that sets the version floor used
+ *  as the cutover kill-switch. The onRequest guard in http/app.ts enforces a mandatory floor; this is the API. */
+@Controller("v1")
+export class AppReleaseController {
+  constructor(
+    @Inject(TOKENS.db) private readonly db: Db,
+    @Inject(TOKENS.tokens) private readonly tokens: TokenService,
+    @Inject(TOKENS.appRelease) private readonly releases: AppReleaseService,
+  ) {}
+
+  #p(req: FastifyRequest) {
+    return this.db.tx({}, (sql) => loadPrincipal(sql, userId(req, this.tokens)));
+  }
+
+  /** Public: a client asks whether its version may proceed. Reads app/platform/version from query or app headers. */
+  @Get("app/requirements")
+  async requirements(@Req() req: FastifyRequest, @Query("app") app?: string, @Query("platform") platform?: string, @Query("version") version?: string) {
+    const h = (k: string) => { const v = req.headers[k]; return typeof v === "string" ? v : undefined; };
+    return this.releases.requirements(app ?? h("x-app-id"), platform ?? h("x-app-platform"), version ?? h("x-app-version") ?? null);
+  }
+
+  /** Admin: list every configured floor. */
+  @Get("admin/app-releases")
+  async list(@Req() req: FastifyRequest) {
+    return this.releases.list(country(req), await this.#p(req));
+  }
+
+  /** Admin: create or replace a floor (and flip the mandatory kill-switch). */
+  @Post("admin/app-releases")
+  @HttpCode(200)
+  async set(@Req() req: FastifyRequest, @Body() body: { app?: string; platform?: string; min_supported?: string; latest?: string; store_url?: string; mandatory?: boolean; message?: string }) {
+    return this.releases.set(country(req), await this.#p(req), body ?? {});
   }
 }
 
