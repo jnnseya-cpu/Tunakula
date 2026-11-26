@@ -27,6 +27,7 @@ const T = {
   kiosk: { fr: "Borne self-service", en: "Self-service kiosk" },
   chefs: { fr: "Chefs (validation)", en: "Chef review" },
   integrations: { fr: "Intégrations / API", en: "Integrations / API" },
+  appReleases: { fr: "Versions des apps", en: "App versions" },
   growth: { fr: "Croissance", en: "Growth" },
   broadcasts: { fr: "Diffusions", en: "Broadcasts" },
   copilot: { fr: "Copilote", en: "Copilot" },

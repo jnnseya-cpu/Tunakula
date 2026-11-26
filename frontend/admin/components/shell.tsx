@@ -65,6 +65,7 @@ const ICON: Record<string, string> = {
   cms: "M4 3h16a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Zm1 2v3h14V5H5Zm0 5v9h5v-9H5Zm7 0v4h7v-4h-7Zm0 6v3h7v-3h-7Z",
   chefs: "M12 2a5 5 0 0 0-4.9 4.1A4 4 0 0 0 6 14v1h12v-1a4 4 0 0 0-1.1-7.9A5 5 0 0 0 12 2ZM6 17h12v2a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2v-2Z",
   integrations: "M10 2h4v4.1a6 6 0 0 1 2.1 1.2l3.5-2 2 3.4-3.5 2a6 6 0 0 1 0 2.6l3.5 2-2 3.4-3.5-2A6 6 0 0 1 14 17.9V22h-4v-4.1a6 6 0 0 1-2.1-1.2l-3.5 2-2-3.4 3.5-2a6 6 0 0 1 0-2.6l-3.5-2 2-3.4 3.5 2A6 6 0 0 1 10 6.1V2Zm2 7a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z",
+  appReleases: "M7 2h10a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Zm0 2v14h10V4H7Zm5 1 3 4h-2v3h-2V9H9l3-4Zm-1 11h2v2h-2v-2Z",
   growth: "M4 20V4h2v14h14v2H4Zm3-3 4-5 3 3 5-6 1.4 1.3L14 18l-3-3-3 3.7L7 17Z",
   broadcasts: "M3 10v4h3l5 4V6L6 10H3Zm12.5 2a3.5 3.5 0 0 0-2-3.2v6.4a3.5 3.5 0 0 0 2-3.2Zm-2-7v2.1a5.5 5.5 0 0 1 0 9.8V19a7.5 7.5 0 0 0 0-14Z",
   copilot: "M12 2a5 5 0 0 1 5 5c0 1.9-1 3.3-2.2 4.3-.6.5-.8.8-.8 1.2V13h-4v-.5c0-.4-.2-.7-.8-1.2C7.9 10.3 7 8.9 7 7a5 5 0 0 1 5-5Zm-2 15h4v2h-4v-2Zm.5 3h3l-1 1.5h-1L10.5 20Z",
@@ -113,6 +114,7 @@ const NAV: { group: Key; items: NavItem[] }[] = [
     { href: "/comms/", key: "comms", cap: "markets" },
     { href: "/cms/", key: "cms", cap: "markets" },
     { href: "/integrations/", key: "integrations", cap: "markets" },
+    { href: "/app-releases/", key: "appReleases", cap: "markets" },
     { href: "/audit/", key: "audit", cap: "audit" },
   ] },
 ];
