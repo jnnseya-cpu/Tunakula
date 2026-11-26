@@ -30,6 +30,7 @@ export const SOURCE_TABLES = {
   orders: "orders",
   orderLines: "order_details",
   addresses: "customer_addresses", // a customer's saved delivery pins
+  walletTransactions: "wallet_transactions", // the customer wallet ledger
 } as const;
 
 /** Map a StackFood v8.0 order status to a Tunakula order state. */
@@ -89,7 +90,7 @@ export const DRC_CONFIG: MigratorConfig = {
   fields: {
     // vendors: the owner account. v8.0 vendors carry f_name/l_name, not a single business name — the brand
     // name lives on the restaurant (the branch). We use the owner's first name as the account label.
-    user: { id: "id", phone: "phone", name: "f_name", email: "email", createdAt: "created_at" },
+    user: { id: "id", phone: "phone", name: "f_name", email: "email", createdAt: "created_at", walletBalance: "wallet_balance" },
     merchant: { id: "id", name: "f_name", ownerPhone: "phone" },
     branch: { id: "id", merchantId: "vendor_id", name: "name", lat: "latitude", lng: "longitude", commune: "zone_id" },
     // add_ons is a food's id list into the add_ons table; food_variations is v8.0's variation JSON (older
@@ -98,5 +99,7 @@ export const DRC_CONFIG: MigratorConfig = {
     order: { id: "id", branchId: "restaurant_id", customerId: "user_id", total: "order_amount", status: "order_status", placedAt: "created_at" },
     // customer_addresses: a saved delivery pin. address_type is home/office/others; `address` is the free-text line.
     address: { id: "id", customerId: "user_id", lat: "latitude", lng: "longitude", label: "address_type", landmark: "address", contactPhone: "contact_person_number" },
+    // wallet_transactions: v8.0 keeps a `credit` and a `debit` decimal column (one is 0) plus a running `balance`.
+    walletTx: { id: "id", customerId: "user_id", credit: "credit", debit: "debit", type: "transaction_type", reference: "reference", createdAt: "created_at" },
   },
 };

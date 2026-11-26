@@ -186,6 +186,16 @@ export interface UserRecord {
   readonly displayName: string | null;
   readonly email: string | null;
   readonly createdAt: string | null;
+  readonly walletBalanceMinor: string | null; // the source's authoritative wallet balance, for reconciliation
+}
+/** One StackFood wallet movement → one Tunakula wallet.transaction (signed minor units). */
+export interface WalletTxRecord {
+  readonly sourceId: string;
+  readonly customerSourceId: string;
+  readonly amountMinor: string; // signed: credit positive, debit negative; never "0"
+  readonly kind: "TOPUP" | "ORDER_PAYMENT" | "REFUND" | "ADJUSTMENT";
+  readonly reference: string | null;
+  readonly createdAt: string | null;
 }
 export interface MerchantRecord {
   readonly sourceId: string;
@@ -255,7 +265,13 @@ export interface AddressRecord {
 
 // Which source column holds each canonical field. Required keys are read unconditionally; optional keys
 // (a column the dump may or may not carry) are read only when present.
-export interface UserFields { readonly id: string; readonly phone: string; readonly name?: string; readonly email?: string; readonly createdAt?: string }
+export interface UserFields { readonly id: string; readonly phone: string; readonly name?: string; readonly email?: string; readonly createdAt?: string; readonly walletBalance?: string }
+export interface WalletTxFields {
+  readonly id: string; readonly customerId: string;
+  readonly credit?: string; readonly debit?: string; // StackFood keeps a credit and a debit decimal column (one is 0)
+  readonly amount?: string; // …or a single signed decimal column, if the install uses one instead
+  readonly type?: string; readonly reference?: string; readonly createdAt?: string;
+}
 export interface MerchantFields { readonly id: string; readonly name: string; readonly ownerPhone?: string }
 export interface BranchFields { readonly id: string; readonly merchantId: string; readonly name: string; readonly lat?: string; readonly lng?: string; readonly commune?: string }
 export interface ItemFields {
@@ -285,6 +301,7 @@ export interface MigratorConfig {
     readonly item: ItemFields;
     readonly order: OrderFields;
     readonly address?: AddressFields; // optional: a dump may not carry saved addresses
+    readonly walletTx?: WalletTxFields; // optional: a dump may not carry wallet transactions
   };
 }
 
@@ -298,9 +315,54 @@ export function mapUser(row: Row, cfg: MigratorConfig): Mapped<UserRecord> {
   if (!rawPhone) return { ok: false, problem: problem("user", sourceId, f.phone, "missing phone") };
   const phone = normalizePhone(rawPhone, cfg.countryCallingCode);
   if (!phone) return { ok: false, problem: problem("user", sourceId, f.phone, `unparseable phone: ${rawPhone}`) };
+  const walletRaw = f.walletBalance ? str(row, f.walletBalance) : null;
+  const walletBalanceMinor = walletRaw ? moneyToMinor(walletRaw, cfg.fractionDigits) : null; // null when absent or unparseable
   return {
     ok: true,
-    value: { sourceId, phoneE164: phone, displayName: f.name ? str(row, f.name) : null, email: f.email ? str(row, f.email) : null, createdAt: f.createdAt ? str(row, f.createdAt) : null },
+    value: { sourceId, phoneE164: phone, displayName: f.name ? str(row, f.name) : null, email: f.email ? str(row, f.email) : null, createdAt: f.createdAt ? str(row, f.createdAt) : null, walletBalanceMinor },
+  };
+}
+
+/** Decide a Tunakula wallet kind from a StackFood transaction type and the movement's sign (credit vs debit). */
+export function walletKindFor(type: string, credit: boolean): WalletTxRecord["kind"] {
+  const t = type.toLowerCase();
+  if (credit && t.includes("refund")) return "REFUND"; // before the fund/topup check — "refund" contains "fund"
+  if (credit && (t.includes("fund") || t.includes("add_") || t.includes("topup") || t.includes("top_up") || t.includes("deposit"))) return "TOPUP";
+  if (!credit && t.includes("order")) return "ORDER_PAYMENT";
+  return "ADJUSTMENT"; // referral/loyalty/bonus/manual and anything else — a neutral, balance-preserving movement
+}
+
+export function mapWalletTx(row: Row, cfg: MigratorConfig): Mapped<WalletTxRecord> {
+  const f = cfg.fields.walletTx;
+  if (!f) return { ok: false, problem: problem("wallet_tx", null, "walletTx", "no wallet-transaction field map configured") };
+  const sourceId = str(row, f.id);
+  if (!sourceId) return { ok: false, problem: problem("wallet_tx", null, f.id, "missing id") };
+  const customerSourceId = str(row, f.customerId);
+  if (!customerSourceId) return { ok: false, problem: problem("wallet_tx", sourceId, f.customerId, "missing customer id") };
+  let amount: bigint;
+  if (f.amount) {
+    const raw = str(row, f.amount) ?? "0";
+    const neg = raw.startsWith("-");
+    const mag = moneyToMinor(neg ? raw.slice(1) : raw, cfg.fractionDigits);
+    if (mag === null) return { ok: false, problem: problem("wallet_tx", sourceId, f.amount, `bad amount: ${raw}`) };
+    amount = (neg ? -1n : 1n) * BigInt(mag);
+  } else {
+    const creditM = f.credit ? moneyToMinor(str(row, f.credit) ?? "0", cfg.fractionDigits) : "0";
+    const debitM = f.debit ? moneyToMinor(str(row, f.debit) ?? "0", cfg.fractionDigits) : "0";
+    if (creditM === null || debitM === null) return { ok: false, problem: problem("wallet_tx", sourceId, f.credit ?? f.debit ?? "amount", "bad credit/debit amount") };
+    amount = BigInt(creditM) - BigInt(debitM);
+  }
+  if (amount === 0n) return { ok: false, problem: problem("wallet_tx", sourceId, "amount", "zero movement (nothing to record)") };
+  return {
+    ok: true,
+    value: {
+      sourceId,
+      customerSourceId,
+      amountMinor: amount.toString(),
+      kind: walletKindFor(f.type ? str(row, f.type) ?? "" : "", amount > 0n),
+      reference: f.reference ? str(row, f.reference) : null,
+      createdAt: f.createdAt ? str(row, f.createdAt) : null,
+    },
   };
 }
 

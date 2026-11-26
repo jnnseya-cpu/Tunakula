@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  int, mapAddress, mapAll, mapBranch, mapItem, mapMerchant, mapOrder, mapUser, moneyToMinor, normalizePhone,
-  parseIdList, parseVariations, resolveAddons, str, toMinorUnits,
+  int, mapAddress, mapAll, mapBranch, mapItem, mapMerchant, mapOrder, mapUser, mapWalletTx, moneyToMinor, normalizePhone,
+  parseIdList, parseVariations, resolveAddons, str, toMinorUnits, walletKindFor,
   type AddonSource, type MigratorConfig, type Row,
 } from "../src/migrator/transform.ts";
 import { DRC_CONFIG, stackfoodStateFor, stackfoodStoreTypeFor } from "../src/migrator/mapping.ts";
@@ -115,6 +115,36 @@ test("mapAddress maps a StackFood saved address, labels it and requires a map pi
   // A missing customer link is reported.
   const noUser = mapAddress({ id: "8", user_id: "", latitude: "-4.3", longitude: "15.3" }, DRC_CONFIG);
   assert.equal(noUser.ok, false);
+});
+
+test("mapUser carries the source wallet balance for reconciliation", () => {
+  const u = mapUser({ id: "9", phone: "0810000000", f_name: "Amina", wallet_balance: "1500.00" }, DRC_CONFIG);
+  assert.ok(u.ok && u.value.walletBalanceMinor === "1500"); // CDF: 2-decimal source → 0-digit minor
+});
+
+test("walletKindFor maps a StackFood transaction type + sign to a wallet kind", () => {
+  assert.equal(walletKindFor("add_fund", true), "TOPUP");
+  assert.equal(walletKindFor("wallet_refund", true), "REFUND");
+  assert.equal(walletKindFor("order_place", false), "ORDER_PAYMENT");
+  assert.equal(walletKindFor("referral_bonus", true), "ADJUSTMENT");
+  assert.equal(walletKindFor("loyalty", true), "ADJUSTMENT");
+});
+
+test("mapWalletTx turns credit/debit columns into one signed movement, rejecting a zero move", () => {
+  const credit = mapWalletTx({ id: "1", user_id: "9", credit: "2000.00", debit: "0.00", transaction_type: "add_fund", created_at: "2025-01-02 10:00:00" }, DRC_CONFIG);
+  assert.ok(credit.ok);
+  if (credit.ok) {
+    assert.equal(credit.value.amountMinor, "2000");
+    assert.equal(credit.value.kind, "TOPUP");
+    assert.equal(credit.value.customerSourceId, "9");
+  }
+  const debit = mapWalletTx({ id: "2", user_id: "9", credit: "0.00", debit: "500.00", transaction_type: "order_place" }, DRC_CONFIG);
+  assert.ok(debit.ok && debit.value.amountMinor === "-500" && debit.value.kind === "ORDER_PAYMENT");
+  // Both zero → nothing to record, reported not inserted (the ledger forbids a zero movement).
+  const zero = mapWalletTx({ id: "3", user_id: "9", credit: "0", debit: "0", transaction_type: "x" }, DRC_CONFIG);
+  assert.equal(zero.ok, false);
+  // Missing customer link is reported.
+  assert.equal(mapWalletTx({ id: "4", user_id: "", credit: "1.00", debit: "0" }, DRC_CONFIG).ok, false);
 });
 
 test("parseIdList reads a food's add_ons column as JSON or CSV", () => {

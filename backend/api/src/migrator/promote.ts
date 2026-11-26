@@ -34,7 +34,7 @@ import { CountryConfigRegistry } from "../modules/config/config-registry.ts";
 import { GROUP_INTERNAL_BRAND, TUNAKULA_BRAND } from "../modules/config/brand.ts";
 import { loadVersions } from "../persistence/config.ts";
 import type {
-  AddressRecord, BranchRecord, MenuItemRecord, MerchantRecord, MigratedVariation, UserRecord,
+  AddressRecord, BranchRecord, MenuItemRecord, MerchantRecord, MigratedVariation, UserRecord, WalletTxRecord,
 } from "./transform.ts";
 
 const MAP_DDL = `
@@ -88,12 +88,14 @@ function toVariations(record: MenuItemRecord): Variation[] {
   }));
 }
 
-export interface PromotionSummary { merchants: number; owners: number; branches: number; items: number; itemsUnavailable: number; published: number; skipped: number; customers: number; orders: number; addresses: number }
+/** A customer whose replayed wallet did not reconcile to the source balance — reported, never imported. */
+export interface WalletMismatch { readonly customerSourceId: string; readonly expectedMinor: string; readonly replayedMinor: string; readonly reason: string }
+export interface PromotionSummary { merchants: number; owners: number; branches: number; items: number; itemsUnavailable: number; published: number; skipped: number; customers: number; orders: number; addresses: number; walletTx: number; walletCustomers: number; walletMismatches: WalletMismatch[] }
 
 /** Promote the staged `migration.*` records into the live tables for one country. Pure of argv/env so it is testable. */
 export async function promote(db: Db, country: string, opts: { apply: boolean; doPublish: boolean }): Promise<PromotionSummary> {
   const { apply, doPublish } = opts;
-  const summary: PromotionSummary = { merchants: 0, owners: 0, branches: 0, items: 0, itemsUnavailable: 0, published: 0, skipped: 0, customers: 0, orders: 0, addresses: 0 };
+  const summary: PromotionSummary = { merchants: 0, owners: 0, branches: 0, items: 0, itemsUnavailable: 0, published: 0, skipped: 0, customers: 0, orders: 0, addresses: 0, walletTx: 0, walletCustomers: 0, walletMismatches: [] };
   {
     // The market must be published: its profile names the brand every promoted store belongs to.
     const registry = new CountryConfigRegistry({ brands: [TUNAKULA_BRAND, GROUP_INTERNAL_BRAND], connectors: [], apiHosts: {} });
@@ -114,12 +116,15 @@ export async function promote(db: Db, country: string, opts: { apply: boolean; d
     // users read separately (reserved word as a table name)
     const users = await db.tx({}, (sql) => sql.query<{ source_id: string; record: UserRecord }>(`SELECT source_id, record FROM migration."user"`));
     const addresses = await db.tx({}, (sql) => readStaged<AddressRecord>(sql, "address")).catch(() => [] as Staged<AddressRecord>[]);
+    const walletTxs = await db.tx({}, (sql) => readStaged<WalletTxRecord>(sql, "wallet_tx")).catch(() => [] as Staged<WalletTxRecord>[]);
+    const settlementCurrency = published.profile.money.settlement_currency;
 
     const groupMap = await db.tx({}, (sql) => loadMap(sql, "merchant"));
     const branchMap = await db.tx({}, (sql) => loadMap(sql, "branch"));
     const itemMap = await db.tx({}, (sql) => loadMap(sql, "item"));
     const userMap = await db.tx({}, (sql) => loadMap(sql, "customer"));
     const addressMap = await db.tx({}, (sql) => loadMap(sql, "address"));
+    const walletMap = await db.tx({}, (sql) => loadMap(sql, "wallet_tx"));
 
     // 1) Customers → global identity (phone + OTP). Idempotent by phone and by the promotion map.
     for (const { source_id, record } of users) {
@@ -158,6 +163,61 @@ export async function promote(db: Db, country: string, opts: { apply: boolean; d
       });
       addressMap.set(source_id, "(new)");
       summary.addresses++;
+    }
+
+    // 1c) Wallet replay → wallet.transaction. Per customer, replay every movement in time order while recomputing
+    //     the running balance; it must never go negative AND, when the source balance is known, must land exactly
+    //     on it. A customer failing either check is reported in walletMismatches and NOT imported — we never load a
+    //     wrong balance. A customer with a balance but no movements gets one opening ADJUSTMENT so no money is lost.
+    //     Idempotent via the promotion map. The platform double-entry opening journal is a separate finance step.
+    {
+      const byCustomer = new Map<string, WalletTxRecord[]>();
+      for (const { record } of walletTxs) {
+        const list = byCustomer.get(record.customerSourceId) ?? [];
+        list.push(record);
+        byCustomer.set(record.customerSourceId, list);
+      }
+      const balanceOf = new Map<string, string | null>();
+      for (const { source_id, record } of users) balanceOf.set(source_id, record.walletBalanceMinor ?? null);
+      const walletCustomers = new Set<string>([...byCustomer.keys(), ...users.filter((u) => u.record.walletBalanceMinor && u.record.walletBalanceMinor !== "0").map((u) => u.source_id)]);
+
+      for (const custSourceId of walletCustomers) {
+        if (!userMap.has(custSourceId)) { summary.skipped++; continue; } // customer did not promote
+        const liveUserId = userMap.get(custSourceId)!; // a real id under --apply; a "(new)" placeholder in a dry run
+        const txs = (byCustomer.get(custSourceId) ?? []).slice().sort((a, b) => (a.createdAt ?? "").localeCompare(b.createdAt ?? "") || a.sourceId.localeCompare(b.sourceId));
+        const sourceBalanceRaw = balanceOf.get(custSourceId) ?? null;
+
+        type Move = { sourceId: string; amount: bigint; kind: WalletTxRecord["kind"]; reference: string | null; createdAt: string | null };
+        let moves: Move[] = txs.map((t) => ({ sourceId: t.sourceId, amount: BigInt(t.amountMinor), kind: t.kind, reference: t.reference, createdAt: t.createdAt }));
+        if (moves.length === 0) {
+          if (!sourceBalanceRaw || sourceBalanceRaw === "0") continue; // no balance and no history — nothing to carry
+          moves = [{ sourceId: `open:${custSourceId}`, amount: BigInt(sourceBalanceRaw), kind: "ADJUSTMENT", reference: "migrated opening balance", createdAt: null }];
+        }
+        if (walletMap.has(moves[0]!.sourceId)) { summary.skipped++; continue; } // already promoted (idempotent)
+
+        let running = 0n;
+        let negative = false;
+        const withBalance = moves.map((m) => { running += m.amount; if (running < 0n) negative = true; return { ...m, balanceAfter: running }; });
+        if (negative) { summary.walletMismatches.push({ customerSourceId: custSourceId, expectedMinor: sourceBalanceRaw ?? "?", replayedMinor: running.toString(), reason: "replay goes negative (source history out of order or incomplete)" }); continue; }
+        if (sourceBalanceRaw !== null && running.toString() !== sourceBalanceRaw) {
+          summary.walletMismatches.push({ customerSourceId: custSourceId, expectedMinor: sourceBalanceRaw, replayedMinor: running.toString(), reason: "replayed balance does not match the source wallet balance" });
+          continue;
+        }
+
+        summary.walletCustomers++;
+        summary.walletTx += withBalance.length;
+        if (!apply) continue;
+        await db.tx({ country }, async (sql) => {
+          for (const m of withBalance) {
+            await sql.query(
+              `INSERT INTO wallet.transaction (country_iso2, user_id, currency, amount_minor, kind, order_id, reference, balance_after, created_at)
+               VALUES ($1,$2,$3,$4,$5,NULL,$6,$7, COALESCE($8::timestamptz, now()))`,
+              [country, liveUserId, settlementCurrency, m.amount.toString(), m.kind, `mig:${m.sourceId}${m.reference ? ":" + m.reference : ""}`.slice(0, 200), m.balanceAfter.toString(), m.createdAt],
+            );
+            await remember(sql, "wallet_tx", m.sourceId, liveUserId);
+          }
+        });
+      }
     }
 
     // 2) Merchants → restaurant groups (+ an owner account bound RESTAURANT_OWNER when a vendor phone exists).
@@ -250,6 +310,12 @@ function report(country: string, apply: boolean, doPublish: boolean, s: Promotio
   console.log(`\n${apply ? "PROMOTED to live tables" : "DRY RUN (no writes)"} — country ${country}\n`);
   console.log(`  customers : ${s.customers} staged`);
   console.log(`  addresses : ${s.addresses} ${apply ? "created" : "would create"}`);
+  console.log(`  wallet    : ${s.walletTx} movement(s) across ${s.walletCustomers} customer(s) ${apply ? "replayed" : "would replay"}`);
+  if (s.walletMismatches.length) {
+    console.log(`  WALLET RECONCILIATION FAILED for ${s.walletMismatches.length} customer(s) — NOT imported:`);
+    for (const m of s.walletMismatches.slice(0, 50)) console.log(`    customer ${m.customerSourceId}: expected ${m.expectedMinor}, replayed ${m.replayedMinor} — ${m.reason}`);
+    if (s.walletMismatches.length > 50) console.log(`    … and ${s.walletMismatches.length - 50} more`);
+  }
   console.log(`  merchants : ${s.merchants} ${apply ? "created" : "would create"} (${s.owners} owner account(s) bound)`);
   console.log(`  branches  : ${s.branches} ${apply ? "created" : "would create"}${doPublish ? `, ${s.published} published` : " (unpublished — publish after review, or re-run with --publish)"}`);
   console.log(`  items     : ${s.items} ${apply ? "created" : "would create"} (${s.itemsUnavailable} marked unavailable)`);

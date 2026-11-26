@@ -28,7 +28,8 @@ CREATE TABLE migration.merchant (source_id text PRIMARY KEY, record jsonb NOT NU
 CREATE TABLE migration.branch   (source_id text PRIMARY KEY, record jsonb NOT NULL);
 CREATE TABLE migration.item     (source_id text PRIMARY KEY, record jsonb NOT NULL);
 CREATE TABLE migration.order_hdr(source_id text PRIMARY KEY, total_minor numeric NOT NULL, record jsonb NOT NULL);
-CREATE TABLE migration.address (source_id text PRIMARY KEY, record jsonb NOT NULL);`;
+CREATE TABLE migration.address (source_id text PRIMARY KEY, record jsonb NOT NULL);
+CREATE TABLE migration.wallet_tx (source_id text PRIMARY KEY, record jsonb NOT NULL);`;
 
 before(async () => {
   t = await testDatabase();
@@ -48,10 +49,18 @@ before(async () => {
   // rich dish (add-ons + a variation group), one unavailable dish, and one ORPHAN item (branch 999 absent).
   await owner.tx({}, async (sql) => {
     await sql.query(STAGING_DDL);
+    // u1 has a wallet balance backed by movements; u2 has a balance but no history (gets an opening adjustment);
+    // u3's movements do NOT sum to its stated balance (a reconciliation mismatch — must be reported, not imported).
     await sql.query(`INSERT INTO migration."user" (source_id, phone_e164, record) VALUES
-      ('u1','+243810000001', $1), ('u2','+243810000002', $2)`,
-      [JSON.stringify({ sourceId: "u1", phoneE164: "+243810000001", displayName: "Amina", email: null, createdAt: null }),
-       JSON.stringify({ sourceId: "u2", phoneE164: "+243810000002", displayName: null, email: null, createdAt: null })]);
+      ('u1','+243810000001', $1), ('u2','+243810000002', $2), ('u3','+243810000003', $3)`,
+      [JSON.stringify({ sourceId: "u1", phoneE164: "+243810000001", displayName: "Amina", email: null, createdAt: null, walletBalanceMinor: "1500" }),
+       JSON.stringify({ sourceId: "u2", phoneE164: "+243810000002", displayName: null, email: null, createdAt: null, walletBalanceMinor: "800" }),
+       JSON.stringify({ sourceId: "u3", phoneE164: "+243810000003", displayName: null, email: null, createdAt: null, walletBalanceMinor: "1000" })]);
+    // u1: +2000 top-up then -500 order payment = 1500 (reconciles). u3: +500 only ≠ 1000 (mismatch).
+    await sql.query(`INSERT INTO migration.wallet_tx (source_id, record) VALUES ('w1',$1),('w2',$2),('w3',$3)`,
+      [JSON.stringify({ sourceId: "w1", customerSourceId: "u1", amountMinor: "2000", kind: "TOPUP", reference: "tp1", createdAt: "2025-01-02 09:00:00" }),
+       JSON.stringify({ sourceId: "w2", customerSourceId: "u1", amountMinor: "-500", kind: "ORDER_PAYMENT", reference: null, createdAt: "2025-01-03 09:00:00" }),
+       JSON.stringify({ sourceId: "w3", customerSourceId: "u3", amountMinor: "500", kind: "TOPUP", reference: "tp3", createdAt: "2025-01-02 09:00:00" })]);
     await sql.query(`INSERT INTO migration.merchant (source_id, record) VALUES ('m1', $1)`,
       [JSON.stringify({ sourceId: "m1", name: "Chez Amina", ownerPhoneE164: "+243810000001" })]);
     await sql.query(`INSERT INTO migration.branch (source_id, record) VALUES ('b1', $1), ('b2', $2)`,
@@ -84,6 +93,10 @@ test("dry run writes nothing and reports what would promote", async () => {
   assert.equal(s.items, 2, "2 promotable items (the orphan is excluded)");
   assert.equal(s.itemsUnavailable, 1);
   assert.equal(s.addresses, 3, "3 promotable addresses (the orphan customer's is excluded)");
+  assert.equal(s.walletCustomers, 2, "u1 (replayed) + u2 (opening) reconcile; u3 does not");
+  assert.equal(s.walletTx, 3, "u1's 2 movements + u2's 1 opening adjustment");
+  assert.equal(s.walletMismatches.length, 1, "u3's balance does not reconcile");
+  assert.equal(s.walletMismatches[0]?.customerSourceId, "u3");
   // Nothing written.
   const c = one(await db.tx({ country: "CD" }, (sql) => sql.query<{ n: string }>("SELECT count(*)::text AS n FROM catalogue.branch")));
   assert.equal(c.n, "0", "dry run created no branches");
@@ -127,6 +140,30 @@ test("apply promotes merchants, branches, items (with add-ons + variations) and 
     assert.deepEqual(addrs.map((a) => a.label).sort(), ["Home", "Work"]);
   });
 
+  assert.equal(s.walletCustomers, 2, "u1 + u2 reconcile and import");
+  assert.equal(s.walletTx, 3);
+  assert.equal(s.walletMismatches.length, 1, "u3 reported, not imported");
+
+  await db.tx({ country: "CD" }, async (sql) => {
+    const bal = async (phone: string) => {
+      const u = one(await sql.query<{ id: string }>("SELECT id FROM identity.app_user WHERE phone_e164 = $1", [phone]));
+      const [row] = await sql.query<{ total: string | null; n: string }>(
+        "SELECT coalesce(sum(amount_minor),0)::text AS total, count(*)::text AS n FROM wallet.transaction WHERE user_id = $1 AND country_iso2 = 'CD'", [u.id]);
+      return { total: row?.total ?? "0", n: Number(row?.n ?? 0) };
+    };
+    const u1 = await bal("+243810000001");
+    assert.equal(u1.total, "1500", "u1's replayed balance matches the source");
+    assert.equal(u1.n, 2, "both movements carried");
+    const u2 = await bal("+243810000002");
+    assert.equal(u2.total, "800", "u2's balance carried as one opening adjustment");
+    assert.equal(u2.n, 1);
+    const u3 = await bal("+243810000003");
+    assert.equal(u3.n, 0, "the mismatching customer's wallet was NOT imported");
+    // The running balance is recorded on each row and never goes negative.
+    const maxAfter = one(await sql.query<{ ok: boolean }>("SELECT bool_and(balance_after >= 0) AS ok FROM wallet.transaction"));
+    assert.equal(maxAfter.ok, true);
+  });
+
   // Owner account exists and is bound RESTAURANT_OWNER (global identity).
   const binds = await db.tx({}, (sql) => sql.query("SELECT 1 FROM identity.role_binding WHERE role = 'RESTAURANT_OWNER'"));
   assert.equal(binds.length, 1);
@@ -138,10 +175,13 @@ test("a second apply is idempotent — creates nothing new", async () => {
   assert.equal(s.branches, 0);
   assert.equal(s.items, 0);
   assert.equal(s.addresses, 0, "no addresses re-created on a second apply");
+  assert.equal(s.walletTx, 0, "no wallet movements re-created on a second apply");
   const b2 = one(await db.tx({ country: "CD" }, (sql) => sql.query<{ n: string }>("SELECT count(*)::text AS n FROM catalogue.branch")));
   assert.equal(b2.n, "2", "still exactly two branches after re-run");
   const a2 = one(await db.tx({ country: "CD" }, (sql) => sql.query<{ n: string }>("SELECT count(*)::text AS n FROM identity.saved_address")));
   assert.equal(a2.n, "3", "still exactly three addresses after re-run");
+  const w2 = one(await db.tx({ country: "CD" }, (sql) => sql.query<{ n: string }>("SELECT count(*)::text AS n FROM wallet.transaction")));
+  assert.equal(w2.n, "3", "still exactly three wallet movements after re-run (u1 x2 + u2 x1)");
 });
 
 test("refuses to promote into an unpublished market", async () => {
