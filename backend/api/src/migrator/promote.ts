@@ -34,8 +34,9 @@ import { CountryConfigRegistry } from "../modules/config/config-registry.ts";
 import { GROUP_INTERNAL_BRAND, TUNAKULA_BRAND } from "../modules/config/brand.ts";
 import { loadVersions } from "../persistence/config.ts";
 import type {
-  AddressRecord, BranchRecord, MenuItemRecord, MerchantRecord, MigratedVariation, UserRecord, WalletTxRecord,
+  AddressRecord, BranchRecord, MenuItemRecord, MerchantRecord, MigratedVariation, OrderLineRecord, OrderRecord, UserRecord, WalletTxRecord,
 } from "./transform.ts";
+import type { OrderSnapshot } from "../modules/ordering/order-types.ts";
 
 const MAP_DDL = `
 CREATE SCHEMA IF NOT EXISTS migration;
@@ -107,12 +108,13 @@ export async function promote(db: Db, country: string, opts: { apply: boolean; d
     if (apply) await db.tx({}, (sql) => sql.query(MAP_DDL));
 
     // Read the whole staging set first (no country context needed — migration.* is not an RLS tenant schema).
-    const [merchants, branches, items, orders] = await db.tx({}, async (sql) => [
+    const [merchants, branches, items] = await db.tx({}, async (sql) => [
       await readStaged<MerchantRecord>(sql, "merchant"),
       await readStaged<BranchRecord>(sql, "branch"),
       await readStaged<MenuItemRecord>(sql, "item"),
-      await readStaged<UserRecord>(sql, "order_hdr").catch(() => []), // only for the count
     ]);
+    const orders = await db.tx({}, (sql) => readStaged<OrderRecord>(sql, "order_hdr")).catch(() => [] as Staged<OrderRecord>[]);
+    const orderLines = await db.tx({}, (sql) => readStaged<OrderLineRecord>(sql, "order_line")).catch(() => [] as Staged<OrderLineRecord>[]);
     // users read separately (reserved word as a table name)
     const users = await db.tx({}, (sql) => sql.query<{ source_id: string; record: UserRecord }>(`SELECT source_id, record FROM migration."user"`));
     const addresses = await db.tx({}, (sql) => readStaged<AddressRecord>(sql, "address")).catch(() => [] as Staged<AddressRecord>[]);
@@ -125,6 +127,7 @@ export async function promote(db: Db, country: string, opts: { apply: boolean; d
     const userMap = await db.tx({}, (sql) => loadMap(sql, "customer"));
     const addressMap = await db.tx({}, (sql) => loadMap(sql, "address"));
     const walletMap = await db.tx({}, (sql) => loadMap(sql, "wallet_tx"));
+    const orderMap = await db.tx({}, (sql) => loadMap(sql, "order"));
 
     // 1) Customers → global identity (phone + OTP). Idempotent by phone and by the promotion map.
     for (const { source_id, record } of users) {
@@ -300,8 +303,64 @@ export async function promote(db: Db, country: string, opts: { apply: boolean; d
       }
     }
 
+    // 6) Order history → read-only historical orders. Each becomes an ORDER_DRAFTED event (carrying its line items)
+    //    plus a STATE_CHANGED to its final state, and an order_view row — so past orders show up in every history
+    //    screen. No money journal or payment intent is created: financials are not replayed (the platform's opening
+    //    books are a separate finance step). Idempotent via the promotion map. Guest/orphan orders are skipped.
+    {
+      const linesByOrder = new Map<string, OrderLineRecord[]>();
+      for (const { record } of orderLines) {
+        const list = linesByOrder.get(record.orderSourceId) ?? [];
+        list.push(record);
+        linesByOrder.set(record.orderSourceId, list);
+      }
+      for (const { source_id, record } of orders) {
+        if (orderMap.has(source_id)) { summary.skipped++; continue; }
+        const promotable = !!record.customerSourceId && userMap.has(record.customerSourceId) && branchMap.has(record.branchSourceId);
+        if (!promotable) { summary.skipped++; continue; } // guest order, or its customer/branch did not promote
+        summary.orders++;
+        if (!apply) continue;
+        const liveBranchId = branchMap.get(record.branchSourceId)!;
+        const liveCustomerId = userMap.get(record.customerSourceId!)!;
+        const liveOrderId = randomUUID();
+        const lines = (linesByOrder.get(source_id) ?? []).map((l) => ({
+          id: `ol-${randomUUID().slice(0, 8)}`,
+          itemId: (l.itemSourceId ? itemMap.get(l.itemSourceId) : undefined) ?? l.itemSourceId ?? "",
+          name: l.name, quantity: l.quantity, options: l.options, allergenFlags: [] as string[],
+        }));
+        const snapshot: OrderSnapshot = {
+          orderId: liveOrderId, type: record.orderType ?? "DELIVERY", channel: "ONLINE",
+          country, brandId: brand, branchId: liveBranchId, customerId: liveCustomerId,
+          gifted: false, lines, total: { minor: record.totalMinor, currency: settlementCurrency },
+          currencies: { price: settlementCurrency, order: settlementCurrency, settlement: settlementCurrency, reporting: settlementCurrency },
+          paymentMode: record.paymentMode ?? "CASH_ON_DELIVERY",
+          configuredConfirmationModel: "RESTAURANT_FIRST", confirmationModel: "RESTAURANT_FIRST",
+          highValue: false, contactlessRequested: false, recipientCodeHash: "", geofenceRadiusM: 0,
+        };
+        const at = record.placedAt ?? null;
+        const actor = JSON.stringify({ kind: "SYSTEM", id: "migrator" });
+        await db.tx({ country }, async (sql) => {
+          await sql.query(
+            `INSERT INTO ordering.order_event (order_id, seq, country_iso2, brand_id, command_id, type, actor, payload, at)
+             VALUES ($1,1,$2,$3,$4,'ORDER_DRAFTED',$5,$6, COALESCE($7::timestamptz, now()))`,
+            [liveOrderId, country, brand, `mig:${source_id}:draft`, actor, JSON.stringify({ snapshot }), at],
+          );
+          await sql.query(
+            `INSERT INTO ordering.order_event (order_id, seq, country_iso2, brand_id, command_id, type, actor, payload, at)
+             VALUES ($1,2,$2,$3,$4,'STATE_CHANGED',$5,$6, COALESCE($7::timestamptz, now()))`,
+            [liveOrderId, country, brand, `mig:${source_id}:state`, actor, JSON.stringify({ from: "DRAFT", to: record.state, evidence: {}, reasonCode: "MIGRATED" }), at],
+          );
+          await sql.query(
+            `INSERT INTO ordering.order_view (order_id, country_iso2, brand_id, branch_id, customer_id, rider_id, type, channel, payment_mode, state, total_minor, currency, version, created_at, updated_at)
+             VALUES ($1,$2,$3,$4,$5,NULL,$6,'ONLINE',$7,$8,$9,$10,2, COALESCE($11::timestamptz, now()), COALESCE($11::timestamptz, now()))`,
+            [liveOrderId, country, brand, liveBranchId, liveCustomerId, snapshot.type, snapshot.paymentMode, record.state, record.totalMinor, settlementCurrency, at],
+          );
+          await remember(sql, "order", source_id, liveOrderId);
+        });
+      }
+    }
+
     summary.customers = users.length;
-    summary.orders = orders.length;
   }
   return summary;
 }
@@ -320,7 +379,7 @@ function report(country: string, apply: boolean, doPublish: boolean, s: Promotio
   console.log(`  branches  : ${s.branches} ${apply ? "created" : "would create"}${doPublish ? `, ${s.published} published` : " (unpublished — publish after review, or re-run with --publish)"}`);
   console.log(`  items     : ${s.items} ${apply ? "created" : "would create"} (${s.itemsUnavailable} marked unavailable)`);
   if (s.skipped) console.log(`  skipped   : ${s.skipped} already-promoted or orphan record(s)`);
-  console.log(`\n  orders NOT promoted: ${s.orders} historical order(s) remain in migration.order_hdr as read-only history (by design).`);
+  console.log(`  orders    : ${s.orders} historical order(s) ${apply ? "promoted" : "would promote"} as read-only history (no money journal — a separate finance step).`);
   if (!apply) console.log(`\n  Re-run with --apply to write. Branches stay unpublished unless you also pass --publish.`);
 }
 

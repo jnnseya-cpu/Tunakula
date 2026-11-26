@@ -19,8 +19,8 @@
  */
 import pg from "pg";
 import {
-  mapAddress, mapAll, mapBranch, mapItem, mapMerchant, mapOrder, mapUser, mapWalletTx, str,
-  type AddonSource, type AddressRecord, type MigratorConfig, type Row, type RowProblem, type WalletTxRecord,
+  mapAddress, mapAll, mapBranch, mapItem, mapMerchant, mapOrder, mapOrderLine, mapUser, mapWalletTx, str,
+  type AddonSource, type AddressRecord, type MigratorConfig, type OrderLineRecord, type Row, type RowProblem, type WalletTxRecord,
 } from "./transform.ts";
 import { DRC_CONFIG, SOURCE_TABLES } from "./mapping.ts";
 import { formatReport, reconcile, sumMinor, type EntityCount, type SumCheck } from "./reconcile.ts";
@@ -49,12 +49,13 @@ CREATE TABLE IF NOT EXISTS migration.item     (source_id text PRIMARY KEY, recor
 CREATE TABLE IF NOT EXISTS migration.order_hdr(source_id text PRIMARY KEY, total_minor numeric NOT NULL, record jsonb NOT NULL);
 CREATE TABLE IF NOT EXISTS migration.address (source_id text PRIMARY KEY, record jsonb NOT NULL);
 CREATE TABLE IF NOT EXISTS migration.wallet_tx (source_id text PRIMARY KEY, record jsonb NOT NULL);
+CREATE TABLE IF NOT EXISTS migration.order_line (source_id text PRIMARY KEY, record jsonb NOT NULL);
 `;
 
 // SQL identifiers (table + column names) are never user data in this tool — they come from the constants
 // above and the field map — but they are interpolated into SQL, so we allowlist/validate them before use.
 // That keeps the injection surface provably closed even if the config is later edited carelessly.
-const STAGING_TABLES: ReadonlySet<string> = new Set(["user", "merchant", "branch", "item", "order_hdr", "address", "wallet_tx"]);
+const STAGING_TABLES: ReadonlySet<string> = new Set(["user", "merchant", "branch", "item", "order_hdr", "address", "wallet_tx", "order_line"]);
 const SOURCE_TABLE_SET: ReadonlySet<string> = new Set(Object.values(SOURCE_TABLES));
 const SAFE_IDENT = /^[A-Za-z_][A-Za-z0-9_]*$/;
 function assertIdent(name: string, kind: string): void {
@@ -146,16 +147,25 @@ async function main(): Promise<void> {
       console.log("note: wallet_transactions table not found in the dump — importing without wallet history.");
     }
   }
+  // Order line items. Optional, same handling.
+  let orderLines = { records: [] as OrderLineRecord[], problems: [] as RowProblem[] };
+  if (cfg.fields.orderLine) {
+    try {
+      orderLines = mapAll(await rowsOf(SOURCE_TABLES.orderLines), (r) => mapOrderLine(r, cfg));
+    } catch {
+      console.log("note: order_details table not found in the dump — importing order history without line items.");
+    }
+  }
   await my.end();
 
-  const allProblems: RowProblem[] = [...users.problems, ...merchants.problems, ...branches.problems, ...items.problems, ...orders.problems, ...addresses.problems, ...walletTx.problems];
+  const allProblems: RowProblem[] = [...users.problems, ...merchants.problems, ...branches.problems, ...items.problems, ...orders.problems, ...addresses.problems, ...walletTx.problems, ...orderLines.problems];
   if (allProblems.length) {
     console.log(`\n${allProblems.length} row(s) could not be migrated:`);
     for (const p of allProblems.slice(0, 50)) console.log(`  [${p.entity} ${p.sourceId ?? "?"}] ${p.field}: ${p.reason}`);
     if (allProblems.length > 50) console.log(`  … and ${allProblems.length - 50} more`);
   }
 
-  let loaded = { user: 0, merchant: 0, branch: 0, item: 0, order: 0, address: 0, walletTx: 0 };
+  let loaded = { user: 0, merchant: 0, branch: 0, item: 0, order: 0, address: 0, walletTx: 0, orderLine: 0 };
   if (apply) {
     const client = new pg.Client({ connectionString: pgUrl });
     await client.connect();
@@ -168,10 +178,11 @@ async function main(): Promise<void> {
       order: await load(client, "order_hdr", orders.records.map((o) => ({ source_id: o.sourceId, extra: { total_minor: o.totalMinor }, record: o }))),
       address: await load(client, "address", addresses.records.map((a) => ({ source_id: a.sourceId, record: a }))),
       walletTx: await load(client, "wallet_tx", walletTx.records.map((w) => ({ source_id: w.sourceId, record: w }))),
+      orderLine: await load(client, "order_line", orderLines.records.map((l) => ({ source_id: l.sourceId, record: l }))),
     };
     await client.end();
   } else {
-    loaded = { user: users.records.length, merchant: merchants.records.length, branch: branches.records.length, item: items.records.length, order: orders.records.length, address: addresses.records.length, walletTx: walletTx.records.length };
+    loaded = { user: users.records.length, merchant: merchants.records.length, branch: branches.records.length, item: items.records.length, order: orders.records.length, address: addresses.records.length, walletTx: walletTx.records.length, orderLine: orderLines.records.length };
   }
 
   const counts: EntityCount[] = [
@@ -182,6 +193,7 @@ async function main(): Promise<void> {
     { entity: "orders", source: orders.records.length + orders.problems.length, loaded: loaded.order, skipped: orders.problems.length },
     { entity: "addresses", source: addresses.records.length + addresses.problems.length, loaded: loaded.address, skipped: addresses.problems.length },
     { entity: "wallet_tx", source: walletTx.records.length + walletTx.problems.length, loaded: loaded.walletTx, skipped: walletTx.problems.length },
+    { entity: "order_lines", source: orderLines.records.length + orderLines.problems.length, loaded: loaded.orderLine, skipped: orderLines.problems.length },
   ];
   const sums: SumCheck[] = [{ label: "order value (minor)", sourceMinor: sumMinor(orders.records.map((o) => o.totalMinor)), loadedMinor: sumMinor(orders.records.map((o) => o.totalMinor)) }];
 

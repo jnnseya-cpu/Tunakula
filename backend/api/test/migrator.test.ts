@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  int, mapAddress, mapAll, mapBranch, mapItem, mapMerchant, mapOrder, mapUser, mapWalletTx, moneyToMinor, normalizePhone,
+  int, mapAddress, mapAll, mapBranch, mapItem, mapMerchant, mapOrder, mapOrderLine, mapUser, mapWalletTx, moneyToMinor, normalizePhone,
   parseIdList, parseVariations, resolveAddons, str, toMinorUnits, walletKindFor,
   type AddonSource, type MigratorConfig, type Row,
 } from "../src/migrator/transform.ts";
@@ -115,6 +115,22 @@ test("mapAddress maps a StackFood saved address, labels it and requires a map pi
   // A missing customer link is reported.
   const noUser = mapAddress({ id: "8", user_id: "", latitude: "-4.3", longitude: "15.3" }, DRC_CONFIG);
   assert.equal(noUser.ok, false);
+});
+
+test("mapOrder reads the order type and payment mode for the migrated snapshot", () => {
+  const delivery = mapOrder({ id: "77", restaurant_id: "1", user_id: "9", order_amount: "5000.00", order_status: "delivered", order_type: "delivery", payment_method: "cash_on_delivery" }, DRC_CONFIG);
+  assert.ok(delivery.ok && delivery.value.orderType === "DELIVERY" && delivery.value.paymentMode === "CASH_ON_DELIVERY");
+  const takeaway = mapOrder({ id: "78", restaurant_id: "1", user_id: "9", order_amount: "100", order_status: "delivered", order_type: "take_away", payment_method: "digital_payment" }, DRC_CONFIG);
+  assert.ok(takeaway.ok && takeaway.value.orderType === "TAKEAWAY" && takeaway.value.paymentMode === "PREPAID");
+});
+
+test("mapOrderLine carries name + quantity and defaults a bad quantity to 1", () => {
+  const l = mapOrderLine({ id: "5", order_id: "77", item_name: "Poulet", quantity: "2", food_id: "3", add_on_ids: "[1,2]" }, DRC_CONFIG);
+  assert.ok(l.ok);
+  if (l.ok) { assert.equal(l.value.orderSourceId, "77"); assert.equal(l.value.name, "Poulet"); assert.equal(l.value.quantity, 2); assert.equal(l.value.itemSourceId, "3"); assert.deepEqual(l.value.options, ["1", "2"]); }
+  const bad = mapOrderLine({ id: "6", order_id: "77", item_name: "", quantity: "0" }, DRC_CONFIG);
+  assert.ok(bad.ok && bad.value.quantity === 1 && bad.value.name === "Item");
+  assert.equal(mapOrderLine({ id: "7", order_id: "" }, DRC_CONFIG).ok, false);
 });
 
 test("mapUser carries the source wallet balance for reconciliation", () => {

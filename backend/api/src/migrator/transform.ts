@@ -250,6 +250,17 @@ export interface OrderRecord {
   readonly currency: string;
   readonly state: string;
   readonly placedAt: string | null;
+  readonly orderType: "DELIVERY" | "TAKEAWAY" | "DINE_IN"; // Tunakula OrderType (subset used for migrated history)
+  readonly paymentMode: "PREPAID" | "CASH_ON_DELIVERY";
+}
+/** One StackFood order_details line → one migrated order line (name + quantity; financials are not replayed). */
+export interface OrderLineRecord {
+  readonly sourceId: string;
+  readonly orderSourceId: string;
+  readonly itemSourceId: string | null;
+  readonly name: string;
+  readonly quantity: number;
+  readonly options: readonly string[];
 }
 /** A customer's saved delivery address (StackFood customer_addresses → identity.saved_address). */
 export interface AddressRecord {
@@ -280,7 +291,11 @@ export interface ItemFields {
   readonly foodVariations?: string; // v8.0 variations JSON column
   readonly variations?: string; // older variations JSON column (fallback)
 }
-export interface OrderFields { readonly id: string; readonly branchId: string; readonly total: string; readonly status: string; readonly customerId?: string; readonly placedAt?: string }
+export interface OrderFields { readonly id: string; readonly branchId: string; readonly total: string; readonly status: string; readonly customerId?: string; readonly placedAt?: string; readonly orderType?: string; readonly paymentMethod?: string }
+export interface OrderLineFields {
+  readonly id: string; readonly orderId: string; readonly name: string; readonly quantity: string;
+  readonly itemId?: string; readonly options?: string; // a names blob (add-ons / variation), best-effort
+}
 export interface AddressFields {
   readonly id: string; readonly customerId: string; readonly lat: string; readonly lng: string;
   readonly label?: string; // StackFood address_type (home/office/others)
@@ -302,6 +317,7 @@ export interface MigratorConfig {
     readonly order: OrderFields;
     readonly address?: AddressFields; // optional: a dump may not carry saved addresses
     readonly walletTx?: WalletTxFields; // optional: a dump may not carry wallet transactions
+    readonly orderLine?: OrderLineFields; // optional: a dump may not carry order line items
   };
 }
 
@@ -428,6 +444,10 @@ export function mapOrder(row: Row, cfg: MigratorConfig): Mapped<OrderRecord> {
   const totalMinor = moneyToMinor(totalRaw, cfg.fractionDigits);
   if (totalMinor === null) return { ok: false, problem: problem("order", sourceId, f.total, `bad total: ${totalRaw}`) };
   const status = str(row, f.status) ?? "";
+  const typeRaw = (f.orderType ? str(row, f.orderType) : null)?.toLowerCase() ?? "";
+  const orderType: OrderRecord["orderType"] = typeRaw.includes("take") ? "TAKEAWAY" : typeRaw.includes("dine") ? "DINE_IN" : "DELIVERY";
+  const payRaw = (f.paymentMethod ? str(row, f.paymentMethod) : null)?.toLowerCase() ?? "";
+  const paymentMode: OrderRecord["paymentMode"] = payRaw.includes("cash") ? "CASH_ON_DELIVERY" : "PREPAID";
   return {
     ok: true,
     value: {
@@ -438,8 +458,24 @@ export function mapOrder(row: Row, cfg: MigratorConfig): Mapped<OrderRecord> {
       currency: cfg.currency,
       state: cfg.stateFor(status),
       placedAt: f.placedAt ? str(row, f.placedAt) : null,
+      orderType,
+      paymentMode,
     },
   };
+}
+
+export function mapOrderLine(row: Row, cfg: MigratorConfig): Mapped<OrderLineRecord> {
+  const f = cfg.fields.orderLine;
+  if (!f) return { ok: false, problem: problem("order_line", null, "orderLine", "no order-line field map configured") };
+  const sourceId = str(row, f.id);
+  if (!sourceId) return { ok: false, problem: problem("order_line", null, f.id, "missing id") };
+  const orderSourceId = str(row, f.orderId);
+  if (!orderSourceId) return { ok: false, problem: problem("order_line", sourceId, f.orderId, "missing order id") };
+  const name = str(row, f.name) ?? "Item";
+  const q = f.quantity ? int(row, f.quantity) : 1;
+  const quantity = q !== null && q > 0 ? q : 1;
+  const options = f.options ? parseIdList(str(row, f.options)) : [];
+  return { ok: true, value: { sourceId, orderSourceId, itemSourceId: f.itemId ? str(row, f.itemId) : null, name: name.slice(0, 200), quantity, options } };
 }
 
 /** StackFood address_type → a friendly, length-capped Tunakula label. */

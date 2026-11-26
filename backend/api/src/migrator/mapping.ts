@@ -96,7 +96,9 @@ export const DRC_CONFIG: MigratorConfig = {
     // add_ons is a food's id list into the add_ons table; food_variations is v8.0's variation JSON (older
     // installs use `variations`, kept as the fallback). The runner loads the add_ons table and resolves ids.
     item: { id: "id", branchId: "restaurant_id", name: "name", price: "price", available: "status", addOns: "add_ons", foodVariations: "food_variations", variations: "variations" },
-    order: { id: "id", branchId: "restaurant_id", customerId: "user_id", total: "order_amount", status: "order_status", placedAt: "created_at" },
+    order: { id: "id", branchId: "restaurant_id", customerId: "user_id", total: "order_amount", status: "order_status", placedAt: "created_at", orderType: "order_type", paymentMethod: "payment_method" },
+    // order_details: the lines of an order. food_id links to the item; price/quantity per line.
+    orderLine: { id: "id", orderId: "order_id", name: "item_name", quantity: "quantity", itemId: "food_id", options: "add_on_ids" },
     // customer_addresses: a saved delivery pin. address_type is home/office/others; `address` is the free-text line.
     address: { id: "id", customerId: "user_id", lat: "latitude", lng: "longitude", label: "address_type", landmark: "address", contactPhone: "contact_person_number" },
     // wallet_transactions: v8.0 keeps a `credit` and a `debit` decimal column (one is 0) plus a running `balance`.

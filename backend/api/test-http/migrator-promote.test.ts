@@ -29,7 +29,8 @@ CREATE TABLE migration.branch   (source_id text PRIMARY KEY, record jsonb NOT NU
 CREATE TABLE migration.item     (source_id text PRIMARY KEY, record jsonb NOT NULL);
 CREATE TABLE migration.order_hdr(source_id text PRIMARY KEY, total_minor numeric NOT NULL, record jsonb NOT NULL);
 CREATE TABLE migration.address (source_id text PRIMARY KEY, record jsonb NOT NULL);
-CREATE TABLE migration.wallet_tx (source_id text PRIMARY KEY, record jsonb NOT NULL);`;
+CREATE TABLE migration.wallet_tx (source_id text PRIMARY KEY, record jsonb NOT NULL);
+CREATE TABLE migration.order_line (source_id text PRIMARY KEY, record jsonb NOT NULL);`;
 
 before(async () => {
   t = await testDatabase();
@@ -74,7 +75,10 @@ before(async () => {
     await sql.query(`INSERT INTO migration.item (source_id, record) VALUES ('i1',$1),('i2',$2),('i3',$3)`,
       [JSON.stringify(rich), JSON.stringify(gone), JSON.stringify(orphan)]);
     await sql.query(`INSERT INTO migration.order_hdr (source_id, total_minor, record) VALUES ('o1', 100, $1)`,
-      [JSON.stringify({ sourceId: "o1", branchSourceId: "b1", customerSourceId: "u1", totalMinor: "100", currency: "CDF", state: "DELIVERED", placedAt: null })]);
+      [JSON.stringify({ sourceId: "o1", branchSourceId: "b1", customerSourceId: "u1", totalMinor: "100", currency: "CDF", state: "DELIVERED", placedAt: "2025-03-01 12:00:00", orderType: "DELIVERY", paymentMode: "CASH_ON_DELIVERY" })]);
+    // One line for o1, referencing item i1 (Brochettes). Its food_id resolves to the promoted live item.
+    await sql.query(`INSERT INTO migration.order_line (source_id, record) VALUES ('ol1', $1)`,
+      [JSON.stringify({ sourceId: "ol1", orderSourceId: "o1", itemSourceId: "i1", name: "Brochettes", quantity: 2, options: [] })]);
     // Two saved addresses for u1 (home + work) and one for a customer that will promote (u2). The orphan
     // address 'a-gone' points at a customer that does not exist, so it must be skipped.
     await sql.query(`INSERT INTO migration.address (source_id, record) VALUES ('a1',$1),('a2',$2),('a3',$3),('a-gone',$4)`,
@@ -109,7 +113,7 @@ test("apply promotes merchants, branches, items (with add-ons + variations) and 
   assert.equal(s.branches, 2);
   assert.equal(s.published, 1, "only the branch with an available dish publishes");
   assert.equal(s.items, 2);
-  assert.equal(s.orders, 1, "the order is counted but held as history");
+  assert.equal(s.orders, 1, "the historical order is promoted as read-only history");
 
   await db.tx({ country: "CD" }, async (sql) => {
     const g = one(await sql.query<{ n: string }>("SELECT count(*)::text AS n FROM catalogue.restaurant_group"));
@@ -164,6 +168,25 @@ test("apply promotes merchants, branches, items (with add-ons + variations) and 
     assert.equal(maxAfter.ok, true);
   });
 
+  // Order history: the past order shows up in the read model with its final state and carries its line item.
+  await db.tx({ country: "CD" }, async (sql) => {
+    const u1 = one(await sql.query<{ id: string }>("SELECT id FROM identity.app_user WHERE phone_e164 = $1", ["+243810000001"]));
+    const ov = one(await sql.query<{ state: string; total_minor: string; payment_mode: string; order_id: string }>(
+      "SELECT state, total_minor::text AS total_minor, payment_mode, order_id FROM ordering.order_view WHERE customer_id = $1", [u1.id]));
+    assert.equal(ov.state, "DELIVERED");
+    assert.equal(ov.total_minor, "100");
+    assert.equal(ov.payment_mode, "CASH_ON_DELIVERY");
+    // The ORDER_DRAFTED event carries the migrated line item, so the detail view can show what was ordered.
+    const drafted = one(await sql.query<{ payload: { snapshot: { lines: { name: string; quantity: number }[] } } }>(
+      "SELECT payload FROM ordering.order_event WHERE order_id = $1 AND type = 'ORDER_DRAFTED'", [ov.order_id]));
+    assert.equal(drafted.payload.snapshot.lines.length, 1);
+    assert.equal(drafted.payload.snapshot.lines[0]?.name, "Brochettes");
+    assert.equal(drafted.payload.snapshot.lines[0]?.quantity, 2);
+    // A terminal STATE_CHANGED event records the final state.
+    const changed = one(await sql.query<{ n: string }>("SELECT count(*)::text AS n FROM ordering.order_event WHERE order_id = $1 AND type = 'STATE_CHANGED'", [ov.order_id]));
+    assert.equal(changed.n, "1");
+  });
+
   // Owner account exists and is bound RESTAURANT_OWNER (global identity).
   const binds = await db.tx({}, (sql) => sql.query("SELECT 1 FROM identity.role_binding WHERE role = 'RESTAURANT_OWNER'"));
   assert.equal(binds.length, 1);
@@ -176,12 +199,15 @@ test("a second apply is idempotent — creates nothing new", async () => {
   assert.equal(s.items, 0);
   assert.equal(s.addresses, 0, "no addresses re-created on a second apply");
   assert.equal(s.walletTx, 0, "no wallet movements re-created on a second apply");
+  assert.equal(s.orders, 0, "no orders re-created on a second apply");
   const b2 = one(await db.tx({ country: "CD" }, (sql) => sql.query<{ n: string }>("SELECT count(*)::text AS n FROM catalogue.branch")));
   assert.equal(b2.n, "2", "still exactly two branches after re-run");
   const a2 = one(await db.tx({ country: "CD" }, (sql) => sql.query<{ n: string }>("SELECT count(*)::text AS n FROM identity.saved_address")));
   assert.equal(a2.n, "3", "still exactly three addresses after re-run");
   const w2 = one(await db.tx({ country: "CD" }, (sql) => sql.query<{ n: string }>("SELECT count(*)::text AS n FROM wallet.transaction")));
   assert.equal(w2.n, "3", "still exactly three wallet movements after re-run (u1 x2 + u2 x1)");
+  const o2 = one(await db.tx({ country: "CD" }, (sql) => sql.query<{ n: string }>("SELECT count(*)::text AS n FROM ordering.order_view")));
+  assert.equal(o2.n, "1", "still exactly one historical order after re-run");
 });
 
 test("refuses to promote into an unpublished market", async () => {
