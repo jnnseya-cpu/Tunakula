@@ -1,6 +1,6 @@
 # Tunakula — Production Promotion Runbook
 
-Promote the StackFood data into the **live** Tunakula tables. This is the second, deliberate step after staging (`run.ts --apply`) is green. It runs through the app's own persistence layer under the country's FORCE RLS, is idempotent, and does **not** replay historical orders.
+Promote the StackFood data into the **live** Tunakula tables. This is the second, deliberate step after staging (`run.ts --apply`) is green. It runs through the app's own persistence layer under the country's FORCE RLS and is idempotent. It now also migrates saved addresses, the customer wallet (full replay, with a cent-level reconciliation gate) and order history (headers + line items, as read-only records in the order read model). It never fabricates platform money-journal or payment rows — the opening double-entry books are a separate finance step. For the full switch-over sequence and go/no-go gates, see `docs/runbooks/big-bang-cutover.md`.
 
 Proven end-to-end on the real export (16 merchants, 16 branches, 1,912 dishes with 10,632 add-ons / 2,887 variation options) and covered by `backend/api/test-http/migrator-promote.test.ts`.
 
